@@ -10,6 +10,14 @@ updated: 2026-10-21
 
 # 000. Каркас проекта
 
+> **Коротко.** Пустой, но рабочий репозиторий, в котором агент может разрабатывать по спекам.
+> - **Монорепо** pnpm: `apps/api`, `apps/orchestrator`, `apps/ui`, `packages/config`, `packages/contracts`, `packages/agent-runtime` — пока заглушки.
+> - **Инфраструктура одной командой:** `pnpm infra:up` поднимает Postgres, MinIO и NATS в Docker, `pnpm infra:check` проверяет, что всё живо.
+> - **Одна команда проверки:** `pnpm check` = формат → линтер → типы → сборка → тесты → `spec:check`. Её запускают и агент перед сдачей, и CI на каждый push.
+> - **`spec:check`** не даёт сдать спеку, если у какого-то критерия приёмки нет теста.
+> - **Конфиг** из env с проверкой через Zod, секреты — только в `.env`, который не попадает в git.
+> - **Что нужно от вас, чтобы запустить:** ответить на 4 вопроса в разделе 9 (GitHub или GitLab, линтер, тест-раннер, миграции) и поставить `status: ready`.
+
 ## 1. Контекст и цель
 
 Этап 0 [роадмапа](../../AI_PLATFORM_ROADMAP.md#этапы): основа, на которой агент будет реализовывать остальные спеки. Сейчас в репозитории только документация. Нужно получить монорепо, где одной командой поднимается локальная инфраструктура (Postgres, MinIO, NATS), а сборка, линтер, типы, тесты и проверка трассировки спек запускаются одной командой каждая и проходят в CI.
@@ -40,11 +48,12 @@ updated: 2026-10-21
 | REQ-000-2 | TypeScript MUST работать в режиме `strict`, ESM, общий `tsconfig.base.json`. | MUST |
 | REQ-000-3 | Node.js и pnpm MUST быть зафиксированы: `engines` и `packageManager` в корневом `package.json`, `.nvmrc`. Node — актуальная LTS-линия 24.x. | MUST |
 | REQ-000-4 | Корневые команды MUST работать из чистого клона: `pnpm build`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm format:check`, `pnpm spec:check`, `pnpm infra:up`, `pnpm infra:down`, `pnpm infra:check`. | MUST |
+| REQ-000-11 | `pnpm check` MUST запускать по порядку `format:check`, `lint`, `typecheck`, `build`, `test`, `spec:check`, останавливаться на первой ошибке и завершаться с её кодом. Это единая команда проверки для агента и CI. | MUST |
 | REQ-000-5 | `infra/compose.yaml` MUST поднимать Postgres, MinIO и NATS (JetStream включён) с healthcheck. Версии образов зафиксированы точным тегом, `latest` запрещён. | MUST |
 | REQ-000-6 | Конфигурация сервисов MUST читаться из env и валидироваться Zod-схемой в `packages/config`. Ошибка валидации — понятное сообщение с именем переменной и выход с кодом ≠ 0. | MUST |
 | REQ-000-7 | В репозитории MUST быть `.env.example` со всеми переменными. `.env` MUST быть в `.gitignore`. | MUST |
 | REQ-000-8 | `pnpm spec:check` MUST реализовывать проверку из раздела 4.3. | MUST |
-| REQ-000-9 | CI MUST на каждый push и merge request выполнять: install, `format:check`, `lint`, `typecheck`, `build`, `test`, `spec:check`. | MUST |
+| REQ-000-9 | CI MUST на каждый push и merge request выполнять `pnpm install --frozen-lockfile` и `pnpm check`. | MUST |
 | REQ-000-10 | В каждом пакете SHOULD быть хотя бы один smoke-тест, чтобы `pnpm test` проверял, что тестовая инфраструктура пакета работает. | SHOULD |
 
 ## 4. Контракты
@@ -118,6 +127,7 @@ export function loadConfig<T extends z.ZodTypeAny>(schema: T, env = process.env)
 - **AC-000-6** — *Given* спека в статусе `draft` без тестов, *When* `spec:check`, *Then* она не влияет на результат.
 - **AC-000-7** `[manual]` — *Given* Docker запущен, *When* `pnpm infra:up` и затем `pnpm infra:check`, *Then* все три сервиса healthy не позже чем через 60 с, `infra:check` завершается с кодом 0. Проверка: выполнить команды, приложить вывод в журнал реализации.
 - **AC-000-8** `[manual]` — *Given* push в ветку, *When* CI отработал, *Then* все шаги из REQ-000-9 зелёные. Проверка: ссылка на прогон CI в журнале.
+- **AC-000-10** `[manual]` — *Given* в коде есть ошибка линтера, *When* `pnpm check`, *Then* команда завершается с кодом ≠ 0 на шаге `lint`, следующие шаги не запускаются; после исправления `pnpm check` завершается с кодом 0. Проверка: выполнить оба прогона, приложить вывод в журнал.
 - **AC-000-9** — *Given* репозиторий, *When* поиск по истории и рабочему дереву, *Then* нет файлов `.env` и значений секретов, кроме локальных значений-примеров в `.env.example`. Автотест: проверка, что `.env` в `.gitignore` и не отслеживается git.
 
 Тесты `spec:check` (AC-000-4…6) работают на временных фикстурах спек, а не на реальных файлах `docs/spec`.
@@ -138,7 +148,7 @@ export function loadConfig<T extends z.ZodTypeAny>(schema: T, env = process.env)
 ## 8. Задачи для агента
 
 - [ ] **T-1.** Корень монорепо: `package.json` (`packageManager`, `engines`, скрипты), `pnpm-workspace.yaml`, `.nvmrc`, `tsconfig.base.json`, `.gitignore`, `.editorconfig`. Закрывает: REQ-000-1…3. Готово, когда `pnpm install` проходит.
-- [ ] **T-2.** Линтер, форматтер, тестовый раннер на корневом уровне; пакеты и приложения из 4.1 с заглушкой и smoke-тестом. Закрывает: REQ-000-4, REQ-000-10, AC-000-1.
+- [ ] **T-2.** Линтер, форматтер, тестовый раннер на корневом уровне; пакеты и приложения из 4.1 с заглушкой и smoke-тестом; команда `pnpm check`. Закрывает: REQ-000-4, REQ-000-10, REQ-000-11, AC-000-1, AC-000-10.
 - [ ] **T-3.** `packages/config` с `BaseConfig` и `loadConfig`, тесты. Закрывает: REQ-000-6, AC-000-2, AC-000-3.
 - [ ] **T-4.** `infra/compose.yaml`, `.env.example`, скрипты `infra:up/down/check`, создание бакета. Закрывает: REQ-000-5, REQ-000-7, AC-000-7, AC-000-9.
 - [ ] **T-5.** `scripts/spec-check.ts` и тесты на фикстурах. Закрывает: REQ-000-8, AC-000-4…6.
