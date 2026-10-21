@@ -243,7 +243,7 @@ export function loadConfig<T extends z.ZodTypeAny>(schema: T, env = process.env)
 - [ ] **T-2.** Линтер, форматтер, Vitest; workspaces из 4.1 с заглушкой и smoke-тестом; `npm run check`; тест полей лицензии. Закрывает: REQ-000-7, REQ-000-8, REQ-000-14, AC-000-1, AC-000-9, AC-000-14.
 - [x] **T-3.** `packages/contracts` (`ServiceInfo`) и ядра `api-core`, `orchestrator-core`, `agent-core` по 4.2: фабрика, `info()`, `tsconfig` без DOM и `types`, тесты. Закрывает: REQ-000-15, AC-000-16, AC-000-20.
 - [ ] **T-4.** `scripts/arch-check.ts` и тесты на фикстурах; включить в `npm run check`. Закрывает: REQ-000-17, AC-000-17…19.
-- [ ] **T-5.** `packages/config`: `BaseConfig`, `loadConfig`, тесты. Закрывает: REQ-000-9, AC-000-2, AC-000-3.
+- [x] **T-5.** `packages/config`: `BaseConfig`, `loadConfig`, тесты. Закрывает: REQ-000-9, AC-000-2, AC-000-3.
 - [ ] **T-6.** Оболочки `apps/api` и `apps/orchestrator` на Fastify: конфиг → фабрика ядра → контроллер `/health`; тесты через `inject`. Оболочка `apps/agent` на Node. Закрывает: REQ-000-16, AC-000-4, AC-000-5.
 - [ ] **T-7.** Dockerfile `api`, `orchestrator`, `agent` (Node), `compose.yaml`, `.env.example`, `npm run up/dev/down`, `infra:check`. Закрывает: REQ-000-4…6, REQ-000-10, AC-000-10…13.
 - [ ] **T-8.** Замер холодного старта `agent`. Закрывает: NFR-000-3.
