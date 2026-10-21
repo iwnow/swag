@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/contracts" },
+    { "path": "packages/config" },
+    { "path": "packages/api-core" },
+    { "path": "packages/orchestrator-core" },
+    { "path": "packages/agent-core" },
+    { "path": "apps/api" },
+    { "path": "apps/orchestrator" },
+    { "path": "apps/agent" }
+  ]
+}

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+package-lock.json
+.claude/
+docs/
+AI_PLATFORM_ROADMAP.md
+COMPLETE_CHAT_HISTORY.md
+LICENSE
