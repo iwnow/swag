@@ -11,6 +11,7 @@ docs/spec/
 ├── README.md          # этот файл: процесс + реестр спек
 ├── _template.md       # шаблон новой спеки
 ├── glossary.md        # термины и их имена в коде
+├── questions.md       # отложенные вопросы из реализации: решаются в будущих спеках
 └── NNN-slug.md        # спеки, номер по порядку создания
 ```
 
@@ -74,10 +75,10 @@ docs/spec/
 | 002 | Eval-набор и прогон в CI | 0 | планируется |
 | 003 | LiteLLM: виртуальные ключи, бюджеты, callback → ledger | 1 | планируется |
 | 004 | SandboxProvider на Docker, тёплый пул, сеть роя | 2 | планируется |
-| 005 | Снимки `/work` в S3, reaper; MinIO в compose и выбор образа (из 000 Q-6) | 2 | планируется |
+| 005 | Снимки `/work` в S3, reaper; MinIO в compose и выбор образа (D-2 в [questions.md](questions.md)) | 2 | планируется |
 | 006 | Агентный цикл, журнал инструментов, возобновление | 3 | планируется |
 | 007 | Реестр скиллов и `activate_skill` | 4 | планируется |
 | 008 | Шина NATS: account на рой, KV, изоляция | 5 | планируется |
 | 009 | План роя: координатор, валидация, запуск | 5 | планируется |
 | 010 | UI: граф роя и панель денег | 6 | планируется |
-| 011 | Переход на TypeScript 7: arch:check без compiler API (парсер, не зависящий от версии TS, или ESLint no-restricted-imports), совместимость typescript-eslint (из журнала 000) | 0 | планируется |
+| 011 | Переход на TypeScript 7: arch:check без compiler API (парсер, не зависящий от версии TS, или ESLint no-restricted-imports), совместимость typescript-eslint (D-1 в [questions.md](questions.md)) | 0 | планируется |
