@@ -239,7 +239,7 @@ export function loadConfig<T extends z.ZodTypeAny>(schema: T, env = process.env)
 
 ## 8. Задачи для агента
 
-- [ ] **T-1.** Корень: `package.json` (workspaces, `engines`, `private`, `license`, скрипты), `.npmrc`, `.nvmrc`, `tsconfig.base.json`, `.gitignore`, `.editorconfig`. Закрывает: REQ-000-1…3, REQ-000-13. Готово, когда `npm install` проходит.
+- [x] **T-1.** Корень: `package.json` (workspaces, `engines`, `private`, `license`, скрипты), `.npmrc`, `.nvmrc`, `tsconfig.base.json`, `.gitignore`, `.editorconfig`. Закрывает: REQ-000-1…3, REQ-000-13. Готово, когда `npm install` проходит.
 - [ ] **T-2.** Линтер, форматтер, Vitest; workspaces из 4.1 с заглушкой и smoke-тестом; `npm run check`; тест полей лицензии. Закрывает: REQ-000-7, REQ-000-8, REQ-000-14, AC-000-1, AC-000-9, AC-000-14.
 - [ ] **T-3.** `packages/contracts` (`ServiceInfo`) и ядра `api-core`, `orchestrator-core`, `agent-core` по 4.2: фабрика, `info()`, `tsconfig` без DOM и `types`, тесты. Закрывает: REQ-000-15, AC-000-16, AC-000-20.
 - [ ] **T-4.** `scripts/arch-check.ts` и тесты на фикстурах; включить в `npm run check`. Закрывает: REQ-000-17, AC-000-17…19.
