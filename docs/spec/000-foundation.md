@@ -1,7 +1,7 @@
 ---
 id: "000"
 title: Каркас проекта
-status: review
+status: done
 roadmap_stage: 0
 depends_on: []
 superseded_by: null
@@ -174,14 +174,14 @@ export function loadConfig<T extends z.ZodTypeAny>(schema: T, env = process.env)
 
 1. Находит все workspace-пакеты `packages/*-core`.
 2. Проверяет `dependencies` и `peerDependencies` каждого ядра: всё вне белого списка из 4.2 — нарушение.
-3. Разбирает импорты (`import`, `export … from`, динамический `import()`) в `src/**/*.ts` ядра через TypeScript compiler API, без регулярных выражений. Нарушение — спецификатор не относительный и не из белого списка.
+3. Разбирает импорты (`import`, `export … from`, динамический `import()`, `import x = require()`, `import('x').T` в типах) в `src/**/*.ts` ядра через TypeScript compiler API, без регулярных выражений. Нарушение — спецификатор не относительный и не из белого списка. Подпуть пакета из белого списка (`zod/v4`) разрешён. `import()` с вычисляемым спецификатором — нарушение (`<не литерал>`).
 4. Выход 0 — нарушений нет. Выход 1 — список `<пакет>: <файл>:<строка> — запрещённый импорт <спецификатор>` или `<пакет>: запрещённая зависимость <имя>`.
 
 ### 4.6. `npm run spec:check`
 
 1. Читает все `docs/spec/[0-9][0-9][0-9]-*.md`, из YAML frontmatter берёт `id` и `status`.
 2. Для спек со статусом `in-progress`, `review` или `done` собирает id критериев из строк вида `- **AC-NNN-n**`. Критерии с `` `[manual]` `` сразу после id пропускает.
-3. Ищет каждый id как подстроку в файлах `**/*.test.ts` и `**/*.spec.ts` (без `node_modules`, `dist`).
+3. Ищет каждый id как подстроку в файлах `**/*.test.ts` и `**/*.spec.ts` (без `node_modules`, `dist` и скрытых каталогов — `.git`, `.claude` с чужими worktree).
 4. Выход 0 — все найдены. Выход 1 — список `spec NNN: AC-NNN-n — нет теста`.
 5. Спеки с другими статусами не проверяет.
 
@@ -285,3 +285,4 @@ export function loadConfig<T extends z.ZodTypeAny>(schema: T, env = process.env)
 | 2026-10-21 | — | **AC-000-11 `[manual]`.** `docker compose down -v`, затем `npm run up` (образы в кэше): все 4 контейнера healthy за 7,4 с (лимит 90 с), выход 0. `npm run infra:check`: `ok postgres`, `ok nats`, `ok api`, `ok orchestrator`, выход 0. `docker compose ps`: порты `127.0.0.1:3000`, `127.0.0.1:3001`, `127.0.0.1:4222`, `127.0.0.1:5432`. С пересборкой образов `up` занимал 24 с. | — |
 | 2026-10-21 | — | **Предложение (не в коде), вынесено в спеку 011 реестра по решению человека.** Требование 4.5 «через TypeScript compiler API» привязывает `arch:check` к TypeScript ≤ 6: в TypeScript 7 этого API нет. Развязать можно парсером, не зависящим от версии TS (`oxc-parser`, `es-module-lexer`), или правилом ESLint `no-restricted-imports` для `packages/*-core`. Сейчас переход на TS 7 так же блокирует typescript-eslint 8.72 (TS < 6.1). | — |
 | 2026-10-21 | — | Вопросы, которые не блокируют 000, но требуют решения позже, собраны в [questions.md](questions.md): D-1 (TypeScript 7 и `arch:check`, → 011), D-2 (образ MinIO, → 005), D-3 (трактовки 4.5 и 4.6), D-4 (AC-000-1 и чистый клон). | — |
+| 2026-10-21 | `main` / `e51b779` | **Приёмка человеком.** D-3: трактовки `arch:check` и `spec:check` приняты и дописаны в 4.5 и 4.6. D-4: для AC-000-1 достаточно теста `scripts/build.test.ts` плюс CI, который собирает чистый клон через `npm ci`; отдельный тест с клонированием не нужен. Спека принята, `status: done`. | — |
