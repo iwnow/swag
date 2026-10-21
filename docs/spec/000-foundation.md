@@ -247,7 +247,7 @@ export function loadConfig<T extends z.ZodTypeAny>(schema: T, env = process.env)
 - [x] **T-6.** Оболочки `apps/api` и `apps/orchestrator` на Fastify: конфиг → фабрика ядра → контроллер `/health`; тесты через `inject`. Оболочка `apps/agent` на Node. Закрывает: REQ-000-16, AC-000-4, AC-000-5.
 - [ ] **T-7.** Dockerfile `api`, `orchestrator`, `agent` (Node), `compose.yaml`, `.env.example`, `npm run up/dev/down`, `infra:check`. Закрывает: REQ-000-4…6, REQ-000-10, AC-000-10…13.
 - [ ] **T-8.** Замер холодного старта `agent`. Закрывает: NFR-000-3.
-- [ ] **T-9.** `scripts/spec-check.ts` и тесты на фикстурах. Закрывает: REQ-000-11, AC-000-6…8.
+- [x] **T-9.** `scripts/spec-check.ts` и тесты на фикстурах. Закрывает: REQ-000-11, AC-000-6…8.
 - [ ] **T-10.** GitHub Actions. Закрывает: REQ-000-12, AC-000-15.
 - [ ] **T-11.** Корневой README: требования (Docker, Node 24), запуск с нуля, список команд, правило «ядро и оболочка» со ссылкой на 4.2, ссылка на `LICENSE`.
 
