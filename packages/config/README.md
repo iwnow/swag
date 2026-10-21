@@ -27,4 +27,4 @@
 
 ## Спеки
 
-- 000 — `BaseConfig`, `loadConfig`. `S3_*` вернутся в спеке 005 вместе с MinIO ([реестр](../../docs/spec/README.md#реестр-спек)).
+- 000 — `BaseConfig`, `loadConfig`. `S3_*` вернутся в спеке 006 вместе с MinIO ([реестр](../../docs/spec/README.md#реестр-спек)).
