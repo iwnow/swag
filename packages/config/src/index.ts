@@ -2,10 +2,6 @@ import { z } from 'zod';
 
 export const BaseConfig = z.object({
   DATABASE_URL: z.string().url(),
-  S3_ENDPOINT: z.string().url(),
-  S3_ACCESS_KEY: z.string().min(1),
-  S3_SECRET_KEY: z.string().min(1),
-  S3_BUCKET: z.string().min(1),
   NATS_URL: z.string().url(),
 });
 export type BaseConfig = z.infer<typeof BaseConfig>;

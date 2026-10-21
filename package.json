@@ -28,7 +28,6 @@
     "infra:check": "node --env-file-if-exists=.env scripts/infra-check.ts"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "3.1154.0",
     "@eslint/js": "9.39.5",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/transport-node": "3.4.0",

@@ -3,10 +3,6 @@ import { ApiConfig, BaseConfig, ConfigError, loadConfig } from '../src/index.ts'
 
 const validEnv = {
   DATABASE_URL: 'postgres://swag:swag-local@postgres:5432/swag',
-  S3_ENDPOINT: 'http://minio:9000',
-  S3_ACCESS_KEY: 'swag',
-  S3_SECRET_KEY: 'swag-local-secret',
-  S3_BUCKET: 'swag',
   NATS_URL: 'nats://nats:4222',
 };
 

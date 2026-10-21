@@ -1,5 +1,4 @@
 // Проверка локальной инфраструктуры с хоста: спека 000, раздел 4.7.
-import { HeadBucketCommand, S3Client } from '@aws-sdk/client-s3';
 import { jetstreamManager } from '@nats-io/jetstream';
 import { connect } from '@nats-io/transport-node';
 import { ApiConfig, ConfigError, OrchestratorConfig, loadConfig } from '@swag/config';
@@ -41,22 +40,6 @@ async function checkPostgres(): Promise<void> {
   }
 }
 
-async function checkMinio(): Promise<void> {
-  const s3 = new S3Client({
-    endpoint: onHost(config.S3_ENDPOINT),
-    region: 'us-east-1',
-    forcePathStyle: true,
-    credentials: { accessKeyId: config.S3_ACCESS_KEY, secretAccessKey: config.S3_SECRET_KEY },
-  });
-  try {
-    await s3.send(new HeadBucketCommand({ Bucket: config.S3_BUCKET }), {
-      abortSignal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-  } finally {
-    s3.destroy();
-  }
-}
-
 async function checkNats(): Promise<void> {
   const url = new URL(config.NATS_URL);
   const nc = await connect({ servers: `127.0.0.1:${url.port}`, timeout: TIMEOUT_MS });
@@ -77,7 +60,6 @@ async function checkHealth(port: number): Promise<void> {
 
 const checks: [string, () => Promise<void>][] = [
   ['postgres', checkPostgres],
-  ['minio', checkMinio],
   ['nats', checkNats],
   ['api', () => checkHealth(config.API_PORT)],
   ['orchestrator', () => checkHealth(config.ORCHESTRATOR_PORT)],

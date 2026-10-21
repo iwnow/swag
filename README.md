@@ -38,7 +38,7 @@ npm run infra:check
 | `npm run up`          | Поднять систему в Docker                                                                                                              |
 | `npm run dev`         | То же в режиме разработки: правка в `src` оболочки или ядра перезапускает сервис без пересборки образа                                |
 | `npm run down`        | Остановить систему                                                                                                                    |
-| `npm run infra:check` | Проверить с хоста Postgres, MinIO, NATS, `/health` у `api` и `orchestrator`                                                           |
+| `npm run infra:check` | Проверить с хоста Postgres, NATS, `/health` у `api` и `orchestrator`                                                                  |
 
 Образ агента в `npm run up` не запускается, собирается отдельно: `docker compose build agent`, запуск — `docker run --rm swag-agent:dev`.
 
