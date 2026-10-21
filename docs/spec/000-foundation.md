@@ -13,7 +13,7 @@ updated: 2026-10-21
 > **Коротко.** Пустой, но рабочий репозиторий Swag, в котором агент может разрабатывать по спекам.
 > - **Ядро отдельно от оболочки.** Логика каждого сервиса — в пакете-ядре `packages/<имя>-core` на чистом TypeScript, без фреймворков, Node API и инфраструктуры. Оболочка в `apps/<имя>` (Fastify, процесс агента в песочнице, позже UI) только подключает ядро и даёт к нему вход. Правило проверяется автоматически (`arch:check`).
 > - **Монорепо на npm workspaces**, пакеты `@swag/<имя>`: ядра `api-core`, `orchestrator-core`, `agent-core`; оболочки `apps/api`, `apps/orchestrator`, `apps/agent`; общие `contracts`, `config`. Пока это заглушки.
-> - **Всё работает в Docker**: `npm run up` поднимает Postgres, MinIO, NATS, `api` и `orchestrator`; `npm run dev` делает то же с перезапуском сервиса при правке кода.
+> - **Всё работает в Docker**: `npm run up` поднимает Postgres, NATS, `api` и `orchestrator`; MinIO — в спеке 005; `npm run dev` делает то же с перезапуском сервиса при правке кода.
 > - **Рантайм — Node 24 LTS везде**, включая агента в песочнице. Время холодного старта агента замеряется как точка отсчёта.
 > - **Одна команда проверки** `npm run check`: формат → линтер → типы → границы ядер → сборка → тесты → `spec:check`. Её запускают агент перед сдачей и GitHub Actions на каждый push.
 > - **Лицензия**: все пакеты `private`, ссылаются на проприетарный `LICENSE`.
@@ -32,7 +32,7 @@ updated: 2026-10-21
 - ядра-заглушки и оболочки-заглушки по правилам из 4.2;
 - `npm run arch:check` — автоматическая проверка границ ядер;
 - общая конфигурация TypeScript, линтера, форматтера, тестов;
-- `compose.yaml`: Postgres, MinIO (+ создание бакета), NATS с JetStream, сервисы `api` и `orchestrator`;
+- `compose.yaml`: Postgres, NATS с JetStream, сервисы `api` и `orchestrator`;
 - Dockerfile для `api`, `orchestrator` и `agent` (Node);
 - эндпоинт `GET /health` у `api` и `orchestrator`;
 - скрипты `infra:check`, `spec:check`, `arch:check`, `check`;
@@ -43,6 +43,7 @@ updated: 2026-10-21
 **Не входит:**
 - схемы БД, событий и ledger (спека 001);
 - LiteLLM (спека 003);
+- MinIO, переменные `S3_*` и выбор образа — спека 005, где хранилище впервые нужно (Q-6);
 - доступ `orchestrator` к Docker socket и создание песочниц (спека 004);
 - любая бизнес-логика: в ядрах только заглушка `info()` со smoke-тестом;
 - адаптеры инфраструктуры (Postgres, NATS, Docker, S3) — появляются в спеках, где нужны;
@@ -59,7 +60,7 @@ updated: 2026-10-21
 | REQ-000-2 | TypeScript MUST работать в режиме `strict`, ESM, с общим `tsconfig.base.json`. | MUST |
 | REQ-000-3 | Версии MUST быть зафиксированы: Node 24 LTS (`.nvmrc`, `engines.node`), npm (`engines.npm`), `engine-strict=true` в `.npmrc`; базовый образ Docker — `node:24.x` с точным тегом. | MUST |
 | REQ-000-4 | `api`, `orchestrator` и `agent` MUST работать на Node 24 в Docker. | MUST |
-| REQ-000-5 | `compose.yaml` в корне MUST поднимать `postgres`, `minio`, `minio-init` (создаёт бакет), `nats` (JetStream), `api`, `orchestrator` с healthcheck. Версии образов — точный тег, `latest` запрещён. | MUST |
+| REQ-000-5 | `compose.yaml` в корне MUST поднимать `postgres`, `nats` (JetStream), `api`, `orchestrator` с healthcheck. Версии образов — точный тег, `latest` запрещён. | MUST |
 | REQ-000-6 | `npm run dev` MUST поднимать систему в режиме разработки: при изменении файла в `src` оболочки или ядра сервис перезапускается в контейнере без пересборки образа. Способ (нативный type stripping Node 24, `tsx`, `tsc --watch`) выбирает агент и фиксирует в журнале. | MUST |
 | REQ-000-7 | Корневые npm-скрипты MUST работать из чистого клона: `build`, `lint`, `typecheck`, `arch:check`, `test`, `format:check`, `spec:check`, `check`, `up`, `dev`, `down`, `infra:check`. | MUST |
 | REQ-000-8 | `npm run check` MUST запускать по порядку `format:check`, `lint`, `typecheck`, `arch:check`, `build`, `test`, `spec:check`, останавливаться на первой ошибке и завершаться с её кодом. | MUST |
@@ -147,9 +148,6 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
 |---|---|---|
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `swag` / `swag-local` / `swag` | Postgres в compose |
 | `DATABASE_URL` | `postgres://swag:swag-local@postgres:5432/swag` | для сервисов внутри compose |
-| `S3_ENDPOINT` | `http://minio:9000` | MinIO |
-| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `swag` / `swag-local-secret` | MinIO, только локально |
-| `S3_BUCKET` | `swag` | создаётся `minio-init` |
 | `NATS_URL` | `nats://nats:4222` | NATS |
 | `API_PORT` / `ORCHESTRATOR_PORT` | `3000` / `3001` | порты сервисов |
 
@@ -159,10 +157,6 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
 // packages/config/src/index.ts
 export const BaseConfig = z.object({
   DATABASE_URL: z.string().url(),
-  S3_ENDPOINT: z.string().url(),
-  S3_ACCESS_KEY: z.string().min(1),
-  S3_SECRET_KEY: z.string().min(1),
-  S3_BUCKET: z.string().min(1),
   NATS_URL: z.string().url(),
 });
 export function loadConfig<T extends z.ZodTypeAny>(schema: T, env = process.env): z.infer<T>;
@@ -193,7 +187,7 @@ export function loadConfig<T extends z.ZodTypeAny>(schema: T, env = process.env)
 
 ### 4.7. `npm run infra:check`
 
-Проверяет с хоста: Postgres (`select 1`), MinIO (бакет `S3_BUCKET` существует), NATS (подключение + JetStream `accountInfo`), `api` и `orchestrator` (`/health` → 200). Печатает статус каждого. Выход 0 — всё доступно, иначе 1.
+Проверяет с хоста: Postgres (`select 1`), NATS (подключение + JetStream `accountInfo`), `api` и `orchestrator` (`/health` → 200). Печатает статус каждого. Выход 0 — всё доступно, иначе 1.
 
 ## 5. Критерии приёмки
 
@@ -263,7 +257,8 @@ export function loadConfig<T extends z.ZodTypeAny>(schema: T, env = process.env)
   **Ответ:** Node 24 везде, включая агента; Bun и Deno не используем. Bun вернёмся рассматривать, только если замер старта агента (NFR-000-3 и тёплый пул в 004) покажет, что рантайм — узкое место. *(человек, 2026-10-21)*
 - [x] **Q-5.** Консольная оболочка (`apps/cli`) в 000? *(Claude, 2026-10-21)*
   **Ответ:** нет. Основной вход для пользователя — UI; консоль — просто ещё один адаптер к платформе, добавим, если понадобится. *(человек, 2026-10-21)*
-- [ ] **Q-6.** Из какого образа поднимать MinIO (REQ-000-5)? Официальные образы недоступны: `docker pull minio/minio` → «repository does not exist», `quay.io/minio/minio` → «unauthorized» (проверено 2026-10-21; MinIO прекратил публикацию community-образов, minio/minio#21647). Варианты: **(а)** `pgsty/minio:RELEASE.2026-08-04T00-00-00Z` + `pgsty/mc:RELEASE.2026-10-18T00-00-00Z` — community-форк Pigsty, 2,3 млн загрузок, API MinIO без изменений, правка спеки минимальна (рекомендую); **(б)** `alpine/minio:RELEASE.2025-10-15T17-29-55Z` — сборка из исходников, но последняя от 2025-10 и нет образа `mc`, бакет пришлось бы создавать другим клиентом; **(в)** собирать MinIO из исходников своим Dockerfile — полный контроль, но сборка Go в `npm run up` и поддержка на нас; **(г)** заменить MinIO на другое S3-совместимое хранилище (SeaweedFS, Garage, RustFS) — меняет роадмап и спеку 005; **(д)** Docker Hardened Image `dhi.io/minio` — отдаёт «unauthorized» без `docker login dhi.io`, то есть логин в Docker нужен каждому, кто запускает `npm run up` с чистого клона; **(е)** убрать MinIO из 000 и перенести выбор в спеку 005 (там он впервые нужен): из REQ-000-5, 4.3 (`S3_*` в `BaseConfig`), 4.7 и AC-000-11 уходит MinIO. От ответа зависят только `minio`/`minio-init` в `compose.yaml` и AC-000-11. *(Claude, 2026-10-21)*
+- [x] **Q-6.** Из какого образа поднимать MinIO (REQ-000-5)? Официальные образы недоступны: `docker pull minio/minio` → «repository does not exist», `quay.io/minio/minio` → «unauthorized» (проверено 2026-10-21; MinIO прекратил публикацию community-образов, minio/minio#21647). Варианты: **(а)** `pgsty/minio:RELEASE.2026-08-04T00-00-00Z` + `pgsty/mc:RELEASE.2026-10-18T00-00-00Z` — community-форк Pigsty, 2,3 млн загрузок, API MinIO без изменений, правка спеки минимальна (рекомендую); **(б)** `alpine/minio:RELEASE.2025-10-15T17-29-55Z` — сборка из исходников, но последняя от 2025-10 и нет образа `mc`, бакет пришлось бы создавать другим клиентом; **(в)** собирать MinIO из исходников своим Dockerfile — полный контроль, но сборка Go в `npm run up` и поддержка на нас; **(г)** заменить MinIO на другое S3-совместимое хранилище (SeaweedFS, Garage, RustFS) — меняет роадмап и спеку 005; **(д)** Docker Hardened Image `dhi.io/minio` — отдаёт «unauthorized» без `docker login dhi.io`, то есть логин в Docker нужен каждому, кто запускает `npm run up` с чистого клона; **(е)** убрать MinIO из 000 и перенести выбор в спеку 005 (там он впервые нужен): из REQ-000-5, 4.3 (`S3_*` в `BaseConfig`), 4.7 и AC-000-11 уходит MinIO. От ответа зависят только `minio`/`minio-init` в `compose.yaml` и AC-000-11. *(Claude, 2026-10-21)*
+  **Ответ:** вариант (е): MinIO из 000 убран, выбор образа — в спеке 005. *(человек, 2026-10-21)*
 
 ## 10. Журнал реализации
 
