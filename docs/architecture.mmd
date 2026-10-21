@@ -1,13 +1,14 @@
 flowchart TB
-    UI["UI (Angular)<br/>граф роя, деньги"]
+    UI["UI (Angular)<br/>кабинет, админка,<br/>граф роя, деньги"]
 
     subgraph CP["Control plane"]
-        API["API / Coordinator<br/>план роя"]
+        ID["Identity<br/>вход, токены, роли, права"]
+        API["API / Coordinator<br/>план роя, баланс, доступ"]
         ORCH["Orchestrator<br/>песочницы, ключи, сети"]
         REG["Skill Registry"]
         LLM["LiteLLM Proxy<br/>вирт. ключи, $, бюджет"]
         EV["Event Stream"]
-        PG[("Postgres<br/>ledger, история, события")]
+        PG[("Postgres<br/>ledger, баланс, история, события")]
         S3[("S3 / MinIO<br/>файлы, скиллы, артефакты")]
     end
 
@@ -25,7 +26,9 @@ flowchart TB
     end
 
     UI <-->|WebSocket| EV
-    UI --> API
+    UI -->|вход| ID
+    UI -->|токен| API
+    ID --> PG
     API --> ORCH
     ORCH --> REG
     ORCH -->|"создаёт песочницы,<br/>выпускает ключи"| SA
