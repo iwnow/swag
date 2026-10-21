@@ -1,7 +1,7 @@
 ---
 id: "000"
 title: Каркас проекта
-status: ready
+status: review
 roadmap_stage: 0
 depends_on: []
 superseded_by: null
@@ -13,7 +13,7 @@ updated: 2026-10-21
 > **Коротко.** Пустой, но рабочий репозиторий Swag, в котором агент может разрабатывать по спекам.
 > - **Ядро отдельно от оболочки.** Логика каждого сервиса — в пакете-ядре `packages/<имя>-core` на чистом TypeScript, без фреймворков, Node API и инфраструктуры. Оболочка в `apps/<имя>` (Fastify, процесс агента в песочнице, позже UI) только подключает ядро и даёт к нему вход. Правило проверяется автоматически (`arch:check`).
 > - **Монорепо на npm workspaces**, пакеты `@swag/<имя>`: ядра `api-core`, `orchestrator-core`, `agent-core`; оболочки `apps/api`, `apps/orchestrator`, `apps/agent`; общие `contracts`, `config`. Пока это заглушки.
-> - **Всё работает в Docker**: `npm run up` поднимает Postgres, MinIO, NATS, `api` и `orchestrator`; `npm run dev` делает то же с перезапуском сервиса при правке кода.
+> - **Всё работает в Docker**: `npm run up` поднимает Postgres, NATS, `api` и `orchestrator`; MinIO — в спеке 005; `npm run dev` делает то же с перезапуском сервиса при правке кода.
 > - **Рантайм — Node 24 LTS везде**, включая агента в песочнице. Время холодного старта агента замеряется как точка отсчёта.
 > - **Одна команда проверки** `npm run check`: формат → линтер → типы → границы ядер → сборка → тесты → `spec:check`. Её запускают агент перед сдачей и GitHub Actions на каждый push.
 > - **Лицензия**: все пакеты `private`, ссылаются на проприетарный `LICENSE`.
@@ -32,7 +32,7 @@ updated: 2026-10-21
 - ядра-заглушки и оболочки-заглушки по правилам из 4.2;
 - `npm run arch:check` — автоматическая проверка границ ядер;
 - общая конфигурация TypeScript, линтера, форматтера, тестов;
-- `compose.yaml`: Postgres, MinIO (+ создание бакета), NATS с JetStream, сервисы `api` и `orchestrator`;
+- `compose.yaml`: Postgres, NATS с JetStream, сервисы `api` и `orchestrator`;
 - Dockerfile для `api`, `orchestrator` и `agent` (Node);
 - эндпоинт `GET /health` у `api` и `orchestrator`;
 - скрипты `infra:check`, `spec:check`, `arch:check`, `check`;
@@ -43,6 +43,7 @@ updated: 2026-10-21
 **Не входит:**
 - схемы БД, событий и ledger (спека 001);
 - LiteLLM (спека 003);
+- MinIO, переменные `S3_*` и выбор образа — спека 005, где хранилище впервые нужно (Q-6);
 - доступ `orchestrator` к Docker socket и создание песочниц (спека 004);
 - любая бизнес-логика: в ядрах только заглушка `info()` со smoke-тестом;
 - адаптеры инфраструктуры (Postgres, NATS, Docker, S3) — появляются в спеках, где нужны;
@@ -59,7 +60,7 @@ updated: 2026-10-21
 | REQ-000-2 | TypeScript MUST работать в режиме `strict`, ESM, с общим `tsconfig.base.json`. | MUST |
 | REQ-000-3 | Версии MUST быть зафиксированы: Node 24 LTS (`.nvmrc`, `engines.node`), npm (`engines.npm`), `engine-strict=true` в `.npmrc`; базовый образ Docker — `node:24.x` с точным тегом. | MUST |
 | REQ-000-4 | `api`, `orchestrator` и `agent` MUST работать на Node 24 в Docker. | MUST |
-| REQ-000-5 | `compose.yaml` в корне MUST поднимать `postgres`, `minio`, `minio-init` (создаёт бакет), `nats` (JetStream), `api`, `orchestrator` с healthcheck. Версии образов — точный тег, `latest` запрещён. | MUST |
+| REQ-000-5 | `compose.yaml` в корне MUST поднимать `postgres`, `nats` (JetStream), `api`, `orchestrator` с healthcheck. Версии образов — точный тег, `latest` запрещён. | MUST |
 | REQ-000-6 | `npm run dev` MUST поднимать систему в режиме разработки: при изменении файла в `src` оболочки или ядра сервис перезапускается в контейнере без пересборки образа. Способ (нативный type stripping Node 24, `tsx`, `tsc --watch`) выбирает агент и фиксирует в журнале. | MUST |
 | REQ-000-7 | Корневые npm-скрипты MUST работать из чистого клона: `build`, `lint`, `typecheck`, `arch:check`, `test`, `format:check`, `spec:check`, `check`, `up`, `dev`, `down`, `infra:check`. | MUST |
 | REQ-000-8 | `npm run check` MUST запускать по порядку `format:check`, `lint`, `typecheck`, `arch:check`, `build`, `test`, `spec:check`, останавливаться на первой ошибке и завершаться с её кодом. | MUST |
@@ -147,9 +148,6 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
 |---|---|---|
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `swag` / `swag-local` / `swag` | Postgres в compose |
 | `DATABASE_URL` | `postgres://swag:swag-local@postgres:5432/swag` | для сервисов внутри compose |
-| `S3_ENDPOINT` | `http://minio:9000` | MinIO |
-| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `swag` / `swag-local-secret` | MinIO, только локально |
-| `S3_BUCKET` | `swag` | создаётся `minio-init` |
 | `NATS_URL` | `nats://nats:4222` | NATS |
 | `API_PORT` / `ORCHESTRATOR_PORT` | `3000` / `3001` | порты сервисов |
 
@@ -159,10 +157,6 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
 // packages/config/src/index.ts
 export const BaseConfig = z.object({
   DATABASE_URL: z.string().url(),
-  S3_ENDPOINT: z.string().url(),
-  S3_ACCESS_KEY: z.string().min(1),
-  S3_SECRET_KEY: z.string().min(1),
-  S3_BUCKET: z.string().min(1),
   NATS_URL: z.string().url(),
 });
 export function loadConfig<T extends z.ZodTypeAny>(schema: T, env = process.env): z.infer<T>;
@@ -193,7 +187,7 @@ export function loadConfig<T extends z.ZodTypeAny>(schema: T, env = process.env)
 
 ### 4.7. `npm run infra:check`
 
-Проверяет с хоста: Postgres (`select 1`), MinIO (бакет `S3_BUCKET` существует), NATS (подключение + JetStream `accountInfo`), `api` и `orchestrator` (`/health` → 200). Печатает статус каждого. Выход 0 — всё доступно, иначе 1.
+Проверяет с хоста: Postgres (`select 1`), NATS (подключение + JetStream `accountInfo`), `api` и `orchestrator` (`/health` → 200). Печатает статус каждого. Выход 0 — всё доступно, иначе 1.
 
 ## 5. Критерии приёмки
 
@@ -239,17 +233,17 @@ export function loadConfig<T extends z.ZodTypeAny>(schema: T, env = process.env)
 
 ## 8. Задачи для агента
 
-- [ ] **T-1.** Корень: `package.json` (workspaces, `engines`, `private`, `license`, скрипты), `.npmrc`, `.nvmrc`, `tsconfig.base.json`, `.gitignore`, `.editorconfig`. Закрывает: REQ-000-1…3, REQ-000-13. Готово, когда `npm install` проходит.
-- [ ] **T-2.** Линтер, форматтер, Vitest; workspaces из 4.1 с заглушкой и smoke-тестом; `npm run check`; тест полей лицензии. Закрывает: REQ-000-7, REQ-000-8, REQ-000-14, AC-000-1, AC-000-9, AC-000-14.
-- [ ] **T-3.** `packages/contracts` (`ServiceInfo`) и ядра `api-core`, `orchestrator-core`, `agent-core` по 4.2: фабрика, `info()`, `tsconfig` без DOM и `types`, тесты. Закрывает: REQ-000-15, AC-000-16, AC-000-20.
-- [ ] **T-4.** `scripts/arch-check.ts` и тесты на фикстурах; включить в `npm run check`. Закрывает: REQ-000-17, AC-000-17…19.
-- [ ] **T-5.** `packages/config`: `BaseConfig`, `loadConfig`, тесты. Закрывает: REQ-000-9, AC-000-2, AC-000-3.
-- [ ] **T-6.** Оболочки `apps/api` и `apps/orchestrator` на Fastify: конфиг → фабрика ядра → контроллер `/health`; тесты через `inject`. Оболочка `apps/agent` на Node. Закрывает: REQ-000-16, AC-000-4, AC-000-5.
-- [ ] **T-7.** Dockerfile `api`, `orchestrator`, `agent` (Node), `compose.yaml`, `.env.example`, `npm run up/dev/down`, `infra:check`. Закрывает: REQ-000-4…6, REQ-000-10, AC-000-10…13.
-- [ ] **T-8.** Замер холодного старта `agent`. Закрывает: NFR-000-3.
-- [ ] **T-9.** `scripts/spec-check.ts` и тесты на фикстурах. Закрывает: REQ-000-11, AC-000-6…8.
-- [ ] **T-10.** GitHub Actions. Закрывает: REQ-000-12, AC-000-15.
-- [ ] **T-11.** Корневой README: требования (Docker, Node 24), запуск с нуля, список команд, правило «ядро и оболочка» со ссылкой на 4.2, ссылка на `LICENSE`.
+- [x] **T-1.** Корень: `package.json` (workspaces, `engines`, `private`, `license`, скрипты), `.npmrc`, `.nvmrc`, `tsconfig.base.json`, `.gitignore`, `.editorconfig`. Закрывает: REQ-000-1…3, REQ-000-13. Готово, когда `npm install` проходит.
+- [x] **T-2.** Линтер, форматтер, Vitest; workspaces из 4.1 с заглушкой и smoke-тестом; `npm run check`; тест полей лицензии. Закрывает: REQ-000-7, REQ-000-8, REQ-000-14, AC-000-1, AC-000-9, AC-000-14.
+- [x] **T-3.** `packages/contracts` (`ServiceInfo`) и ядра `api-core`, `orchestrator-core`, `agent-core` по 4.2: фабрика, `info()`, `tsconfig` без DOM и `types`, тесты. Закрывает: REQ-000-15, AC-000-16, AC-000-20.
+- [x] **T-4.** `scripts/arch-check.ts` и тесты на фикстурах; включить в `npm run check`. Закрывает: REQ-000-17, AC-000-17…19.
+- [x] **T-5.** `packages/config`: `BaseConfig`, `loadConfig`, тесты. Закрывает: REQ-000-9, AC-000-2, AC-000-3.
+- [x] **T-6.** Оболочки `apps/api` и `apps/orchestrator` на Fastify: конфиг → фабрика ядра → контроллер `/health`; тесты через `inject`. Оболочка `apps/agent` на Node. Закрывает: REQ-000-16, AC-000-4, AC-000-5.
+- [x] **T-7.** Dockerfile `api`, `orchestrator`, `agent` (Node), `compose.yaml`, `.env.example`, `npm run up/dev/down`, `infra:check`. Закрывает: REQ-000-4…6, REQ-000-10, AC-000-10…13.
+- [x] **T-8.** Замер холодного старта `agent`. Закрывает: NFR-000-3.
+- [x] **T-9.** `scripts/spec-check.ts` и тесты на фикстурах. Закрывает: REQ-000-11, AC-000-6…8.
+- [x] **T-10.** GitHub Actions. Закрывает: REQ-000-12, AC-000-15.
+- [x] **T-11.** Корневой README: требования (Docker, Node 24), запуск с нуля, список команд, правило «ядро и оболочка» со ссылкой на 4.2, ссылка на `LICENSE`.
 
 ## 9. Открытые вопросы
 
@@ -263,8 +257,31 @@ export function loadConfig<T extends z.ZodTypeAny>(schema: T, env = process.env)
   **Ответ:** Node 24 везде, включая агента; Bun и Deno не используем. Bun вернёмся рассматривать, только если замер старта агента (NFR-000-3 и тёплый пул в 004) покажет, что рантайм — узкое место. *(человек, 2026-10-21)*
 - [x] **Q-5.** Консольная оболочка (`apps/cli`) в 000? *(Claude, 2026-10-21)*
   **Ответ:** нет. Основной вход для пользователя — UI; консоль — просто ещё один адаптер к платформе, добавим, если понадобится. *(человек, 2026-10-21)*
+- [x] **Q-6.** Из какого образа поднимать MinIO (REQ-000-5)? Официальные образы недоступны: `docker pull minio/minio` → «repository does not exist», `quay.io/minio/minio` → «unauthorized» (проверено 2026-10-21; MinIO прекратил публикацию community-образов, minio/minio#21647). Варианты: **(а)** `pgsty/minio:RELEASE.2026-08-04T00-00-00Z` + `pgsty/mc:RELEASE.2026-10-18T00-00-00Z` — community-форк Pigsty, 2,3 млн загрузок, API MinIO без изменений, правка спеки минимальна (рекомендую); **(б)** `alpine/minio:RELEASE.2025-10-15T17-29-55Z` — сборка из исходников, но последняя от 2025-10 и нет образа `mc`, бакет пришлось бы создавать другим клиентом; **(в)** собирать MinIO из исходников своим Dockerfile — полный контроль, но сборка Go в `npm run up` и поддержка на нас; **(г)** заменить MinIO на другое S3-совместимое хранилище (SeaweedFS, Garage, RustFS) — меняет роадмап и спеку 005; **(д)** Docker Hardened Image `dhi.io/minio` — отдаёт «unauthorized» без `docker login dhi.io`, то есть логин в Docker нужен каждому, кто запускает `npm run up` с чистого клона; **(е)** убрать MinIO из 000 и перенести выбор в спеку 005 (там он впервые нужен): из REQ-000-5, 4.3 (`S3_*` в `BaseConfig`), 4.7 и AC-000-11 уходит MinIO. От ответа зависят только `minio`/`minio-init` в `compose.yaml` и AC-000-11. *(Claude, 2026-10-21)*
+  **Ответ:** вариант (е): MinIO из 000 убран, выбор образа — в спеке 005. *(человек, 2026-10-21)*
 
 ## 10. Журнал реализации
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+| 2026-10-21 | `spec/000-foundation` / `0707479` | T-1…T-6, T-8…T-11 готовы, `npm run check` зелёный. T-7 сделана без `minio` и `minio-init`, спека переведена в `blocked` по Q-6. | См. строки ниже. |
+| 2026-10-21 | — | **Версии.** Node 24.20.0 (`.nvmrc`, образ `node:24.20.0-alpine3.23`), npm 11.19, TypeScript 6.0.3, ESLint 9.39.5 + typescript-eslint 8.72, Prettier 3.9.10, Vitest 5.0.5, zod 4.6.7, Fastify 5.12.7; образы `postgres:17.11-alpine3.23`, `nats:2.15.1-alpine3.22`. | TypeScript 6, а не 7: в TypeScript 7.0 (порт на Go) нет compiler API, а он нужен `arch:check` (4.5); typescript-eslint поддерживает TS < 6.1. |
+| 2026-10-21 | — | **Исполнение TypeScript (REQ-000-6).** Код в контейнерах и скрипты запускаются из исходников нативным type stripping Node 24 (`node apps/api/src/main.ts`), пакеты экспортируют `./src/index.ts`. `build` = `tsc -b` по project references (результат в `dist`, нужен для проверки сборки). `npm run dev` = `docker compose watch` с `action: sync+restart`: изменённые файлы копируются в контейнер, контейнер перезапускается, образ не пересобирается. | `node --watch` внутри контейнера не годится: sync подменяет файл, и Node перезапускался только на первую правку (проверено с `--watch` и с `--watch-path`). |
+| 2026-10-21 | — | **Раскладка тестов.** Тесты пакетов — в `<пакет>/test/`, не в `src`: `arch:check` проверяет все импорты в `src` ядра, а тесты импортируют `vitest`; типы тестов (с `@types/node`) проверяет отдельный `tsconfig.dev.json`, чтобы `process` не стал виден в ядрах. `typecheck` = `tsc -b && tsc -p tsconfig.dev.json`, поэтому тоже пишет `dist` (project references не работают с `noEmit`). | — |
+| 2026-10-21 | — | **Решения на выбор агента.** `infra:check` берёт адреса из `.env` и подставляет `127.0.0.1` вместо имени сервиса: порты опубликованы с теми же номерами (комментарий в `.env.example`). Схемы `ApiConfig` и `OrchestratorConfig` (`BaseConfig` + порт) лежат в `@swag/config`, чтобы оболочкам не нужен был zod. Оболочки слушают `0.0.0.0` внутри контейнера, наружу порт опубликован только на `127.0.0.1`. Образ `agent` собирается сервисом compose с `profiles: [agent]` и в `npm run up` не стартует. `/health` пишет в лог только предупреждения: healthcheck опрашивает его каждые 2 с. | — |
+| 2026-10-21 | — | **Трактовки 4.5 и 4.6.** `arch:check` разрешает подпути пакетов белого списка (`zod/v4`); помимо `import`, `export … from` и `import()` проверяет `import x = require()` и `import('x').T` в типах; `import()` с вычисляемым спецификатором считает нарушением (`<не литерал>`). `spec:check` кроме `node_modules` и `dist` пропускает скрытые каталоги (`.git`, `.claude`): в основном чекауте в `.claude/worktrees` лежат чужие worktree с тестами, они давали бы ложные совпадения. AC-000-1 закрыт тестом `scripts/build.test.ts` (`npm run build` из рабочей копии); «чистый клон + `npm ci`» проверяет CI. | Расширения, а не изменения поведения из 4.5–4.6. |
+| 2026-10-21 | — | **AC-000-11 `[manual]`, первый прогон (до ответа на Q-6).** `npm run up` со сборкой образов: postgres, nats, api, orchestrator healthy за 24 с; `infra:check` падал только на `minio` (`ECONNREFUSED 127.0.0.1:9000`). | — |
+| 2026-10-21 | — | **AC-000-12 `[manual]`.** `npm run dev`, затем скрипт меняет в `packages/api-core/src/index.ts` `version: deps.version` на `` `${deps.version}-reloaded` `` и опрашивает `GET /health` раз в 100 мс; потом откатывает правку. Три цикла: новое значение через 1391, 1402, 1356 мс, откат через 1402, 1470, 1480 мс (лимит 5 с). Образ не пересобирался, `Config.Cmd` контейнера — `node apps/api/src/main.ts`. | — |
+| 2026-10-21 | — | **AC-000-13 `[manual]`.** `docker build -f apps/agent/Dockerfile -t swag-agent:dev .` и `docker run --rm swag-agent:dev` выводят `node v24.20.0`, `agent 0.0.0`, `agent ok`, выход 0. | — |
+| 2026-10-21 | — | **AC-000-14 `[manual]`.** В `apps/api/src/app.ts` добавлена отформатированная функция с неиспользуемой переменной. `npm run check`: выполнены `format:check`, затем `lint`; ошибка `'unused' is assigned a value but never used … @typescript-eslint/no-unused-vars`, `typecheck` и следующие шаги не запускались, выход 1. После отката: все семь шагов, выход 0. | — |
+| 2026-10-21 | `spec/000-foundation` / `1cf3449` | **AC-000-15 `[manual]`.** Push ветки по команде человека; прогон [CI #39613694861](https://github.com/iwnow/swag/actions/runs/39613694861): `npm ci` — success (4 с), `npm run check` — success (10 с), job `check` — success. | — |
+| 2026-10-21 | — | **AC-000-20 `[manual]`.** В `packages/api-core/src/index.ts` добавлено `export const leak = process.env.SECRET;`. `npm run typecheck` → `packages/api-core/src/index.ts(16,21): error TS2591: Cannot find name 'process'`, выход ≠ 0. Правка откачена, `typecheck` снова зелёный. | — |
+| 2026-10-21 | — | **NFR-000-1.** `npm test`: 12 файлов, 23 теста, 1,9 с (лимит 30 с). **NFR-000-2:** workflow на GitHub Actions — 28 с от старта job до завершения (лимит 5 мин), прогон по ссылке в строке AC-000-15. | — |
+| 2026-10-21 | — | **NFR-000-3.** Образ `swag-agent:dev`, Windows 10, Docker Desktop 29.4.1, 10 запусков `docker run --rm` подряд. «Старт процесса» — метка `Date.now()` первой строкой `node -e` в контейнере (Node уже загрузился, до импорта заглушки) минус момент вызова на хосте; «agent ok» — когда строка пришла на stdout хоста; «всего» — до завершения `docker run`. Часы хоста и VM Docker Desktop могут расходиться на единицы мс. | Через `node -e` с импортом `main.ts`, а не через entrypoint образа: в BusyBox `date` нет миллисекунд. |
+|  |  | старт процесса: медиана 257 мс, p95 261 мс (249…261) |  |
+|  |  | вывод `agent ok`: медиана 300,5 мс, p95 310 мс (289…310) |  |
+|  |  | завершение `docker run`: медиана 428,5 мс, p95 462 мс (416…462) |  |
+| 2026-10-21 | `spec/000-foundation` / `01363a0` | **Q-6 решён человеком, вариант (е).** Спека поправлена коммитом «docs: spec:000 Q-6 решён» (REQ-000-5, 4.3, `BaseConfig`, 4.7, «Не входит», реестр: MinIO → 005). В коде убраны `S3_*` из `BaseConfig`, тестов и `.env.example`, проверка MinIO из `infra:check`, зависимость `@aws-sdk/client-s3`. T-7 закрыта. | — |
+| 2026-10-21 | — | **AC-000-11 `[manual]`.** `docker compose down -v`, затем `npm run up` (образы в кэше): все 4 контейнера healthy за 7,4 с (лимит 90 с), выход 0. `npm run infra:check`: `ok postgres`, `ok nats`, `ok api`, `ok orchestrator`, выход 0. `docker compose ps`: порты `127.0.0.1:3000`, `127.0.0.1:3001`, `127.0.0.1:4222`, `127.0.0.1:5432`. С пересборкой образов `up` занимал 24 с. | — |
+| 2026-10-21 | — | **Предложение (не в коде), вынесено в спеку 011 реестра по решению человека.** Требование 4.5 «через TypeScript compiler API» привязывает `arch:check` к TypeScript ≤ 6: в TypeScript 7 этого API нет. Развязать можно парсером, не зависящим от версии TS (`oxc-parser`, `es-module-lexer`), или правилом ESLint `no-restricted-imports` для `packages/*-core`. Сейчас переход на TS 7 так же блокирует typescript-eslint 8.72 (TS < 6.1). | — |
+| 2026-10-21 | — | Вопросы, которые не блокируют 000, но требуют решения позже, собраны в [questions.md](questions.md): D-1 (TypeScript 7 и `arch:check`, → 011), D-2 (образ MinIO, → 005), D-3 (трактовки 4.5 и 4.6), D-4 (AC-000-1 и чистый клон). | — |

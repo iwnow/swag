@@ -1,0 +1,28 @@
+# `npm run dev`: compose watch синхронизирует исходники в контейнер и перезапускает его, образ не пересобирается.
+# Не node --watch: sync подменяет файлы, и слежка Node внутри контейнера срабатывает только на первую правку.
+services:
+  api:
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./packages
+          target: /repo/packages
+          ignore: ['**/test/', '**/dist/']
+        - action: sync+restart
+          path: ./apps/api/src
+          target: /repo/apps/api/src
+        - action: rebuild
+          path: ./package-lock.json
+
+  orchestrator:
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./packages
+          target: /repo/packages
+          ignore: ['**/test/', '**/dist/']
+        - action: sync+restart
+          path: ./apps/orchestrator/src
+          target: /repo/apps/orchestrator/src
+        - action: rebuild
+          path: ./package-lock.json
