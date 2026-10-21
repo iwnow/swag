@@ -6,6 +6,7 @@ export function buildApp(
   options: FastifyServerOptions = {},
 ): FastifyInstance {
   const app = Fastify(options);
-  app.get('/health', async () => ({ status: 'ok', ...core.info() }));
+  // healthcheck compose опрашивает каждые 2 с — в лог только предупреждения.
+  app.get('/health', { logLevel: 'warn' }, async () => ({ status: 'ok', ...core.info() }));
   return app;
 }
