@@ -25,20 +25,11 @@
 
 ## Архитектура
 
-```
-                ┌──────────────────────── Control plane ────────────────────────┐
-  UI (Angular)  │  API / Coordinator ── Orchestrator ── Skill Registry          │
-   граф, $  ◄───┤        │                   │                                  │
-   WebSocket    │   Event Stream ◄──── LiteLLM Proxy (вирт. ключи, $, бюджет)   │
-                │        │                   ▲                                  │
-                │   Postgres (ledger, история, события)   S3/MinIO (файлы)      │
-                └────────────────────────────┼──────────────────────────────────┘
-                                             │ только LiteLLM + шина
-        ┌──────── Swarm A (своя сеть, свой аккаунт шины) ────────┐   ┌── Swarm B ──┐
-        │  [agent-1] ◄──► NATS account A ◄──► [agent-2]          │   │   ...       │
-        │  /skills/x:ro  /work(volume)          /skills/y:ro     │   │             │
-        └────────────────────────────────────────────────────────┘   └─────────────┘
-```
+![Архитектура платформы](docs/architecture.svg)
+
+Исходник диаграммы — [docs/architecture.mmd](docs/architecture.mmd) (Mermaid).
+
+Песочницам доступны только LiteLLM и своя шина: выхода в интернет и к другим роям нет.
 
 ### 1. LiteLLM — единый формат и учёт денег
 - Агентный цикл пишется один раз на OpenAI-совместимом API (`messages`, `tools`, `tool_calls`, streaming) обычным OpenAI SDK. LiteLLM переводит запросы к Anthropic, Gemini, DeepSeek и локальным моделям. Модель агента — строка в плане роя, список моделей и fallback — в `litellm_config.yaml`.

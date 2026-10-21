@@ -1,0 +1,47 @@
+flowchart TB
+    UI["UI (Angular)<br/>граф роя, деньги"]
+
+    subgraph CP["Control plane"]
+        API["API / Coordinator<br/>план роя"]
+        ORCH["Orchestrator<br/>песочницы, ключи, сети"]
+        REG["Skill Registry"]
+        LLM["LiteLLM Proxy<br/>вирт. ключи, $, бюджет"]
+        EV["Event Stream"]
+        PG[("Postgres<br/>ledger, история, события")]
+        S3[("S3 / MinIO<br/>файлы, скиллы, артефакты")]
+    end
+
+    PROV["Провайдеры моделей<br/>Anthropic, OpenAI, DeepSeek, ..."]
+
+    subgraph SA["Swarm A: своя сеть, свой NATS account"]
+        A1["agent-1<br/>/skills/x:ro, /work"]
+        BUSA{{"NATS account A"}}
+        A2["agent-2<br/>/skills/y:ro, /work"]
+    end
+
+    subgraph SB["Swarm B: изолирован от A"]
+        B1["agent-1"]
+        BUSB{{"NATS account B"}}
+    end
+
+    UI <-->|WebSocket| EV
+    UI --> API
+    API --> ORCH
+    ORCH --> REG
+    ORCH -->|"создаёт песочницы,<br/>выпускает ключи"| SA
+    ORCH --> SB
+    REG -.->|read-only mount| A1
+    REG -.->|read-only mount| A2
+
+    A1 <--> BUSA
+    A2 <--> BUSA
+    B1 <--> BUSB
+
+    A1 -->|OpenAI-формат| LLM
+    A2 -->|OpenAI-формат| LLM
+    B1 -->|OpenAI-формат| LLM
+    LLM --> PROV
+    LLM -->|"callback: tokens, $"| EV
+    BUSA -->|bus.message| EV
+    EV --> PG
+    ORCH -->|снимки /work| S3
