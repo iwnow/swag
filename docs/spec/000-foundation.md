@@ -1,7 +1,7 @@
 ---
 id: "000"
 title: Каркас проекта
-status: ready
+status: in-progress
 roadmap_stage: 0
 depends_on: []
 superseded_by: null
