@@ -1,0 +1,42 @@
+Copyright (c) 2026 stacktracer. All rights reserved.
+
+PROPRIETARY LICENSE — SOURCE AVAILABLE FOR VIEWING ONLY
+
+This repository and all of its contents, including source code, documentation,
+specifications, diagrams, prompts, skills and architecture descriptions
+(the "Materials"), are the exclusive property of the copyright holder.
+
+The Materials are made publicly visible for reference only. No license or
+right of any kind is granted, whether express or implied, by estoppel or
+otherwise, except as explicitly stated below.
+
+Without the prior written permission of the copyright holder, you may NOT:
+
+  1. use, run, execute, install, deploy or evaluate the Materials or any part
+     of them, for any purpose, whether commercial, non-commercial, personal,
+     educational or internal;
+  2. copy, reproduce, modify, adapt, translate or create derivative works
+     based on the Materials;
+  3. distribute, publish, sublicense, sell, rent, lease or otherwise make the
+     Materials available to any third party, including by providing them as
+     a hosted or network service (SaaS);
+  4. use the Materials, in whole or in part, to train, fine-tune, evaluate or
+     otherwise develop machine learning or artificial intelligence models or
+     systems;
+  5. remove or alter this notice or any copyright notice in the Materials.
+
+The only permitted actions are viewing the Materials on GitHub and forking
+the repository within GitHub solely to the extent required by the GitHub
+Terms of Service. A fork grants no rights beyond those stated in this notice.
+
+Contributions (issues, pull requests, patches) are not accepted unless agreed
+in writing with the copyright holder in advance.
+
+THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS.
+
+For permission requests, contact the copyright holder via the GitHub profile
+of the repository owner.

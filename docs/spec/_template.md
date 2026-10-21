@@ -51,7 +51,7 @@ export const Example = z.object({ id: z.string().uuid() });
 
 | ID | Требование | Как измеряется |
 |---|---|---|
-| NFR-NNN-1 | p95 … < … мс | бенчмарк `pnpm bench:…` |
+| NFR-NNN-1 | p95 … < … мс | бенчмарк `npm run bench:…` |
 
 ## 7. Безопасность: что не должно сломаться
 
