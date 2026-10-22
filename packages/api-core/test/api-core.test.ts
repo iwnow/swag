@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createMemorySwarmStore } from '@swag/adapter-memory';
 import type { PlatformEventInput, SwarmLaunch } from '@swag/contracts';
-import { createApiCore, type OrchestratorClient } from '../src/index.ts';
+import {
+  createApiCore,
+  type LogContext,
+  type Logger,
+  type OrchestratorClient,
+} from '../src/index.ts';
 
 const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const body = (count: number) => ({
@@ -12,11 +17,35 @@ const body = (count: number) => ({
   })),
 });
 
+const T1 = '11111111111111111111111111111111';
+const T2 = '22222222222222222222222222222222';
+const T3 = '33333333333333333333333333333333';
+
+interface Entry {
+  level: 'debug' | 'info' | 'warn' | 'error';
+  msg: string;
+  ctx?: LogContext;
+}
+
 function setup(options: { launch?: () => Promise<void>; maxActiveSwarms?: number } = {}) {
   let counter = 0;
   const launches: SwarmLaunch[] = [];
   const stops: string[] = [];
+  const entries: Entry[] = [];
   const logs: string[] = [];
+  const at =
+    (level: Entry['level']) =>
+    (msg: string, ctx?: LogContext): void => {
+      entries.push(ctx === undefined ? { level, msg } : { level, msg, ctx });
+      logs.push(msg);
+    };
+  const log: Logger = {
+    debug: at('debug'),
+    info: at('info'),
+    warn: at('warn'),
+    error: at('error'),
+  };
+  const traceState = { current: T1 as string | null };
   const orchestrator: OrchestratorClient = {
     launch: vi.fn(async (launch: SwarmLaunch) => {
       launches.push(launch);
@@ -32,10 +61,11 @@ function setup(options: { launch?: () => Promise<void>; maxActiveSwarms?: number
     orchestrator,
     clock: { now: () => '2026-10-22T10:00:00.000Z' },
     ids: { uuid: () => uuid(++counter) },
-    log: { warn: (message) => logs.push(message) },
+    log,
+    trace: { currentTraceId: () => traceState.current },
     limits: { maxActiveSwarms: options.maxActiveSwarms ?? 3 },
   });
-  return { core, launches, stops, logs };
+  return { core, launches, stops, logs, entries, traceState };
 }
 
 const sys = (
@@ -202,6 +232,92 @@ describe('api-core', () => {
 
     const unknown = await core.stopSwarm(uuid(12345));
     expect(unknown.ok === false && unknown.error.code).toBe('not_found');
+  });
+
+  it('AC-016-4: swarm.created и swarm.failed несут traceId порта, bus.message — текущий, событие из шины — свой', async () => {
+    const { core, traceState } = setup();
+    const created = await core.createSwarm(body(1));
+    if (!created.ok) throw new Error('не создан');
+    const id = created.value.id;
+
+    const failing = setup({
+      launch: async () => {
+        throw new Error('connect ECONNREFUSED');
+      },
+    });
+    const failed = await failing.core.createSwarm(body(1));
+    if (!failed.ok) throw new Error('не создан');
+    const failedEvents = failing.core.getEvents(failed.value.id, 0);
+    expect(failedEvents.ok && failedEvents.value.map((e) => [e.type, e.traceId])).toEqual([
+      ['swarm.created', T1],
+      ['swarm.failed', T1],
+    ]);
+
+    traceState.current = T2;
+    core.ingestMessage({
+      id: uuid(8001),
+      swarmId: id,
+      from: 'user',
+      to: 'agent-1',
+      text: 'T',
+      ts: '2026-10-22T10:00:02.000Z',
+    });
+    core.ingestEvent({
+      ...sys(id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
+      traceId: T3,
+    });
+    const events = core.getEvents(id, 0);
+    expect(events.ok && events.value.map((e) => [e.type, e.traceId])).toEqual([
+      ['swarm.created', T1],
+      ['bus.message', T2],
+      ['swarm.started', T3],
+    ]);
+  });
+
+  it('AC-016-7: api-core пишет логи 4.8 — рой создан, оркестратор недоступен, отброшенные событие и сообщение', async () => {
+    const ok = setup();
+    const created = await ok.core.createSwarm(body(2));
+    if (!created.ok) throw new Error('не создан');
+    expect(ok.entries).toContainEqual({
+      level: 'info',
+      msg: 'swarm created',
+      ctx: { swarmId: created.value.id, agents: 2 },
+    });
+
+    const error = new Error('connect ECONNREFUSED');
+    const failing = setup({
+      launch: async () => {
+        throw error;
+      },
+    });
+    const failed = await failing.core.createSwarm(body(1));
+    if (!failed.ok) throw new Error('не создан');
+    expect(failing.entries).toContainEqual({
+      level: 'error',
+      msg: 'orchestrator unavailable',
+      ctx: { swarmId: failed.value.id, err: error },
+    });
+
+    ok.core.ingestEvent(
+      sys(uuid(7777), 2, {
+        type: 'swarm.started',
+        source: 'orchestrator',
+        agentId: null,
+        data: {},
+      }),
+    );
+    ok.core.ingestMessage({ id: 'не-uuid' });
+    const dropped = ok.entries.filter((e) => e.level === 'warn');
+    expect(dropped).toContainEqual({
+      level: 'warn',
+      msg: 'event dropped',
+      ctx: expect.objectContaining({ swarmId: uuid(7777), reason: 'unknown_swarm' }),
+    });
+    expect(dropped).toContainEqual({
+      level: 'warn',
+      msg: 'message dropped',
+      ctx: expect.objectContaining({ reason: 'invalid_schema' }),
+    });
   });
 
   it('subscribe отдаёт хвост после after, затем новые события по возрастанию seq', async () => {

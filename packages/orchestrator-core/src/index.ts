@@ -17,8 +17,23 @@ export interface Clock {
 export interface IdGenerator {
   uuid(): string;
 }
+// Спека 016, 4.3. Контекст лога — только id, числа и перечисления (REQ-016-10); err адаптер превращает в LogError.
+export type LogContext = {
+  swarmId?: string;
+  agentId?: string;
+  err?: unknown;
+  [key: string]: unknown;
+};
 export interface Logger {
-  warn(message: string, context?: Record<string, unknown>): void;
+  debug(msg: string, ctx?: LogContext): void;
+  info(msg: string, ctx?: LogContext): void;
+  warn(msg: string, ctx?: LogContext): void;
+  error(msg: string, ctx?: LogContext): void;
+}
+
+/** Текущий контекст трассировки. Ядро кладёт значение в конверт события, не разбирая его. */
+export interface TraceContext {
+  currentTraceId(): string | null; // null — вне трейса
 }
 export interface Timers {
   setTimeout(fn: () => void, ms: number): TimerId;
@@ -51,6 +66,7 @@ export interface OrchestratorCoreDeps {
   timers: Timers;
   ids: IdGenerator;
   log: Logger;
+  trace: TraceContext;
   agent: { template: string; stepDelayMs: number }; // как песочница попадает в сеть и к NATS — дело адаптера
   timeouts: { agentStartMs: number; swarmMs: number };
 }
@@ -89,6 +105,12 @@ type Outcome =
       data: { reason: 'agent_start_timeout' | 'swarm_timeout' | 'sandbox_error'; detail?: string };
     };
 
+const FINISHED_STATUS: Record<Outcome['type'], 'completed' | 'stopped' | 'failed'> = {
+  'swarm.completed': 'completed',
+  'swarm.stopped': 'stopped',
+  'swarm.failed': 'failed',
+};
+
 const ok = (): Result<void> => ({ ok: true, value: undefined });
 const fail = (code: string, message: string, issues?: OrchestratorError['issues']): Result<void> =>
   issues === undefined
@@ -96,16 +118,17 @@ const fail = (code: string, message: string, issues?: OrchestratorError['issues'
     : { ok: false, error: { code, message, issues } };
 
 export function createOrchestratorCore(deps: OrchestratorCoreDeps): OrchestratorCore {
-  const { sandboxes, bus, clock, timers, ids, log } = deps;
+  const { sandboxes, bus, clock, timers, ids, log, trace } = deps;
   const runs = new Map<string, Run>();
 
+  // traceId — из порта: таймеры и обработчики событий выполняются в контексте запуска роя (REQ-016-2).
   const envelope = (swarmId: string, agentId: AgentId | null) => ({
     id: ids.uuid(),
     swarmId,
     ts: clock.now(),
     source: 'orchestrator' as const,
     agentId,
-    traceId: null,
+    traceId: trace.currentTraceId(),
   });
 
   async function publish(event: PlatformEventInput): Promise<void> {
@@ -123,12 +146,7 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
       try {
         await sandboxes.remove(sandboxId);
       } catch (error) {
-        log.warn('не удалось удалить песочницу', {
-          swarmId,
-          agentId,
-          sandboxId,
-          reason: String(error),
-        });
+        log.warn('sandbox remove failed', { swarmId, agentId, err: error });
       }
     }
     for (const agent of run.launch.agents) {
@@ -141,6 +159,7 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
     } else {
       await publish({ ...envelope(swarmId, null), type: 'swarm.failed', data: outcome.data });
     }
+    log.info('swarm finished', { swarmId, status: FINISHED_STATUS[outcome.type] });
   }
 
   // Когда все агенты стартовали — задача первому агенту и swarm.started (4.6.2, шаги 4–5).
@@ -208,15 +227,19 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
         timers: [],
       };
       runs.set(launch.swarmId, run);
+      log.info('swarm launch', { swarmId: launch.swarmId, agents: launch.agents.length });
       run.timers.push(
-        timers.setTimeout(
-          () => void finish(run, { type: 'swarm.failed', data: { reason: 'swarm_timeout' } }),
-          deps.timeouts.swarmMs,
-        ),
+        timers.setTimeout(() => {
+          if (run.phase === 'finished') return;
+          log.error('swarm timeout', { swarmId: launch.swarmId });
+          void finish(run, { type: 'swarm.failed', data: { reason: 'swarm_timeout' } });
+        }, deps.timeouts.swarmMs),
       );
       run.timers.push(
         timers.setTimeout(() => {
           if (run.phase === 'creating' || run.phase === 'waiting') {
+            const missing = launch.agents.map((a) => a.id).filter((id) => !run.started.has(id));
+            log.error('agent start timeout', { swarmId: launch.swarmId, missing });
             void finish(run, { type: 'swarm.failed', data: { reason: 'agent_start_timeout' } });
           }
         }, deps.timeouts.agentStartMs),
@@ -237,6 +260,11 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
             data: { sandboxId },
           });
         } catch (error) {
+          log.error('sandbox create failed', {
+            swarmId: launch.swarmId,
+            agentId: agent.id,
+            err: error,
+          });
           await finish(run, {
             type: 'swarm.failed',
             data: {
@@ -262,7 +290,7 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
     async handleEvent(raw) {
       const parsed = PlatformEventInput.safeParse(raw);
       if (!parsed.success) {
-        log.warn('событие шины не прошло проверку схемы');
+        log.warn('event dropped', { reason: 'invalid_schema', issues: parsed.error.issues.length });
         return;
       }
       const event = parsed.data;

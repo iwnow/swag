@@ -10,8 +10,9 @@
 
 ## Что внутри сейчас
 
-- `createAgentCore(deps)` с портами `AgentBus`, `Clock`, `IdGenerator`, `Timers`, `Logger`.
-- Тесты: `test/agent-core.test.ts` — AC-001-19.
+- `createAgentCore(deps)` с портами `AgentBus`, `Clock`, `IdGenerator`, `Timers`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`.
+- Логи по таблице 4.8 спеки 016: `info agent started`, `debug message handled` (`messageId`, `from`); отброшенное сообщение — `warn message dropped` с `reason`, ошибка обработки — `error message failed` с `err`.
+- Тесты: `test/agent-core.test.ts` — AC-001-19, AC-016-6, AC-016-7.
 
 ## Ограничения
 
@@ -33,9 +34,12 @@
 - Сообщения обрабатываются цепочкой промисов (`queue`): следующее не начинается раньше окончания предыдущего (4.7.2, п. 3).
 - Сообщение, адресованное не этому агенту, отбрасывается с предупреждением (защита от ошибки подписки).
 - `agent.started` публикуется после подписки, как в 4.7.2 п. 1.
+- `traceId` в конверте — из обязательного порта `TraceContext` (016, Q-1): `agent.started` — в контексте старта агента, `agent.working`/`agent.result` — в контексте входящего сообщения. Ядро значение не разбирает.
+- В логах нет текста роли и сообщений, только id (016, Q-4).
 
 ## Спеки
 
 - 000 — заглушка.
 - 001 — 4.7.
+- 016 — порты `Logger` и `TraceContext`, логи 4.8.
 - 002 — агентный цикл с LLM.

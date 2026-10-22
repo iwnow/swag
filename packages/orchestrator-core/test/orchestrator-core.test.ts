@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BusMessage, PlatformEventInput } from '@swag/contracts';
 import {
   createOrchestratorCore,
+  type LogContext,
   type OrchestratorBus,
   type OrchestratorCore,
   type SandboxProvider,
@@ -11,8 +12,17 @@ import {
 const SWARM = '0b6f6d2e-6a4c-4c3e-9f5e-111111111111';
 const TEMPLATE = 'swag-agent:test';
 
+const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
+
+interface Entry {
+  level: 'debug' | 'info' | 'warn' | 'error';
+  msg: string;
+  ctx?: LogContext;
+}
+
 interface Fake {
   core: OrchestratorCore;
+  entries: Entry[]; // логи ядра
   log: string[]; // порядок публикаций: 'event:<type>' или 'message:<to>'
   events: PlatformEventInput[];
   messages: BusMessage[];
@@ -26,10 +36,18 @@ function setup(
     agentStartMs?: number;
     swarmMs?: number;
     initial?: Map<string, SandboxSpec>;
+    createError?: Error;
+    removeError?: Error;
   } = {},
 ): Fake {
   let counter = 0;
   const log: string[] = [];
+  const entries: Entry[] = [];
+  const at =
+    (level: Entry['level']) =>
+    (msg: string, ctx?: LogContext): void => {
+      entries.push(ctx === undefined ? { level, msg } : { level, msg, ctx });
+    };
   const events: PlatformEventInput[] = [];
   const messages: BusMessage[] = [];
   const sandboxes = options.initial ?? new Map<string, SandboxSpec>();
@@ -37,11 +55,13 @@ function setup(
 
   const provider: SandboxProvider = {
     create: async (spec) => {
+      if (options.createError && sandboxes.size > 0) throw options.createError; // падает второй
       const sandboxId = `sb-${++counter}`;
       sandboxes.set(sandboxId, spec);
       return { sandboxId };
     },
     remove: async (sandboxId) => {
+      if (options.removeError) throw options.removeError;
       sandboxes.delete(sandboxId);
     },
     list: async (match) =>
@@ -79,12 +99,14 @@ function setup(
       },
     },
     ids: { uuid: () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}` },
-    log: { warn: () => undefined },
+    log: { debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error') },
+    trace: { currentTraceId: () => TRACE },
     agent: { template: TEMPLATE, stepDelayMs: 1000 },
     timeouts: { agentStartMs: options.agentStartMs ?? 30000, swarmMs: options.swarmMs ?? 300000 },
   });
   return {
     core,
+    entries,
     log,
     events,
     messages,
@@ -237,6 +259,81 @@ describe('orchestrator-core', () => {
     expect(fake.events.at(-1)).toMatchObject({
       type: 'swarm.failed',
       data: { reason: 'swarm_timeout' },
+    });
+  });
+
+  it('AC-016-5: launch и таймаут старта — все события с traceId порта; логи swarm launch и agent start timeout с missing', async () => {
+    const fake = setup({ agentStartMs: 30000 });
+    await fake.core.launch(launchBody(3));
+    await fake.core.handleEvent(agentEvent('agent.started', 'agent-2', {}));
+    fake.runTimers(30000);
+    await waitMicrotasks();
+    const types = fake.events.map((e) => e.type);
+    expect(types).toContain('agent.launched');
+    expect(types).toContain('agent.stopped');
+    expect(types.at(-1)).toBe('swarm.failed');
+    for (const event of fake.events) expect(event.traceId).toBe(TRACE);
+    expect(fake.entries).toContainEqual({
+      level: 'info',
+      msg: 'swarm launch',
+      ctx: { swarmId: SWARM, agents: 3 },
+    });
+    expect(fake.entries).toContainEqual({
+      level: 'error',
+      msg: 'agent start timeout',
+      ctx: { swarmId: SWARM, missing: ['agent-1', 'agent-3'] },
+    });
+  });
+
+  it('AC-016-7: orchestrator-core пишет логи 4.8 — ошибка create, таймаут роя, завершение, ошибка remove', async () => {
+    const createError = new Error('no such image');
+    const broken = setup({ createError });
+    await broken.core.launch(launchBody(2));
+    expect(broken.entries).toContainEqual({
+      level: 'error',
+      msg: 'sandbox create failed',
+      ctx: { swarmId: SWARM, agentId: 'agent-2', err: createError },
+    });
+    expect(broken.entries).toContainEqual({
+      level: 'info',
+      msg: 'swarm finished',
+      ctx: { swarmId: SWARM, status: 'failed' },
+    });
+
+    const slow = setup({ swarmMs: 300000 });
+    await slow.core.launch(launchBody(1));
+    await slow.core.handleEvent(agentEvent('agent.started', 'agent-1', {}));
+    slow.runTimers(300000);
+    await waitMicrotasks();
+    expect(slow.entries).toContainEqual({
+      level: 'error',
+      msg: 'swarm timeout',
+      ctx: { swarmId: SWARM },
+    });
+
+    const done = setup();
+    await done.core.launch(launchBody(1));
+    await done.core.handleEvent(agentEvent('agent.started', 'agent-1', {}));
+    await done.core.handleEvent(agentEvent('agent.result', 'agent-1', { text: 'R' }));
+    expect(done.entries).toContainEqual({
+      level: 'info',
+      msg: 'swarm finished',
+      ctx: { swarmId: SWARM, status: 'completed' },
+    });
+
+    const removeError = new Error('container busy');
+    const sticky = setup({ removeError });
+    await sticky.core.launch(launchBody(1));
+    await sticky.core.stop(SWARM);
+    expect(sticky.entries).toContainEqual({
+      level: 'warn',
+      msg: 'sandbox remove failed',
+      ctx: { swarmId: SWARM, agentId: 'agent-1', err: removeError },
+    });
+    expect(sticky.entries).toContainEqual({
+      level: 'info',
+      msg: 'swarm finished',
+      ctx: { swarmId: SWARM, status: 'stopped' },
     });
   });
 

@@ -19,8 +19,23 @@ export interface Clock {
 export interface IdGenerator {
   uuid(): string;
 }
+// Спека 016, 4.3. Контекст лога — только id, числа и перечисления (REQ-016-10); err адаптер превращает в LogError.
+export type LogContext = {
+  swarmId?: string;
+  agentId?: string;
+  err?: unknown;
+  [key: string]: unknown;
+};
 export interface Logger {
-  warn(message: string, context?: Record<string, unknown>): void;
+  debug(msg: string, ctx?: LogContext): void;
+  info(msg: string, ctx?: LogContext): void;
+  warn(msg: string, ctx?: LogContext): void;
+  error(msg: string, ctx?: LogContext): void;
+}
+
+/** Текущий контекст трассировки. Ядро кладёт значение в конверт события, не разбирая его. */
+export interface TraceContext {
+  currentTraceId(): string | null; // null — вне трейса
 }
 
 export interface SwarmStore {
@@ -42,6 +57,7 @@ export interface ApiCoreDeps {
   clock: Clock;
   ids: IdGenerator;
   log: Logger;
+  trace: TraceContext;
   limits: { maxActiveSwarms: number };
 }
 
@@ -78,7 +94,7 @@ const fail = <T>(code: string, message: string, issues?: ApiError['issues']): Re
     : { ok: false, error: { code, message, issues } };
 
 export function createApiCore(deps: ApiCoreDeps): ApiCore {
-  const { store, orchestrator, clock, ids, log } = deps;
+  const { store, orchestrator, clock, ids, log, trace } = deps;
   const listeners = new Map<string, Set<(e: PlatformEvent) => void>>();
 
   // Единственная точка записи события роя: номер назначает ядро, рассылка — подписчикам.
@@ -88,7 +104,12 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
     try {
       store.appendEvent(event);
     } catch (error) {
-      log.warn('событие отброшено', { swarmId, type: input.type, reason: String(error) });
+      log.warn(input.type === 'bus.message' ? 'message dropped' : 'event dropped', {
+        swarmId,
+        type: input.type,
+        reason: 'not_applicable',
+        err: error,
+      });
       return null;
     }
     for (const listener of listeners.get(swarmId) ?? []) listener(event);
@@ -131,21 +152,23 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         ts,
         source: 'api',
         agentId: null,
-        traceId: null,
+        traceId: trace.currentTraceId(),
         type: 'swarm.created',
         data: { task: parsed.data.task, agents },
       });
+      log.info('swarm created', { swarmId, agents: agents.length });
 
       try {
         await orchestrator.launch({ swarmId, task: parsed.data.task, agents });
       } catch (error) {
+        log.error('orchestrator unavailable', { swarmId, err: error });
         commit(swarmId, {
           id: ids.uuid(),
           swarmId,
           ts: clock.now(),
           source: 'api',
           agentId: null,
-          traceId: null,
+          traceId: trace.currentTraceId(),
           type: 'swarm.failed',
           data: {
             reason: 'orchestrator_unavailable',
@@ -190,18 +213,20 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
     ingestEvent(raw) {
       const parsed = PlatformEventInput.safeParse(raw);
       if (!parsed.success) {
-        log.warn('событие не прошло проверку схемы', { issues: parsed.error.issues.length });
+        log.warn('event dropped', { reason: 'invalid_schema', issues: parsed.error.issues.length });
         return;
       }
+      // Событие из шины хранится с тем traceId, с которым его опубликовали (REQ-016-1).
       const event = parsed.data;
       if (event.type === 'swarm.created') {
-        log.warn('swarm.created с шины отброшен', { swarmId: event.swarmId });
+        log.warn('event dropped', { swarmId: event.swarmId, reason: 'created_from_bus' });
         return;
       }
       if (!store.view(event.swarmId)) {
-        log.warn('событие неизвестного роя отброшено', {
+        log.warn('event dropped', {
           swarmId: event.swarmId,
           type: event.type,
+          reason: 'unknown_swarm',
         });
         return;
       }
@@ -211,12 +236,15 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
     ingestMessage(raw) {
       const parsed = BusMessage.safeParse(raw);
       if (!parsed.success) {
-        log.warn('сообщение шины не прошло проверку схемы', { issues: parsed.error.issues.length });
+        log.warn('message dropped', {
+          reason: 'invalid_schema',
+          issues: parsed.error.issues.length,
+        });
         return;
       }
       const message = parsed.data;
       if (!store.view(message.swarmId)) {
-        log.warn('сообщение неизвестного роя отброшено', { swarmId: message.swarmId });
+        log.warn('message dropped', { swarmId: message.swarmId, reason: 'unknown_swarm' });
         return;
       }
       commit(message.swarmId, {
@@ -225,7 +253,7 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         ts: message.ts,
         source: 'api',
         agentId: message.from === 'user' ? null : message.from,
-        traceId: null,
+        traceId: trace.currentTraceId(),
         type: 'bus.message',
         data: { messageId: message.id, from: message.from, to: message.to, text: message.text },
       });

@@ -23,10 +23,10 @@ function readConfig(): AgentConfig {
 const config = readConfig();
 runAgent(version, (line) => console.log(line));
 
-const log = {
-  warn: (message: string, context?: Record<string, unknown>) =>
-    console.warn(JSON.stringify({ level: 'warn', message, ...context })),
-};
+// Временно до T-7 (спека 016): логгер и TraceContext придут из adapter-telemetry.
+const line = (level: string) => (msg: string, context?: Record<string, unknown>) =>
+  console.warn(JSON.stringify({ level, msg, ...context }));
+const log = { debug: line('debug'), info: line('info'), warn: line('warn'), error: line('error') };
 const nats = await connectNatsBus({ url: config.NATS_URL, warn: (message) => log.warn(message) });
 const bus: AgentBus = {
   subscribe: async (subject, handler) => {
@@ -44,6 +44,7 @@ const agent = createAgentCore({
   ids: { uuid: () => randomUUID() },
   timers: { setTimeout: (fn, ms) => setTimeout(fn, ms) },
   log,
+  trace: { currentTraceId: () => null },
   config: {
     swarmId: config.SWARM_ID,
     agentId: config.AGENT_ID as AgentId,

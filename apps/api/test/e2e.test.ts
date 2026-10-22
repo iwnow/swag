@@ -54,7 +54,14 @@ describe('сквозной скелет без Docker', () => {
     const ids = { uuid: () => uuid(++counter) };
     const clock = { now: () => '2026-10-22T10:00:00.000Z' };
     const logs: string[] = [];
-    const log = { warn: (message: string) => logs.push(message) };
+    const nothing = () => undefined;
+    const log = {
+      debug: nothing,
+      info: nothing,
+      warn: (message: string) => logs.push(message),
+      error: (message: string) => logs.push(message),
+    };
+    const trace = { currentTraceId: () => null };
 
     // песочница: на create поднимает agent-core в процессе, на remove — отписывает
     const running = new Map<string, () => void>();
@@ -79,6 +86,7 @@ describe('сквозной скелет без Docker', () => {
           ids,
           timers: { setTimeout: (fn, ms) => setTimeout(fn, ms) },
           log,
+          trace,
           config: {
             swarmId: env['SWARM_ID'] as string,
             agentId: env['AGENT_ID'] as AgentId,
@@ -123,6 +131,7 @@ describe('сквозной скелет без Docker', () => {
       },
       ids,
       log,
+      trace,
       agent: { template: 'swag-agent:test', stepDelayMs: 0 },
       timeouts: { agentStartMs: 5000, swarmMs: 60000 },
     });
@@ -145,6 +154,7 @@ describe('сквозной скелет без Docker', () => {
       clock,
       ids,
       log,
+      trace,
       limits: { maxActiveSwarms: 3 },
     });
     hub.subscribe(ALL_EVENTS, (raw) => api.ingestEvent(raw));

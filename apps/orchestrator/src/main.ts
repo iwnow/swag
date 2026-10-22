@@ -21,10 +21,10 @@ function readConfig(): OrchestratorConfig {
 
 const config = readConfig();
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
-const log = {
-  warn: (message: string, context?: Record<string, unknown>) =>
-    console.warn(JSON.stringify({ level: 'warn', message, ...context })),
-};
+// Временно до T-6 (спека 016): логгер и TraceContext придут из adapter-telemetry.
+const line = (level: string) => (msg: string, context?: Record<string, unknown>) =>
+  console.warn(JSON.stringify({ level, msg, ...context }));
+const log = { debug: line('debug'), info: line('info'), warn: line('warn'), error: line('error') };
 
 const bus = await connectNatsBus({ url: config.NATS_URL, warn: (message) => log.warn(message) });
 const sandboxes = createDockerSandboxProvider({
@@ -48,6 +48,7 @@ const core = createOrchestratorCore({
   },
   ids: { uuid: () => randomUUID() },
   log,
+  trace: { currentTraceId: () => null },
   agent: { template: config.AGENT_TEMPLATE, stepDelayMs: config.AGENT_STEP_DELAY_MS },
   timeouts: { agentStartMs: config.AGENT_START_TIMEOUT_MS, swarmMs: config.SWARM_TIMEOUT_MS },
 });

@@ -1,6 +1,9 @@
 import { createApiCore, type ApiCore, type OrchestratorClient } from '@swag/api-core';
 import { createMemorySwarmStore } from '@swag/adapter-memory';
 
+const nothing = () => undefined;
+export const silentLog = { debug: nothing, info: nothing, warn: nothing, error: nothing };
+
 // Ядро api с памятью и фейковым оркестратором для тестов оболочки.
 export function makeCore(
   orchestrator: OrchestratorClient = { launch: async () => undefined, stop: async () => undefined },
@@ -12,7 +15,8 @@ export function makeCore(
     orchestrator,
     clock: { now: () => '2026-10-22T10:00:00.000Z' },
     ids: { uuid: () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}` },
-    log: { warn: () => undefined },
+    log: silentLog,
+    trace: { currentTraceId: () => null },
     limits: { maxActiveSwarms: 3 },
   });
 }

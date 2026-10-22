@@ -22,10 +22,10 @@ function readConfig(): ApiConfig {
 
 const config = readConfig();
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
-const log = {
-  warn: (message: string, context?: Record<string, unknown>) =>
-    console.warn(JSON.stringify({ level: 'warn', message, ...context })),
-};
+// Временно до T-6 (спека 016): логгер и TraceContext придут из adapter-telemetry.
+const line = (level: string) => (msg: string, context?: Record<string, unknown>) =>
+  console.warn(JSON.stringify({ level, msg, ...context }));
+const log = { debug: line('debug'), info: line('info'), warn: line('warn'), error: line('error') };
 
 const core = createApiCore({
   version,
@@ -34,6 +34,7 @@ const core = createApiCore({
   clock: { now: () => new Date().toISOString() },
   ids: { uuid: () => randomUUID() },
   log,
+  trace: { currentTraceId: () => null },
   limits: { maxActiveSwarms: config.MAX_ACTIVE_SWARMS },
 });
 

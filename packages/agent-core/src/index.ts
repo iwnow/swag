@@ -15,8 +15,23 @@ export interface Clock {
 export interface IdGenerator {
   uuid(): string;
 }
+// Спека 016, 4.3. Контекст лога — только id, числа и перечисления (REQ-016-10); err адаптер превращает в LogError.
+export type LogContext = {
+  swarmId?: string;
+  agentId?: string;
+  err?: unknown;
+  [key: string]: unknown;
+};
 export interface Logger {
-  warn(message: string, context?: Record<string, unknown>): void;
+  debug(msg: string, ctx?: LogContext): void;
+  info(msg: string, ctx?: LogContext): void;
+  warn(msg: string, ctx?: LogContext): void;
+  error(msg: string, ctx?: LogContext): void;
+}
+
+/** Текущий контекст трассировки. Ядро кладёт значение в конверт события, не разбирая его. */
+export interface TraceContext {
+  currentTraceId(): string | null; // null — вне трейса
 }
 export interface Timers {
   setTimeout(fn: () => void, ms: number): unknown;
@@ -44,6 +59,7 @@ export interface AgentCoreDeps {
   ids: IdGenerator;
   timers: Timers;
   log: Logger;
+  trace: TraceContext;
   config: AgentConfigCore;
 }
 
@@ -53,7 +69,8 @@ export interface AgentCore {
 }
 
 export function createAgentCore(deps: AgentCoreDeps): AgentCore {
-  const { bus, clock, ids, timers, log, config } = deps;
+  const { bus, clock, ids, timers, log, trace, config } = deps;
+  const ctx = { swarmId: config.swarmId, agentId: config.agentId };
   // Сообщения обрабатываются по одному, в порядке поступления (4.7.2, п. 3).
   let queue: Promise<void> = Promise.resolve();
 
@@ -63,7 +80,7 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
     ts: clock.now(),
     source: 'agent' as const,
     agentId: config.agentId,
-    traceId: null,
+    traceId: trace.currentTraceId(),
   });
 
   const pause = (ms: number) => new Promise<void>((resolve) => timers.setTimeout(resolve, ms));
@@ -71,12 +88,12 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
   async function relay(raw: unknown): Promise<void> {
     const parsed = BusMessage.safeParse(raw);
     if (!parsed.success) {
-      log.warn('сообщение шины не прошло проверку схемы', { agentId: config.agentId });
+      log.warn('message dropped', { ...ctx, reason: 'invalid_schema' });
       return;
     }
     const message = parsed.data;
     if (message.to !== config.agentId) {
-      log.warn('сообщение адресовано другому агенту', { agentId: config.agentId, to: message.to });
+      log.warn('message dropped', { ...ctx, reason: 'wrong_recipient', to: message.to });
       return;
     }
 
@@ -100,6 +117,7 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
     } else {
       await bus.publishEvent({ ...envelope(), type: 'agent.result', data: { text: out } });
     }
+    log.debug('message handled', { ...ctx, messageId: message.id, from: message.from });
   }
 
   return {
@@ -110,13 +128,11 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
         queue = queue
           .then(() => relay(raw))
           .catch((error: unknown) => {
-            log.warn('ошибка обработки сообщения', {
-              agentId: config.agentId,
-              reason: String(error),
-            });
+            log.error('message failed', { ...ctx, err: error });
           });
       });
       await bus.publishEvent({ ...envelope(), type: 'agent.started', data: {} });
+      log.info('agent started', ctx);
     },
   };
 }
