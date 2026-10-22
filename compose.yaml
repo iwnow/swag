@@ -45,6 +45,8 @@ services:
         condition: service_healthy
       orchestrator:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:$$API_PORT/health"']
       interval: 2s
@@ -68,6 +70,8 @@ services:
         condition: service_healthy
       nats:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:$$ORCHESTRATOR_PORT/health"']
       interval: 2s
@@ -84,11 +88,42 @@ services:
     depends_on:
       api:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:4200/" > /dev/null']
       interval: 2s
       timeout: 3s
       retries: 60
+
+  # Спека 016, 4.9: сервисы и агенты шлют OTLP только сюда. Порты не публикуются:
+  # OTLP HTTP 4318 и health_check 13133 доступны только в сети compose.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.163.2
+    command: ['--config=/etc/otelcol-contrib/config.yaml']
+    volumes:
+      - ./infra/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    depends_on:
+      lgtm:
+        condition: service_started
+
+  # Tempo (трейсы), Loki (логи) и Grafana в одном контейнере; источники данных и связь «лог ↔ трейс»
+  # настроены образом. Наружу — только Grafana и только на 127.0.0.1 (входа нет до 012/014).
+  # Grafana на подпути /grafana: ссылка «Трейс» из UI идёт через прокси ng serve (Q-6).
+  lgtm:
+    image: grafana/otel-lgtm:0.37.0
+    environment:
+      GF_SERVER_ROOT_URL: '%(protocol)s://%(domain)s:%(http_port)s/grafana/'
+      GF_SERVER_SERVE_FROM_SUB_PATH: 'true'
+    ports:
+      - 127.0.0.1:${GRAFANA_PORT}:3000
+    volumes:
+      - lgtm-data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'test -f /tmp/ready']
+      interval: 2s
+      timeout: 3s
+      retries: 90
 
   # Не запускается в `npm run up`: образ агента для песочниц, собирается `npm run agent:image`.
   agent:
@@ -101,3 +136,4 @@ services:
 volumes:
   postgres-data:
   nats-data:
+  lgtm-data:
