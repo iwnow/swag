@@ -70,4 +70,31 @@ describe('arch:check', () => {
     expect(output).toContain('нарушений нет');
     expect(code).toBe(0);
   });
+
+  it('AC-001-24: contracts с node:fs — выход 1 с файлом, строкой и спецификатором', () => {
+    const { code, output } = check({
+      'packages/contracts/package.json': JSON.stringify({ name: '@swag/contracts', dependencies: { zod: '4.6.7' } }),
+      'packages/contracts/src/index.ts': "export const x = 1;\nimport { readFile } from 'node:fs';\nexport { readFile };\n",
+    });
+    expect(code).toBe(1);
+    expect(output).toContain('@swag/contracts: packages/contracts/src/index.ts:2 — запрещённый импорт node:fs');
+  });
+
+  it('AC-001-24: api-integration с зависимостью на ядро api-core — выход 1; ядро, импортирующее api-integration, — выход 0', () => {
+    const bad = check({
+      'packages/api-integration/package.json': JSON.stringify({
+        name: '@swag/api-integration',
+        dependencies: { zod: '4.6.7', '@swag/api-core': '0.0.0' },
+      }),
+      'packages/api-integration/src/index.ts': "export const x = 1;\n",
+    });
+    expect(bad.code).toBe(1);
+    expect(bad.output).toContain('@swag/api-integration: запрещённая зависимость @swag/api-core');
+
+    const good = check({
+      'packages/demo-core/package.json': corePackage({ '@swag/api-integration': '0.0.0' }),
+      'packages/demo-core/src/index.ts': "import { applyEvent } from '@swag/api-integration';\nexport { applyEvent };\n",
+    });
+    expect(good.code).toBe(0);
+  });
 });
