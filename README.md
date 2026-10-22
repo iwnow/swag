@@ -38,17 +38,28 @@ npm run infra:check
 | `npm run up`          | Поднять систему в Docker                                                                                                              |
 | `npm run dev`         | То же в режиме разработки: правка в `src` оболочки или ядра перезапускает сервис без пересборки образа                                |
 | `npm run down`        | Остановить систему                                                                                                                    |
-| `npm run infra:check` | Проверить с хоста Postgres, NATS, `/health` у `api` и `orchestrator`                                                                  |
+| `npm run infra:check` | Проверить с хоста Postgres, NATS, `/health` у `api` и `orchestrator`, доступность `ui`                                                |
+| `npm run agent:image` | Собрать образ агента `swag-agent:dev` для песочниц                                                                                    |
 
-Образ агента в `npm run up` не запускается, собирается отдельно: `docker compose build agent`, запуск — `docker run --rm swag-agent:dev`.
+`npm run up` сначала собирает образ агента (`npm run agent:image`, профиль `agent`: `docker compose --profile agent build agent`), затем поднимает `postgres`, `nats`, `orchestrator`, `api`, `ui`. Образ агента сам по себе не стартует.
+
+## Как открыть личный кабинет и запустить рой
+
+- Личный кабинет: <http://127.0.0.1:4200> (`UI_PORT`). Новый рой — кнопка «Новый рой», задача и агенты по порядку цепочки.
+- API напрямую: <http://127.0.0.1:3000> (`POST /swarms`, `GET /swarms/:id`, `POST /swarms/:id/stop`).
+- Оркестратор: <http://127.0.0.1:3001> (только для проверки, `api` обращается к нему по сети compose).
+
+Песочницы агентов — контейнеры с меткой `swag.kind=agent`; после роя их не остаётся: `docker ps -a --filter label=swag.kind`.
 
 ## Ядро и оболочка
 
 Логика пишется только в ядрах `packages/<имя>-core` — чистый TypeScript без фреймворков, Node API и env; всё внешнее приходит через порты, которые объявляет ядро. Оболочки `apps/<имя>` только читают конфигурацию, собирают адаптеры, вызывают фабрику `create<Имя>Core(deps)` и переводят вход и выход. Проверяемые правила — [спека 000, раздел 4.2](docs/spec/000-foundation.md#42-правила-ядра-и-оболочки); нарушения ловят `npm run arch:check` и `typecheck`.
 
 ```
-apps/        оболочки: api, orchestrator (Fastify), agent (процесс в песочнице), ui (спека 001)
-packages/    ядра *-core, contracts (общие схемы), config (env, только для оболочек)
+apps/        оболочки: api, orchestrator (Fastify), agent (процесс в песочнице)
+apps/ui/     фронтенды (npm workspaces apps/ui/*): cabinet — личный кабинет на Angular
+packages/    ядра *-core (api, orchestrator, agent, ui); contracts и api-integration (общие схемы и проекция роя);
+             adapter-* (Docker, NATS, память, HTTP-оркестратор); config (env, только для оболочек)
 scripts/     arch-check, spec-check, infra-check
 ```
 

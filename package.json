@@ -6,7 +6,8 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "apps/ui/*"
   ],
   "engines": {
     "node": ">=24.20.0 <25",
@@ -22,7 +23,8 @@
     "spec:check": "node scripts/spec-check.ts",
     "test": "vitest run",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run arch:check && npm run build && npm run test && npm run spec:check",
-    "up": "docker compose up -d --build --wait",
+    "agent:image": "docker compose --profile agent build agent",
+    "up": "npm run agent:image && docker compose up -d --build --wait",
     "dev": "docker compose -f compose.yaml -f compose.dev.yaml up --build --watch",
     "down": "docker compose down",
     "infra:check": "node --env-file-if-exists=.env scripts/infra-check.ts"
