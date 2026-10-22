@@ -44,3 +44,7 @@ Swag (swarm + agent) — платформа роёв агентов: оркес�
 ## Команды
 
 Появляются после спеки 000. Список — в корневом README.
+
+## Worktree
+
+Хук `SessionStart` запускает [scripts/worktree-links.ts](scripts/worktree-links.ts): в git worktree он создаёт `node_modules` со ссылками на основной чекаут (пакеты воркспейсов — на каталоги самого worktree) и hardlink на `.env`. Если `node_modules` или `.env` в worktree нет — запусти `node scripts/worktree-links.ts` вручную, а не `npm install`.
