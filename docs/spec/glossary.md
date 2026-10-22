@@ -77,6 +77,8 @@
 | Контекст лога | `LogContext` | Второй аргумент методов `Logger`: `swarmId`, `agentId`, `err` и прочие поля — только id, числа, перечисления. |
 | Порт контекста трассировки | `TraceContext`, `currentTraceId()` | Порт ядра: текущий `traceId` или `null`. Ядро переносит его в конверт события как непрозрачную строку. Реализация — `adapter-telemetry`. Спека 016, Q-1. |
 | Адаптер телеметрии | `packages/adapter-telemetry`, `startTelemetry`, `Telemetry`, `inSpan`, `currentTraceparent` | Пакет оболочек: OpenTelemetry SDK, логгер, `TraceContext`, спаны и перенос `traceparent`, сброс при остановке. |
+| HTTP-сервер с трассировкой | `tracedHttpServer` | Фабрика `serverFactory` для Fastify из `adapter-telemetry`: каждый запрос — серверный спан, родитель — заголовок `traceparent`. |
+| Экспорт телеметрии в память | `createMemoryExporters`, `MemoryExporters` | Экспортёры спанов и логов для тестов: записи копятся в массивах и переживают `shutdown`. |
 | Ссылка на трейс | `traceUrl`, `traces.urlTemplate` | Функция `ui-core`: адрес трейса в Grafana по `traceId` из шаблона с `{traceId}`. |
 | Конфигурация наблюдаемости | `ObservabilityConfig` | `GRAFANA_PORT` в `@swag/config` для `infra:check`. |
 | Сборщик телеметрии | OpenTelemetry Collector | Принимает трейсы и логи по OTLP от сервисов и агентов и отправляет в Tempo и Loki. |
