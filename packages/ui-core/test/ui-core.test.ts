@@ -9,6 +9,7 @@ import {
 } from '../src/index.ts';
 
 const SWARM = '0b6f6d2e-6a4c-4c3e-9f5e-111111111111';
+const traces = { urlTemplate: 'http://g/x?t={traceId}' };
 const ev = (seq: number, input: Record<string, unknown>): PlatformEvent =>
   ({
     id: `00000000-0000-4000-9000-${String(seq).padStart(12, '0')}`,
@@ -89,7 +90,7 @@ describe('ui-core', () => {
   it('AC-001-23: пустая задача — ошибка формы; валидная форма — вызван SwarmsApi.create', async () => {
     const api = fakeApi();
     const { stream } = fakeStream();
-    const core = createUiCore({ api, stream, timers: fakeTimers().timers });
+    const core = createUiCore({ api, stream, timers: fakeTimers().timers, traces });
 
     const invalid = await core.createSwarm({ task: '', agents: [{ name: 'A', role: 'r' }] });
     expect(invalid.ok).toBe(false);
@@ -102,7 +103,7 @@ describe('ui-core', () => {
 
   it('AC-001-23: поток отдаёт события — состояние страницы совпадает с projectSwarm', () => {
     const { stream, opened } = fakeStream();
-    const core = createUiCore({ api: fakeApi(), stream, timers: fakeTimers().timers });
+    const core = createUiCore({ api: fakeApi(), stream, timers: fakeTimers().timers, traces });
     const page = core.openSwarm(SWARM);
     expect(opened[0]?.after).toBe(0);
     const events = [created, started, agentStarted];
@@ -115,7 +116,13 @@ describe('ui-core', () => {
   it('AC-001-23: поток рвётся — переподключение с after = lastSeq через паузу, без повторов в ленте', () => {
     const { stream, opened } = fakeStream();
     const fake = fakeTimers();
-    const core = createUiCore({ api: fakeApi(), stream, timers: fake.timers, reconnectMs: 1000 });
+    const core = createUiCore({
+      api: fakeApi(),
+      stream,
+      timers: fake.timers,
+      reconnectMs: 1000,
+      traces,
+    });
     const page = core.openSwarm(SWARM);
     opened[0]?.handlers.onEvent(created);
     opened[0]?.handlers.onEvent(started);
@@ -138,7 +145,7 @@ describe('ui-core', () => {
     const api = fakeApi();
     const { stream, opened } = fakeStream();
     const fake = fakeTimers();
-    const core = createUiCore({ api, stream, timers: fake.timers });
+    const core = createUiCore({ api, stream, timers: fake.timers, traces });
     const page = core.openSwarm(SWARM);
     await page.stop();
     expect(api.stop).toHaveBeenCalledWith(SWARM);
@@ -148,5 +155,13 @@ describe('ui-core', () => {
     fake.fireAll();
     expect(opened).toHaveLength(1);
     expect(opened[0]?.closed).toBe(false);
+  });
+
+  it('AC-016-14: traceUrl подставляет traceId в шаблон; без traceId — null', () => {
+    const { stream } = fakeStream();
+    const core = createUiCore({ api: fakeApi(), stream, timers: fakeTimers().timers, traces });
+    const traceId = '4bf92f3577b34da6a3ce929d0e0e4736';
+    expect(core.traceUrl(traceId)).toBe(`http://g/x?t=${traceId}`);
+    expect(core.traceUrl(null)).toBeNull();
   });
 });

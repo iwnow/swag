@@ -374,7 +374,7 @@ export function startTelemetry(options: TelemetryOptions): Telemetry;
 - [x] **T-7.** Оболочка агента: телеметрия до NATS, спан `agent.start` от `TRACEPARENT`, ошибка старта → лог, сброс, код 1. Тест. Закрывает: REQ-016-8, AC-016-11.
 - [x] **T-8.** Сквозной тест с настоящим `TraceContext` и проверкой утечки пользовательского текста. Закрывает: REQ-016-2, REQ-016-10, AC-016-12, AC-016-13.
 - [x] **T-9.** `compose.yaml` и `compose.dev.yaml`: `otel-collector`, `lgtm`, `infra/otel-collector.yaml`, переменные 4.11 в `.env.example`, `infra:check` для `grafana` и `otel-collector`. Закрывает: REQ-016-11, REQ-016-12.
-- [ ] **T-10.** `ui-core.traceUrl` и ссылка «Трейс» в ленте `apps/ui/cabinet`, источник шаблона — по Q-6. Закрывает: REQ-016-13, AC-016-14.
+- [x] **T-10.** `ui-core.traceUrl` и ссылка «Трейс» в ленте `apps/ui/cabinet`, источник шаблона — по Q-6. Закрывает: REQ-016-13, AC-016-14.
 - [ ] **T-11.** Ручные проверки и замеры: AC-016-16…19, NFR-016-1…3. Затем README затронутых пакетов, корневой README (Grafana: адрес, как найти рой по `traceId`), сверка раздела наблюдаемости в `architecture.md`.
 
 ## 9. Открытые вопросы

@@ -30,6 +30,8 @@ export interface UiCoreDeps {
   stream: EventStream;
   timers: Timers;
   reconnectMs?: number; // по спеке 1 с
+  // Спека 016, 4.10: шаблон адреса трейса в Grafana с подстановкой {traceId}.
+  traces: { urlTemplate: string };
 }
 
 export interface FormIssue {
@@ -54,7 +56,10 @@ export interface UiCore {
   createSwarm(input: unknown): Promise<FormResult & { view?: SwarmView }>;
   listSwarms(): Promise<SwarmSummary[]>;
   openSwarm(id: string): SwarmPage;
+  traceUrl(traceId: string | null): string | null; // ссылка «Трейс»; без traceId — null
 }
+
+const TRACE_ID_SLOT = '{traceId}';
 
 export function createUiCore(deps: UiCoreDeps): UiCore {
   const reconnectMs = deps.reconnectMs ?? 1000;
@@ -151,5 +156,9 @@ export function createUiCore(deps: UiCoreDeps): UiCore {
     },
     listSwarms: () => deps.api.list(),
     openSwarm,
+    traceUrl: (traceId) =>
+      traceId === null
+        ? null
+        : deps.traces.urlTemplate.split(TRACE_ID_SLOT).join(encodeURIComponent(traceId)),
   };
 }

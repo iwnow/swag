@@ -76,6 +76,9 @@ const STATUS_LABEL: Record<string, string> = {
                 <span class="agent">{{ event.agentId }}</span>
               }
               <span class="detail">{{ detail(event) }}</span>
+              @if (traceUrl(event); as url) {
+                <a class="trace" [href]="url" target="_blank" rel="noopener">Трейс</a>
+              }
             </li>
           }
         </ol>
@@ -104,6 +107,10 @@ export class SwarmPageComponent implements OnDestroy {
     this.feed.set([...this.page.feed]);
     this.connected.set(this.page.connected);
   });
+
+  traceUrl(event: PlatformEvent): string | null {
+    return this.ui.traceUrl(event.traceId);
+  }
 
   statusLabel(status: string): string {
     return STATUS_LABEL[status] ?? status;
