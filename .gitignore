@@ -4,6 +4,8 @@ node_modules/
 dist/
 *.tsbuildinfo
 coverage/
+.angular/
+out-tsc/
 .env
 .env.*
 !.env.example
