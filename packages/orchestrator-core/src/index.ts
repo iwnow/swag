@@ -105,6 +105,7 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
     ts: clock.now(),
     source: 'orchestrator' as const,
     agentId,
+    traceId: null,
   });
 
   async function publish(event: PlatformEventInput): Promise<void> {

@@ -116,6 +116,7 @@ const agentEvent = (type: 'agent.started' | 'agent.result', agentId: string, dat
     ts: '2026-10-22T10:00:02.000Z',
     source: 'agent',
     agentId,
+    traceId: null,
     type,
     data,
   }) as unknown;

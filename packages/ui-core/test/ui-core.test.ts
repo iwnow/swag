@@ -16,6 +16,7 @@ const ev = (seq: number, input: Record<string, unknown>): PlatformEvent =>
     ts: '2026-10-22T10:00:00.000Z',
     source: 'orchestrator',
     agentId: null,
+    traceId: null,
     seq,
     ...input,
   }) as PlatformEvent;

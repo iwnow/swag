@@ -12,13 +12,14 @@ afterEach(async () => {
 const ev = (
   swarmId: string,
   n: number,
-  input: Omit<PlatformEventInput, 'id' | 'swarmId' | 'ts'>,
+  input: Omit<PlatformEventInput, 'id' | 'swarmId' | 'ts' | 'traceId'>,
 ): PlatformEventInput =>
   ({
     ...input,
     id: `00000000-0000-4000-9000-${String(n).padStart(12, '0')}`,
     swarmId,
     ts: '2026-10-22T10:00:01.000Z',
+    traceId: null,
   }) as PlatformEventInput;
 
 async function started(orchestrator?: Parameters<typeof makeCore>[0]) {

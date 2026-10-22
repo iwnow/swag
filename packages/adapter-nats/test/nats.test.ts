@@ -30,6 +30,7 @@ describe.skipIf(!url)('adapter-nats', () => {
       ts: '2026-10-22T10:00:00.000Z',
       source: 'orchestrator',
       agentId: null,
+      traceId: null,
       type: 'swarm.started',
       data: {},
     };

@@ -131,6 +131,7 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         ts,
         source: 'api',
         agentId: null,
+        traceId: null,
         type: 'swarm.created',
         data: { task: parsed.data.task, agents },
       });
@@ -144,6 +145,7 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
           ts: clock.now(),
           source: 'api',
           agentId: null,
+          traceId: null,
           type: 'swarm.failed',
           data: {
             reason: 'orchestrator_unavailable',
@@ -223,6 +225,7 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         ts: message.ts,
         source: 'api',
         agentId: message.from === 'user' ? null : message.from,
+        traceId: null,
         type: 'bus.message',
         data: { messageId: message.id, from: message.from, to: message.to, text: message.text },
       });

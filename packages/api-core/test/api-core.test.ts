@@ -41,9 +41,15 @@ function setup(options: { launch?: () => Promise<void>; maxActiveSwarms?: number
 const sys = (
   swarmId: string,
   n: number,
-  input: Omit<PlatformEventInput, 'id' | 'swarmId' | 'ts'>,
+  input: Omit<PlatformEventInput, 'id' | 'swarmId' | 'ts' | 'traceId'>,
 ): PlatformEventInput =>
-  ({ ...input, id: uuid(9000 + n), swarmId, ts: '2026-10-22T10:00:01.000Z' }) as PlatformEventInput;
+  ({
+    ...input,
+    id: uuid(9000 + n),
+    swarmId,
+    ts: '2026-10-22T10:00:01.000Z',
+    traceId: null,
+  }) as PlatformEventInput;
 
 describe('api-core', () => {
   it('AC-000-16: info() возвращает ServiceInfo сервиса api с версией из оболочки', () => {

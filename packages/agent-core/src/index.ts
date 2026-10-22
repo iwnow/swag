@@ -63,6 +63,7 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
     ts: clock.now(),
     source: 'agent' as const,
     agentId: config.agentId,
+    traceId: null,
   });
 
   const pause = (ms: number) => new Promise<void>((resolve) => timers.setTimeout(resolve, ms));

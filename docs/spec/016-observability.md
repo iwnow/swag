@@ -365,7 +365,7 @@ export function startTelemetry(options: TelemetryOptions): Telemetry;
 
 Выполняются по порядку. После каждой задачи — коммит.
 
-- [ ] **T-1.** Контракты: `TraceId` и `traceId` в конверте (4.1), `LogRecord`, `LogLevel`, `ServiceName`, `LogError` (4.2). Все места, где ядра и тесты строят события, получают `traceId` (временно `null` до T-3). Тесты, README `contracts`. Закрывает: REQ-016-1 (схема), AC-016-1.
+- [x] **T-1.** Контракты: `TraceId` и `traceId` в конверте (4.1), `LogRecord`, `LogLevel`, `ServiceName`, `LogError` (4.2). Все места, где ядра и тесты строят события, получают `traceId` (временно `null` до T-3). Тесты, README `contracts`. Закрывает: REQ-016-1 (схема), AC-016-1.
 - [ ] **T-2.** `packages/adapter-telemetry` (4.4): SDK, логгер в stdout и OTLP, `TraceContext`, `inSpan`, `currentTraceparent`, `shutdown`; тесты с экспортом в память; README. Закрывает: REQ-016-3, REQ-016-5 (логгер), REQ-016-6…8, AC-016-2, AC-016-3.
 - [ ] **T-3.** Порты `Logger` (4 уровня) и `TraceContext` в трёх ядрах. Конверты событий берут `traceId` из `TraceContext`, логи по таблице 4.8. Тесты, README ядер. `arch:check` с фикстурой OpenTelemetry и pino. Закрывает: REQ-016-1, REQ-016-4, REQ-016-9, AC-016-4…7, AC-016-15.
 - [ ] **T-4.** `adapter-nats`: перенос контекста и спаны 4.6; тест с настоящим NATS. Закрывает: REQ-016-2 (шина), REQ-016-15, AC-016-8.

@@ -21,6 +21,7 @@ const base = (
   ts: '2026-10-22T10:00:00.000Z',
   source,
   agentId,
+  traceId: null,
 });
 
 // Последовательность из 4.4: два агента, цепочка agent-1 → agent-2.

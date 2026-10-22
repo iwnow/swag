@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import { AgentId, AgentSpec, SwarmId } from './swarm.ts';
 
+// Спека 016, 4.1. W3C trace-id: 32 hex в нижнем регистре, не нули.
+export const TraceId = z
+  .string()
+  .regex(/^[0-9a-f]{32}$/)
+  .refine((v) => v !== '0'.repeat(32));
+export type TraceId = z.infer<typeof TraceId>;
+
 // Спека 001, 4.3. Конверт одинаковый для всех событий; type и data — дискриминированное объединение.
 const Envelope = {
   id: z.uuid(), // назначает публикующий
@@ -8,6 +15,7 @@ const Envelope = {
   ts: z.iso.datetime(), // время публикующего
   source: z.enum(['api', 'orchestrator', 'agent']),
   agentId: AgentId.nullable(), // null — событие роя
+  traceId: TraceId.nullable(), // спека 016: null — событие построено вне трейса
 };
 
 export const PlatformEventInput = z.discriminatedUnion('type', [
