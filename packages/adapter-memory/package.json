@@ -1,0 +1,15 @@
+{
+  "name": "@swag/adapter-memory",
+  "version": "0.0.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@swag/api-core": "0.0.0",
+    "@swag/api-integration": "0.0.0",
+    "@swag/contracts": "0.0.0"
+  }
+}

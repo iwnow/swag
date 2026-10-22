@@ -1,0 +1,15 @@
+{
+  "name": "@swag/adapter-docker",
+  "version": "0.0.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@swag/orchestrator-core": "0.0.0",
+    "@types/dockerode": "4.0.2",
+    "dockerode": "5.0.1"
+  }
+}

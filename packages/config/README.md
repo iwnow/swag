@@ -1,30 +1,36 @@
 # @swag/config
 
-Чтение и проверка конфигурации из env для оболочек. Ядра этот пакет не используют: они получают уже проверенные значения аргументами фабрики.
+Чтение env и проверка Zod-схемами (спека 000, REQ-000-9). Только для оболочек: ядра получают уже проверенные значения аргументами.
 
 ## Задачи
 
-- Схемы конфигурации: `BaseConfig` (общее для сервисов), `ApiConfig`, `OrchestratorConfig`.
-- `loadConfig(schema, env = process.env)` — проверяет env схемой Zod и возвращает типизированный объект.
-- При ошибке — `ConfigError` со списком переменных и причин; оболочка печатает его и завершается с кодом ≠ 0.
+- `loadConfig(schema, env)` — разобрать env; ошибка — `ConfigError` с именем переменной.
+- Схемы сервисов: `BaseConfig`, `ApiConfig`, `OrchestratorConfig`, `AgentConfig`.
 
 ## Что внутри сейчас
 
-- `BaseConfig`: `DATABASE_URL`, `NATS_URL`.
-- `ApiConfig`: `BaseConfig` + `API_PORT`; `OrchestratorConfig`: `BaseConfig` + `ORCHESTRATOR_PORT`.
-
-Все переменные с примерами — в [.env.example](../../.env.example).
+- `BaseConfig` — `DATABASE_URL`, `NATS_URL`.
+- `ApiConfig` — база + `API_PORT`, `ORCHESTRATOR_URL`, `MAX_ACTIVE_SWARMS` (спека 001).
+- `OrchestratorConfig` — база + `ORCHESTRATOR_PORT`, `AGENT_TEMPLATE`, `DOCKER_AGENT_NETWORK`, `DOCKER_AGENT_NATS_URL`, `AGENT_STEP_DELAY_MS`, `AGENT_START_TIMEOUT_MS`, `SWARM_TIMEOUT_MS`.
+- `AgentConfig` — без `DATABASE_URL`: `NATS_URL`, `SWARM_ID`, `AGENT_ID`, `AGENT_NAME`, `AGENT_ROLE`, `AGENT_NEXT` (пусто → `null`), `AGENT_STEP_DELAY_MS`.
 
 ## Ограничения
 
-- Только для оболочек (`apps/*`) и скриптов. Импорт из ядра запрещён `arch:check`.
-- Новая переменная окружения появляется одновременно в схеме, в `.env.example` и в спеке, которая её вводит.
-- Значения секретов не должны попадать в сообщения и логи: при добавлении новых схем проверять, что текст ошибки содержит имя переменной и причину, но не значение.
+- Не используется ядрами.
+- Значения по умолчанию не задаются: отсутствующая переменная — ошибка запуска.
 
 ## Связи
 
-- Используют: `apps/api`, `apps/orchestrator`.
+- Используют: оболочки `apps/api`, `apps/orchestrator`, `apps/agent`.
+- Использует: `zod`.
+
+## Ключевые решения
+
+- `AGENT_NEXT=''` в env превращается в `null` (последний агент) через `transform`, а не отдельным флагом (4.7.1).
+- `UiConfig` (только `UI_PORT`) добавлен для `infra:check`; сам UI env не читает.
+- Лимиты и таймауты — env, без значений по умолчанию: отсутствие переменной — ошибка запуска (Q-3, REQ-000-9).
 
 ## Спеки
 
-- 000 — `BaseConfig`, `loadConfig`. `S3_*` вернутся в спеке 006 вместе с MinIO ([реестр](../../docs/spec/README.md#реестр-спек)).
+- 000 — `BaseConfig`, `loadConfig`.
+- 001 — 4.9, переменные окружения.

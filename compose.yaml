@@ -43,19 +43,26 @@ services:
         condition: service_healthy
       nats:
         condition: service_healthy
+      orchestrator:
+        condition: service_healthy
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:$$API_PORT/health"']
       interval: 2s
       timeout: 3s
       retries: 30
 
+  # Доступ к Docker есть только у оркестратора (Q-1): песочницы агентов создаёт он.
   orchestrator:
     build:
       context: .
       dockerfile: apps/orchestrator/Dockerfile
     env_file: .env
-    ports:
-      - 127.0.0.1:${ORCHESTRATOR_PORT}:${ORCHESTRATOR_PORT}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Сокет на хосте принадлежит группе docker/root; пользователь node без этой группы получает EACCES.
+    group_add:
+      - '0'
+    # Порт не публикуется: оркестратор — внутренний сервис, к нему ходит только `api` по сети compose (Q-7 спеки 001).
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,7 +74,23 @@ services:
       timeout: 3s
       retries: 30
 
-  # Не запускается в `npm run up`: образ агента для песочниц, собирается `docker compose build agent`.
+  # Личный кабинет: `ng serve` с прокси /api → api (Q-4). Только для разработки.
+  ui:
+    build:
+      context: .
+      dockerfile: apps/ui/cabinet/Dockerfile
+    ports:
+      - 127.0.0.1:${UI_PORT}:4200
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:4200/" > /dev/null']
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  # Не запускается в `npm run up`: образ агента для песочниц, собирается `npm run agent:image`.
   agent:
     profiles: [agent]
     image: swag-agent:dev

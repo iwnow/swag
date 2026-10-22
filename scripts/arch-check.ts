@@ -3,7 +3,12 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import ts from 'typescript';
 
-export const CORE_ALLOWED_PACKAGES = ['zod', '@swag/contracts'];
+export const CORE_ALLOWED_PACKAGES = ['zod', '@swag/contracts', '@swag/api-integration'];
+
+// Спека 001, REQ-001-15 и N-3: эти пакеты проверяются правилами ядра, хотя не называются `*-core`.
+export const KERNEL_EXTRA_PACKAGES = ['contracts', 'api-integration'];
+
+const isKernelDir = (name: string): boolean => name.endsWith('-core') || KERNEL_EXTRA_PACKAGES.includes(name);
 
 interface PackageJson {
   name?: string;
@@ -73,7 +78,7 @@ export function archCheck(root: string): string[] {
 
   for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
     const dir = join(packagesDir, entry.name);
-    if (!entry.isDirectory() || !entry.name.endsWith('-core')) continue;
+    if (!entry.isDirectory() || !isKernelDir(entry.name)) continue;
     if (!existsSync(join(dir, 'package.json'))) continue;
 
     const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as PackageJson;

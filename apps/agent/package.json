@@ -5,7 +5,10 @@
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "dependencies": {
-    "@swag/agent-core": "0.0.0"
+    "@swag/adapter-nats": "0.0.0",
+    "@swag/agent-core": "0.0.0",
+    "@swag/config": "0.0.0",
+    "@swag/contracts": "0.0.0"
   },
   "scripts": {
     "start": "node src/main.ts"

@@ -1,0 +1,15 @@
+{
+  "name": "@swag/ui-core",
+  "version": "0.0.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@swag/api-integration": "0.0.0",
+    "@swag/contracts": "0.0.0",
+    "zod": "4.6.7"
+  }
+}

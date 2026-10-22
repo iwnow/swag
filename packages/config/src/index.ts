@@ -7,12 +7,45 @@ export const BaseConfig = z.object({
 export type BaseConfig = z.infer<typeof BaseConfig>;
 
 const Port = z.coerce.number().int().min(1).max(65535);
+const PositiveInt = z.coerce.number().int().min(0);
 
-export const ApiConfig = BaseConfig.extend({ API_PORT: Port });
+// Спека 001, 4.9. Значения лимитов и таймаутов — env (Q-3).
+export const ApiConfig = BaseConfig.extend({
+  API_PORT: Port,
+  ORCHESTRATOR_URL: z.string().url(),
+  MAX_ACTIVE_SWARMS: z.coerce.number().int().min(1),
+});
 export type ApiConfig = z.infer<typeof ApiConfig>;
 
-export const OrchestratorConfig = BaseConfig.extend({ ORCHESTRATOR_PORT: Port });
+export const OrchestratorConfig = BaseConfig.extend({
+  ORCHESTRATOR_PORT: Port,
+  AGENT_TEMPLATE: z.string().min(1),
+  DOCKER_AGENT_NETWORK: z.string().min(1),
+  DOCKER_AGENT_NATS_URL: z.string().url(),
+  AGENT_STEP_DELAY_MS: PositiveInt,
+  AGENT_START_TIMEOUT_MS: PositiveInt,
+  SWARM_TIMEOUT_MS: PositiveInt,
+});
 export type OrchestratorConfig = z.infer<typeof OrchestratorConfig>;
+
+// Порт UI на 127.0.0.1 — только для проверки инфраструктуры (infra:check); сам UI переменных не читает.
+export const UiConfig = z.object({ UI_PORT: Port });
+export type UiConfig = z.infer<typeof UiConfig>;
+
+// Агент не нуждается в DATABASE_URL, поэтому без BaseConfig (4.9).
+export const AgentConfig = z.object({
+  NATS_URL: z.string().url(),
+  SWARM_ID: z.uuid(),
+  AGENT_ID: z.string().regex(/^agent-[1-9][0-9]?$/),
+  AGENT_NAME: z.string().min(1),
+  AGENT_ROLE: z.string().min(1),
+  AGENT_NEXT: z
+    .string()
+    .regex(/^(agent-[1-9][0-9]?)?$/)
+    .transform((value) => (value === '' ? null : value)),
+  AGENT_STEP_DELAY_MS: PositiveInt,
+});
+export type AgentConfig = z.infer<typeof AgentConfig>;
 
 export interface ConfigIssue {
   variable: string;

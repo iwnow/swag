@@ -1,34 +1,35 @@
-# @swag/orchestrator
+# apps/orchestrator
 
-Оболочка ядра `@swag/orchestrator-core`: внутренний HTTP-сервис на Fastify, который исполняет план роя — поднимает песочницы, сети, ключи и accounts шины, убирает ресурсы после роя.
+Оболочка `orchestrator` (Fastify): HTTP для `api`, подписка на события роёв, уборка сирот при старте. Единственный сервис с доступом к Docker (Q-1).
 
 ## Задачи
 
-- Принимает команды от `api` и вызывает операции `orchestrator-core`.
-- Собирает для ядра адаптеры инфраструктуры: Docker (песочницы и сети), NATS (accounts шины), LiteLLM (виртуальные ключи), Postgres и S3 — по мере появления в спеках.
-- Читает конфигурацию из env (`OrchestratorConfig` из `@swag/config`).
-- Отдаёт `GET /health` для healthcheck в compose.
+- HTTP (спека 001, 4.6.1): `POST /swarms` → `202` (строгая схема, лишнее поле → `400`), `POST /swarms/:id/stop` → `202` / `404`, `GET /health`.
+- Подписка `swarm.*.events` → `core.handleEvent` (agent.started, agent.result).
+- `cleanupOrphans` при старте (REQ-001-10).
 
 ## Что внутри сейчас
 
-Заглушка из спеки 000: `GET /health` → `{"status":"ok","service":"orchestrator","version":"…"}`.
-
-- `src/main.ts` — точка входа: конфигурация, ядро, запуск сервера, остановка по сигналам.
-- `src/app.ts` — `buildApp(core)`: Fastify-приложение и маршруты, тесты через `inject`.
+- `src/app.ts` — маршруты.
+- `src/main.ts` — `OrchestratorConfig`, адаптер Docker (`@swag/adapter-docker`), шина NATS, часы и таймеры, запуск.
+- Тесты: `test/health.test.ts` (AC-000-5, AC-001-12).
 
 ## Ограничения
 
-- Никакой логики исполнения плана в оболочке — алгоритмы живут в `orchestrator-core` ([архитектура](../../docs/architecture.md)).
-- Пользователю напрямую недоступен: внешний вход — только через `api`.
-- Docker socket сейчас не смонтирован. Доступ к Docker появится в спеке 001: оркестратор запускает контейнеры агентов. Socket равен root на хосте — как ограничить доступ, решается в 001, усиление песочниц — в 005.
-- Порт `ORCHESTRATOR_PORT` публикуется только на `127.0.0.1`.
+- Порт наружу не публикуется: доступ только из сети compose.
+- Docker socket монтируется только в этот сервис. Усиление — спека 005.
 
 ## Связи
 
-- Использует: `@swag/orchestrator-core`, `@swag/config`, `fastify`.
-- Запуск: сервис `orchestrator` в [compose.yaml](../../compose.yaml).
+- Ядро: `@swag/orchestrator-core`. Адаптеры: `@swag/adapter-docker`, `@swag/adapter-nats`.
+- Конфигурация: `@swag/config`.
+
+## Ключевые решения
+
+- Доступ к Docker: сокет смонтирован только сюда (Q-1). Пользователь образа — `node`, но сокет на Docker Desktop принадлежит группе root: контейнеру добавлена группа `0` через `group_add` (без неё — `EACCES`, проверено в `npm run up`).
+- `/swarms` возвращает `202` с пустым телом; `409` при повторном id, иначе `400` (AC-001-12).
+- Порт наружу не публикуется: оркестратор — внутренний сервис, к нему ходит только `api` по сети compose (Q-7 спеки 001). `infra:check` проверяет `/health` изнутри контейнера через `docker compose exec`.
 
 ## Спеки
 
-- 000 — заглушка с `/health`.
-- 001, 004, 005, 006, 007, 009 — запуск контейнеров агентов, ключи LiteLLM, тёплый пул и лимиты, снимки и reaper, account шины, исполнение плана ([реестр](../../docs/spec/README.md#реестр-спек)).
+- 000 — `/health`. 001 — 4.6, T-8.

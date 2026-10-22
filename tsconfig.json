@@ -1,12 +1,19 @@
 {
   "extends": "./tsconfig.dev.json",
   "files": [],
+  "include": [],
   "references": [
     { "path": "packages/contracts" },
     { "path": "packages/config" },
+    { "path": "packages/api-integration" },
     { "path": "packages/api-core" },
     { "path": "packages/orchestrator-core" },
     { "path": "packages/agent-core" },
+    { "path": "packages/ui-core" },
+    { "path": "packages/adapter-memory" },
+    { "path": "packages/adapter-nats" },
+    { "path": "packages/adapter-orchestrator-http" },
+    { "path": "packages/adapter-docker" },
     { "path": "apps/api" },
     { "path": "apps/orchestrator" },
     { "path": "apps/agent" }
