@@ -12,7 +12,7 @@
 
 - `src/app.ts` — маршруты и перевод результатов ядра в HTTP-ответы (`STATUS` по кодам ошибок).
 - `src/main.ts` — телеметрия (`adapter-telemetry`), конфигурация (`ApiConfig`), адаптеры (память, HTTP-оркестратор, NATS), запуск, остановка по сигналу со сбросом телеметрии. Слушает `0.0.0.0` внутри контейнера; наружу порт публикуется только на `127.0.0.1`.
-- Тесты: `test/health.test.ts` (AC-000-4), `test/api.test.ts` (AC-001-3, 4, 9, 10), `test/e2e.test.ts` (AC-001-20, сквозной без Docker), `test/trace.test.ts` (AC-016-9 — HTTP-цепочка `api` → `orchestrator` с настоящими серверами).
+- Тесты: `test/health.test.ts` (AC-000-4), `test/api.test.ts` (AC-001-3, 4, 9, 10), `test/e2e.test.ts` (AC-001-20 — сквозной без Docker; AC-016-12, AC-016-13 — он же с настоящим `TraceContext`: один `traceId` на рой, нет утечки текста в логи и спаны), `test/trace.test.ts` (AC-016-9 — HTTP-цепочка `api` → `orchestrator` с настоящими серверами).
 
 ## Ограничения
 
