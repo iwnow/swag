@@ -9,6 +9,7 @@
   "include": ["src"],
   "references": [
     { "path": "../../packages/adapter-nats" },
+    { "path": "../../packages/adapter-telemetry" },
     { "path": "../../packages/agent-core" },
     { "path": "../../packages/config" },
     { "path": "../../packages/contracts" }
