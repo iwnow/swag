@@ -4,6 +4,7 @@ import {
   ApiConfig,
   BaseConfig,
   ConfigError,
+  ObservabilityConfig,
   OrchestratorConfig,
   loadConfig,
 } from '../src/index.ts';
@@ -16,7 +17,13 @@ const validEnv = {
 describe('loadConfig', () => {
   it('AC-000-2: валидный env даёт типизированный объект', () => {
     const config: BaseConfig = loadConfig(BaseConfig, { ...validEnv, UNRELATED: 'x' });
-    expect(config).toEqual(validEnv);
+    // Спека 016, 4.11: значения телеметрии по умолчанию.
+    expect(config).toEqual({
+      ...validEnv,
+      OTEL_EXPORTER_OTLP_ENDPOINT: null,
+      LOG_LEVEL: 'info',
+      TELEMETRY_FLUSH_TIMEOUT_MS: 2000,
+    });
   });
 
   it('AC-000-3: без DATABASE_URL — ошибка с именем переменной', () => {
@@ -50,6 +57,39 @@ describe('loadConfig', () => {
       'agent-3',
     );
     expect(() => loadConfig(AgentConfig, { ...agentEnv, AGENT_NEXT: 'bob' })).toThrow(/AGENT_NEXT/);
+  });
+
+  it('телеметрия: LOG_LEVEL из LogLevel, OTLP-адрес, TRACEPARENT агента; пустые строки — null', () => {
+    const base = loadConfig(BaseConfig, {
+      ...validEnv,
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318',
+      LOG_LEVEL: 'debug',
+      TELEMETRY_FLUSH_TIMEOUT_MS: '500',
+    });
+    expect(base).toMatchObject({
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318',
+      LOG_LEVEL: 'debug',
+      TELEMETRY_FLUSH_TIMEOUT_MS: 500,
+    });
+    expect(() => loadConfig(BaseConfig, { ...validEnv, LOG_LEVEL: 'trace' })).toThrow(/LOG_LEVEL/);
+    expect(loadConfig(ObservabilityConfig, { GRAFANA_PORT: '3300' }).GRAFANA_PORT).toBe(3300);
+
+    const agent = loadConfig(AgentConfig, {
+      NATS_URL: 'nats://nats:4222',
+      SWARM_ID: '0b6f6d2e-6a4c-4c3e-9f5e-111111111111',
+      AGENT_ID: 'agent-1',
+      AGENT_NAME: 'A',
+      AGENT_ROLE: 'r',
+      AGENT_NEXT: '',
+      AGENT_STEP_DELAY_MS: '0',
+      TRACEPARENT: '',
+      OTEL_EXPORTER_OTLP_ENDPOINT: '',
+    });
+    expect(agent).toMatchObject({
+      TRACEPARENT: null,
+      OTEL_EXPORTER_OTLP_ENDPOINT: null,
+      TELEMETRY_FLUSH_TIMEOUT_MS: 2000,
+    });
   });
 
   it('DOCKER_AGENT_OTLP_ENDPOINT необязательный: пусто или нет — null, иначе адрес', () => {

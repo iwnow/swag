@@ -2,30 +2,42 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createApiCore } from '@swag/api-core';
 import { ALL_EVENTS, ALL_INBOXES } from '@swag/contracts';
-import { ApiConfig, ConfigError, loadConfig } from '@swag/config';
+import { ApiConfig, BaseConfig, loadConfig } from '@swag/config';
 import { createMemorySwarmStore } from '@swag/adapter-memory';
 import { createOrchestratorHttpClient } from '@swag/adapter-orchestrator-http';
 import { connectNatsBus } from '@swag/adapter-nats';
+import { startTelemetry, tracedHttpServer } from '@swag/adapter-telemetry';
 import { buildApp } from './app.ts';
 
-function readConfig(): ApiConfig {
-  try {
-    return loadConfig(ApiConfig);
-  } catch (error) {
-    if (error instanceof ConfigError) {
-      console.error(error.message);
-      process.exit(1);
-    }
-    throw error;
-  }
+const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
+
+// Телеметрия поднимается первой: ошибка конфигурации тоже уходит логом LogRecord (REQ-016-5).
+const telemetryEnv = BaseConfig.pick({
+  OTEL_EXPORTER_OTLP_ENDPOINT: true,
+  LOG_LEVEL: true,
+  TELEMETRY_FLUSH_TIMEOUT_MS: true,
+}).safeParse(process.env);
+const telemetry = startTelemetry({
+  service: 'api',
+  version,
+  otlpEndpoint: telemetryEnv.data?.OTEL_EXPORTER_OTLP_ENDPOINT ?? null,
+  logLevel: telemetryEnv.data?.LOG_LEVEL ?? 'info',
+  flushTimeoutMs: telemetryEnv.data?.TELEMETRY_FLUSH_TIMEOUT_MS ?? 2000,
+});
+const log = telemetry.logger;
+
+async function fail(msg: string, error: unknown): Promise<never> {
+  log.error(msg, { err: error });
+  await telemetry.shutdown();
+  process.exit(1);
 }
 
-const config = readConfig();
-const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
-// Временно до T-6 (спека 016): логгер и TraceContext придут из adapter-telemetry.
-const line = (level: string) => (msg: string, context?: Record<string, unknown>) =>
-  console.warn(JSON.stringify({ level, msg, ...context }));
-const log = { debug: line('debug'), info: line('info'), warn: line('warn'), error: line('error') };
+let config: ApiConfig;
+try {
+  config = loadConfig(ApiConfig);
+} catch (error) {
+  config = await fail('config invalid', error);
+}
 
 const core = createApiCore({
   version,
@@ -34,16 +46,23 @@ const core = createApiCore({
   clock: { now: () => new Date().toISOString() },
   ids: { uuid: () => randomUUID() },
   log,
-  trace: { currentTraceId: () => null },
+  trace: telemetry.trace,
   limits: { maxActiveSwarms: config.MAX_ACTIVE_SWARMS },
 });
 
-// Все события роя и все сообщения агентов из шины — в ядро (REQ-001-4).
-const bus = await connectNatsBus({ url: config.NATS_URL, warn: (message) => log.warn(message) });
+// Все события роя и все сообщения агентов из шины — в ядро (REQ-001-4), каждое — в спане consumer.
+const bus = await connectNatsBus({
+  url: config.NATS_URL,
+  warn: (message) => log.warn('bus warning', { reason: message }),
+}).catch((error: unknown) => fail('nats connect failed', error));
 bus.subscribeJson(ALL_EVENTS, (raw) => core.ingestEvent(raw));
 bus.subscribeJson(ALL_INBOXES, (raw) => core.ingestMessage(raw));
 
-const app = await buildApp(core, { logger: true });
+// Fastify пишет тем же логгером; каждый запрос, кроме /health, — серверный спан с родителем из traceparent.
+const app = await buildApp(core, {
+  loggerInstance: telemetry.logger.pino,
+  serverFactory: tracedHttpServer(telemetry, { ignorePaths: ['/health'] }),
+});
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(
@@ -52,6 +71,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       void app
         .close()
         .then(() => bus.close())
+        .then(() => telemetry.shutdown())
         .then(() => process.exit(0)),
   );
 }

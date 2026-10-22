@@ -1,10 +1,5 @@
 import { z } from 'zod';
-
-export const BaseConfig = z.object({
-  DATABASE_URL: z.string().url(),
-  NATS_URL: z.string().url(),
-});
-export type BaseConfig = z.infer<typeof BaseConfig>;
+import { LogLevel } from '@swag/contracts';
 
 const Port = z.coerce.number().int().min(1).max(65535);
 const PositiveInt = z.coerce.number().int().min(0);
@@ -13,6 +8,17 @@ const OptionalUrl = z
   .union([z.literal(''), z.string().url()])
   .optional()
   .transform((value) => (value ? value : null));
+const FlushTimeoutMs = PositiveInt.default(2000); // TELEMETRY_FLUSH_TIMEOUT_MS
+
+export const BaseConfig = z.object({
+  DATABASE_URL: z.string().url(),
+  NATS_URL: z.string().url(),
+  // Спека 016, 4.11: телеметрия. Пустой OTEL_EXPORTER_OTLP_ENDPOINT — только логи в stdout (REQ-016-6).
+  OTEL_EXPORTER_OTLP_ENDPOINT: OptionalUrl,
+  LOG_LEVEL: LogLevel.default('info'),
+  TELEMETRY_FLUSH_TIMEOUT_MS: FlushTimeoutMs,
+});
+export type BaseConfig = z.infer<typeof BaseConfig>;
 
 // Спека 001, 4.9. Значения лимитов и таймаутов — env (Q-3).
 export const ApiConfig = BaseConfig.extend({
@@ -38,7 +44,13 @@ export type OrchestratorConfig = z.infer<typeof OrchestratorConfig>;
 export const UiConfig = z.object({ UI_PORT: Port });
 export type UiConfig = z.infer<typeof UiConfig>;
 
+// Спека 016, 4.11: порт Grafana на 127.0.0.1 — для infra:check.
+export const ObservabilityConfig = z.object({ GRAFANA_PORT: Port });
+export type ObservabilityConfig = z.infer<typeof ObservabilityConfig>;
+
 // Агент не нуждается в DATABASE_URL, поэтому без BaseConfig (4.9).
+// Телеметрия агента (016, 4.7): контекст и адрес Collector передаёт оркестратор, пустые строки — нет значения.
+// Уровень логов агента — info, оркестратор его не передаёт.
 export const AgentConfig = z.object({
   NATS_URL: z.string().url(),
   SWARM_ID: z.uuid(),
@@ -50,6 +62,12 @@ export const AgentConfig = z.object({
     .regex(/^(agent-[1-9][0-9]?)?$/)
     .transform((value) => (value === '' ? null : value)),
   AGENT_STEP_DELAY_MS: PositiveInt,
+  TRACEPARENT: z
+    .string()
+    .optional()
+    .transform((value) => (value ? value : null)),
+  OTEL_EXPORTER_OTLP_ENDPOINT: OptionalUrl,
+  TELEMETRY_FLUSH_TIMEOUT_MS: FlushTimeoutMs,
 });
 export type AgentConfig = z.infer<typeof AgentConfig>;
 

@@ -8,6 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@opentelemetry/api": "1.10.0",
     "@swag/api-core": "0.0.0",
     "@swag/contracts": "0.0.0"
   }
