@@ -1,7 +1,7 @@
 ---
 id: "016"
 title: Наблюдаемость
-status: draft
+status: ready
 roadmap_stage: 1а
 depends_on: ["001"]
 superseded_by: null
