@@ -1,7 +1,7 @@
 ---
 id: "001"
 title: Сквозной скелет без LLM
-status: ready
+status: in-progress
 roadmap_stage: 1
 depends_on: ["000"]
 superseded_by: null
