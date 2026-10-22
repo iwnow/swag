@@ -2,9 +2,12 @@
 import { jetstreamManager } from '@nats-io/jetstream';
 import { connect } from '@nats-io/transport-node';
 import { ApiConfig, ConfigError, OrchestratorConfig, UiConfig, loadConfig } from '@swag/config';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import pg from 'pg';
 
 const TIMEOUT_MS = 5000;
+const execFileAsync = promisify(execFile);
 
 /** Адрес из сети compose → адрес на хосте: имя сервиса заменяется на 127.0.0.1, порт тот же. */
 function onHost(url: string): string {
@@ -58,11 +61,20 @@ async function checkHttp(port: number, path: string): Promise<void> {
   if (response.status !== 200) throw new Error(`HTTP ${response.status}`);
 }
 
+/** Сервис без опубликованного порта (оркестратор, Q-7 спеки 001) проверяется изнутри своего контейнера. */
+async function checkHttpInContainer(service: string, port: number, path: string): Promise<void> {
+  await execFileAsync(
+    'docker',
+    ['compose', 'exec', '-T', service, 'wget', '-qO-', `http://127.0.0.1:${port}${path}`],
+    { timeout: TIMEOUT_MS },
+  );
+}
+
 const checks: [string, () => Promise<void>][] = [
   ['postgres', checkPostgres],
   ['nats', checkNats],
   ['api', () => checkHttp(config.API_PORT, '/health')],
-  ['orchestrator', () => checkHttp(config.ORCHESTRATOR_PORT, '/health')],
+  ['orchestrator', () => checkHttpInContainer('orchestrator', config.ORCHESTRATOR_PORT, '/health')],
   ['ui', () => checkHttp(config.UI_PORT, '/')],
 ];
 

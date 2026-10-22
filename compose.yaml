@@ -62,8 +62,7 @@ services:
     # Сокет на хосте принадлежит группе docker/root; пользователь node без этой группы получает EACCES.
     group_add:
       - '0'
-    ports:
-      - 127.0.0.1:${ORCHESTRATOR_PORT}:${ORCHESTRATOR_PORT}
+    # Порт не публикуется: оркестратор — внутренний сервис, к нему ходит только `api` по сети compose (Q-7 спеки 001).
     depends_on:
       postgres:
         condition: service_healthy
