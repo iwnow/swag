@@ -1,38 +1,43 @@
 # @swag/adapter-docker
 
-Адаптер порта `SandboxProvider` из `orchestrator-core` на Docker (dockerode). Шаблон → образ, метаданные → метки контейнера, env + `NATS_URL` из конфигурации адаптера.
+Адаптер порта `SandboxProvider` из `orchestrator-core` на Docker (dockerode). Шаблон → образ, метаданные → метки контейнера, env + `NATS_URL`, `TRACEPARENT` и `OTEL_EXPORTER_OTLP_ENDPOINT` из конфигурации адаптера и текущего контекста трассировки.
 
 ## Задачи
 
-- `create(spec)` — создать и запустить контейнер агента.
-- `remove(id)` — остановить и удалить; нет такого контейнера — не ошибка.
+- `create(spec)` — создать и запустить контейнер агента в спане `sandbox.create`.
+- `remove(id)` — остановить и удалить в спане `sandbox.remove`; нет такого контейнера — не ошибка.
 - `list(match)` — id контейнеров по меткам; `true` — ключ есть с любым значением.
 
 ## Что внутри сейчас
 
-- `createDockerSandboxProvider({ network, natsUrl, docker? })`.
-- `test/docker.test.ts` — AC-001-22. Без доступного Docker пропускается с предупреждением; в CI обязателен.
+- `createDockerSandboxProvider({ network, natsUrl, otlpEndpoint?, docker? })`.
+- `test/docker.test.ts` — AC-001-22 и AC-016-10. Без доступного Docker пропускаются с предупреждением; в CI обязательны.
 
 ## Ограничения
 
 - Без монтирований, публикации портов и `Privileged` (4.6.3). Ресурсы, read-only rootfs, сеть на рой — спека 005.
 - Доступ к Docker только у оболочки `orchestrator` (Q-1). Socket монтируется только туда.
 - Пользователь — из образа (`node`).
+- Агент шлёт телеметрию в Collector по общей сети compose; закрытая сеть песочницы — спека 005 (D-14).
 
 ## Связи
 
 - Порт: `SandboxProvider` из `@swag/orchestrator-core` (только типы).
 - Оболочка: `apps/orchestrator`.
-- Конфигурация: `DOCKER_AGENT_NETWORK`, `DOCKER_AGENT_NATS_URL` ([4.9](../../docs/spec/001-walking-skeleton.md#49-переменные-окружения)).
+- Конфигурация: `DOCKER_AGENT_NETWORK`, `DOCKER_AGENT_NATS_URL` ([001, 4.9](../../docs/spec/001-walking-skeleton.md#49-переменные-окружения)), `DOCKER_AGENT_OTLP_ENDPOINT` ([016, 4.11](../../docs/spec/016-observability.md#411-переменные-окружения)).
+- Трассировка: `@opentelemetry/api`; тесты — `@swag/adapter-telemetry` (devDependency).
 
 ## Ключевые решения
 
-- `dockerode` 5.0.1 и `@types/dockerode` 4.0.2 (точные версии, `save-exact`; T-7).
+- `dockerode` 5.0.1 и `@types/dockerode` 4.0.2 (точные версии, `save-exact`; T-7 спеки 001).
 - Метки контейнера = метаданные песочницы: поиск роя и сирот — через `listContainers` с фильтром `label` (`key=value` или `key`).
-- `NATS_URL` добавляет адаптер, а не ядро (4.6.3): адрес — `DOCKER_AGENT_NATS_URL`.
+- `NATS_URL`, `TRACEPARENT` и `OTEL_EXPORTER_OTLP_ENDPOINT` добавляет адаптер, а не ядро: `SandboxSpec` от ядра не меняется (4.6.3 спеки 001, 4.7 спеки 016). Других переменных телеметрии песочница не получает — ни адресов Grafana, Tempo и Loki, ни учётных данных (REQ-016-14).
+- `TRACEPARENT` берётся внутри спана `sandbox.create`: родитель спана `agent.start` в агенте — создание его песочницы. Нет контекста — пустая строка; нет `otlpEndpoint` — пустой `OTEL_EXPORTER_OTLP_ENDPOINT` (агент тогда пишет логи только в stdout, D-18).
+- Спаны `sandbox.create` и `sandbox.remove` — `kind: client`, атрибуты `swarm.id`, `agent.id` (из метаданных `swag.swarm`, `swag.agent`) и `sandbox.id` после создания. Для `remove` id роя и агента адаптер помнит с `create`; у сирот прошлого запуска их нет.
 - Удаление с `force: true`; `404` при удалении — не ошибка (порт требует идемпотентности).
-- Проверено на Docker Desktop 29.x: AC-001-22 проходит на `alpine:3.22`, сеть `bridge`.
+- Проверено на Docker Desktop 29.x: AC-001-22 и AC-016-10 проходят на `alpine:3.22`, сеть `bridge`.
 
 ## Спеки
 
 - 001 — 4.6.3, AC-001-22. Усиление — 005.
+- 016 — 4.7, REQ-016-14, AC-016-10.

@@ -30,6 +30,7 @@ const bus = await connectNatsBus({ url: config.NATS_URL, warn: (message) => log.
 const sandboxes = createDockerSandboxProvider({
   network: config.DOCKER_AGENT_NETWORK,
   natsUrl: config.DOCKER_AGENT_NATS_URL,
+  otlpEndpoint: config.DOCKER_AGENT_OTLP_ENDPOINT,
 });
 const ports: OrchestratorBus = {
   publishEvent: async (event) => bus.publishJson(eventsSubject(event.swarmId), event),

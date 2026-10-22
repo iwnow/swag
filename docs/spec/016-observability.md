@@ -369,7 +369,7 @@ export function startTelemetry(options: TelemetryOptions): Telemetry;
 - [x] **T-2.** `packages/adapter-telemetry` (4.4): SDK, логгер в stdout и OTLP, `TraceContext`, `inSpan`, `currentTraceparent`, `shutdown`; тесты с экспортом в память; README. Закрывает: REQ-016-3, REQ-016-5 (логгер), REQ-016-6…8, AC-016-2, AC-016-3.
 - [x] **T-3.** Порты `Logger` (4 уровня) и `TraceContext` в трёх ядрах. Конверты событий берут `traceId` из `TraceContext`, логи по таблице 4.8. Тесты, README ядер. `arch:check` с фикстурой OpenTelemetry и pino. Закрывает: REQ-016-1, REQ-016-4, REQ-016-9, AC-016-4…7, AC-016-15.
 - [x] **T-4.** `adapter-nats`: перенос контекста и спаны 4.6; тест с настоящим NATS. Закрывает: REQ-016-2 (шина), REQ-016-15, AC-016-8.
-- [ ] **T-5.** `adapter-docker`: `TRACEPARENT`, `OTEL_EXPORTER_OTLP_ENDPOINT`, спаны `sandbox.*` (4.7); `DOCKER_AGENT_OTLP_ENDPOINT` в конфигурации. Тест с Docker. Закрывает: REQ-016-14, AC-016-10.
+- [x] **T-5.** `adapter-docker`: `TRACEPARENT`, `OTEL_EXPORTER_OTLP_ENDPOINT`, спаны `sandbox.*` (4.7); `DOCKER_AGENT_OTLP_ENDPOINT` в конфигурации. Тест с Docker. Закрывает: REQ-016-14, AC-016-10.
 - [ ] **T-6.** `@swag/config` (4.11). Оболочки `api` и `orchestrator` на `adapter-telemetry`: Fastify с общим логгером, приём `traceparent`, передача в `adapter-orchestrator-http`, `shutdown` по сигналу. Тест HTTP-цепочки. Закрывает: REQ-016-2 (HTTP), REQ-016-5, AC-016-9.
 - [ ] **T-7.** Оболочка агента: телеметрия до NATS, спан `agent.start` от `TRACEPARENT`, ошибка старта → лог, сброс, код 1. Тест. Закрывает: REQ-016-8, AC-016-11.
 - [ ] **T-8.** Сквозной тест с настоящим `TraceContext` и проверкой утечки пользовательского текста. Закрывает: REQ-016-2, REQ-016-10, AC-016-12, AC-016-13.

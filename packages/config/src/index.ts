@@ -8,6 +8,11 @@ export type BaseConfig = z.infer<typeof BaseConfig>;
 
 const Port = z.coerce.number().int().min(1).max(65535);
 const PositiveInt = z.coerce.number().int().min(0);
+// Спека 016, 4.11: необязательный адрес; не задан или пустая строка — null.
+const OptionalUrl = z
+  .union([z.literal(''), z.string().url()])
+  .optional()
+  .transform((value) => (value ? value : null));
 
 // Спека 001, 4.9. Значения лимитов и таймаутов — env (Q-3).
 export const ApiConfig = BaseConfig.extend({
@@ -22,6 +27,7 @@ export const OrchestratorConfig = BaseConfig.extend({
   AGENT_TEMPLATE: z.string().min(1),
   DOCKER_AGENT_NETWORK: z.string().min(1),
   DOCKER_AGENT_NATS_URL: z.string().url(),
+  DOCKER_AGENT_OTLP_ENDPOINT: OptionalUrl, // адрес Collector изнутри песочницы (016, 4.7; D-18)
   AGENT_STEP_DELAY_MS: PositiveInt,
   AGENT_START_TIMEOUT_MS: PositiveInt,
   SWARM_TIMEOUT_MS: PositiveInt,

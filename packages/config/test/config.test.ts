@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { AgentConfig, ApiConfig, BaseConfig, ConfigError, loadConfig } from '../src/index.ts';
+import {
+  AgentConfig,
+  ApiConfig,
+  BaseConfig,
+  ConfigError,
+  OrchestratorConfig,
+  loadConfig,
+} from '../src/index.ts';
 
 const validEnv = {
   DATABASE_URL: 'postgres://swag:swag-local@postgres:5432/swag',
@@ -43,5 +50,32 @@ describe('loadConfig', () => {
       'agent-3',
     );
     expect(() => loadConfig(AgentConfig, { ...agentEnv, AGENT_NEXT: 'bob' })).toThrow(/AGENT_NEXT/);
+  });
+
+  it('DOCKER_AGENT_OTLP_ENDPOINT необязательный: пусто или нет — null, иначе адрес', () => {
+    const orchestratorEnv = {
+      ...validEnv,
+      ORCHESTRATOR_PORT: '3001',
+      AGENT_TEMPLATE: 'swag-agent:dev',
+      DOCKER_AGENT_NETWORK: 'swag_default',
+      DOCKER_AGENT_NATS_URL: 'nats://nats:4222',
+      AGENT_STEP_DELAY_MS: '0',
+      AGENT_START_TIMEOUT_MS: '30000',
+      SWARM_TIMEOUT_MS: '300000',
+    };
+    expect(loadConfig(OrchestratorConfig, orchestratorEnv).DOCKER_AGENT_OTLP_ENDPOINT).toBeNull();
+    expect(
+      loadConfig(OrchestratorConfig, { ...orchestratorEnv, DOCKER_AGENT_OTLP_ENDPOINT: '' })
+        .DOCKER_AGENT_OTLP_ENDPOINT,
+    ).toBeNull();
+    expect(
+      loadConfig(OrchestratorConfig, {
+        ...orchestratorEnv,
+        DOCKER_AGENT_OTLP_ENDPOINT: 'http://otel-collector:4318',
+      }).DOCKER_AGENT_OTLP_ENDPOINT,
+    ).toBe('http://otel-collector:4318');
+    expect(() =>
+      loadConfig(OrchestratorConfig, { ...orchestratorEnv, DOCKER_AGENT_OTLP_ENDPOINT: 'нет' }),
+    ).toThrow(/DOCKER_AGENT_OTLP_ENDPOINT/);
   });
 });
