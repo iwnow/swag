@@ -10,3 +10,6 @@
 
 - [ ] **N-2. Версия npm — диапазон, а не точная.** *(из ревью 000; где — корневой `package.json`, `engines.npm`; когда — если появятся расхождения `package-lock.json` между машинами; Claude, 2026-10-21)*
   REQ-000-3 требует зафиксировать версии, а стоит `"npm": ">=11.0.0"`. Для разработки хватает, но разные мажорные npm могут по-разному писать lock-файл. Вариант: поле `packageManager` с точной версией и `engines.npm` в узком диапазоне.
+
+- [ ] **N-4. Сверить решения 001 с актуальной документацией через context7.** *(из обсуждения реализации 001; где — пакеты, созданные и изменённые в 001: `apps/ui/cabinet`, `adapter-docker`, `adapter-nats`, `adapter-memory`, `adapter-orchestrator-http`, `api-integration`, `ui-core`, оболочки `api`, `orchestrator`, `agent`, `compose.yaml`, Dockerfile; когда — спека 002; Claude, 2026-10-22)*
+  001 реализован без context7 (MCP не был подключён), API библиотек могли взять по памяти модели. Подключить context7 и по его документации проверить: версии и рекомендуемые API Angular (standalone, signals, `ng serve` с прокси для WebSocket), dockerode, `@nats-io/transport-node`, Fastify (WebSocket), Docker Compose. Устаревшее или нерекомендуемое — исправить задачами 002, решения записать в README пакетов.
