@@ -1,4 +1,5 @@
 {
+  "extends": "./tsconfig.dev.json",
   "files": [],
   "references": [
     { "path": "packages/contracts" },
