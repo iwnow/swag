@@ -12,17 +12,22 @@ import { buildApp } from './app.ts';
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
 
 // Телеметрия поднимается первой: ошибка конфигурации тоже уходит логом LogRecord (REQ-016-5).
-const telemetryEnv = BaseConfig.pick({
-  OTEL_EXPORTER_OTLP_ENDPOINT: true,
-  LOG_LEVEL: true,
-  TELEMETRY_FLUSH_TIMEOUT_MS: true,
-}).safeParse(process.env);
+// Каждая переменная — отдельно: невалидная одна не обнуляет остальные.
+const field = <
+  K extends 'OTEL_EXPORTER_OTLP_ENDPOINT' | 'LOG_LEVEL' | 'TELEMETRY_FLUSH_TIMEOUT_MS',
+>(
+  key: K,
+  fallback: BaseConfig[K],
+): BaseConfig[K] => {
+  const parsed = BaseConfig.shape[key].safeParse(process.env[key]);
+  return parsed.success ? (parsed.data as BaseConfig[K]) : fallback;
+};
 const telemetry = startTelemetry({
   service: 'api',
   version,
-  otlpEndpoint: telemetryEnv.data?.OTEL_EXPORTER_OTLP_ENDPOINT ?? null,
-  logLevel: telemetryEnv.data?.LOG_LEVEL ?? 'info',
-  flushTimeoutMs: telemetryEnv.data?.TELEMETRY_FLUSH_TIMEOUT_MS ?? 2000,
+  otlpEndpoint: field('OTEL_EXPORTER_OTLP_ENDPOINT', null),
+  logLevel: field('LOG_LEVEL', 'info'),
+  flushTimeoutMs: field('TELEMETRY_FLUSH_TIMEOUT_MS', 2000),
 });
 const log = telemetry.logger;
 
@@ -76,4 +81,6 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   );
 }
 
-await app.listen({ host: '0.0.0.0', port: config.API_PORT });
+await app
+  .listen({ host: '0.0.0.0', port: config.API_PORT })
+  .catch((error: unknown) => fail('listen failed', error));

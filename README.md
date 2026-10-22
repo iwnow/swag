@@ -25,31 +25,40 @@ npm run infra:check
 
 ## Команды
 
-| Команда               | Что делает                                                                                                                                   |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run check`       | Всё по порядку до первой ошибки: `format:check`, `lint`, `typecheck`, `arch:check`, `build`, `test`, `spec:check`. Её же запускает CI        |
-| `npm run build`       | `tsc -b` по всем пакетам                                                                                                                     |
-| `npm run typecheck`   | Типы пакетов, тестов и скриптов                                                                                                              |
-| `npm run lint`        | ESLint                                                                                                                                       |
-| `npm run format`      | Prettier: исправить; `format:check` — только проверить                                                                                       |
-| `npm test`            | Vitest                                                                                                                                       |
-| `npm run arch:check`  | Границы ядер: зависимости и импорты `packages/*-core` против белого списка                                                                   |
-| `npm run spec:check`  | У каждого критерия приёмки спек в работе есть тест с его id                                                                                  |
-| `npm run up`          | Поднять систему в Docker                                                                                                                     |
-| `npm run dev`         | То же в режиме разработки: правка в `src` оболочки или ядра перезапускает сервис без пересборки образа                                       |
-| `npm run down`        | Остановить систему                                                                                                                           |
-| `npm run infra:check` | Проверить с хоста Postgres, NATS, `/health` у `api`, доступность `ui`; `/health` у `orchestrator` — изнутри контейнера (порт не публикуется) |
-| `npm run agent:image` | Собрать образ агента `swag-agent:dev` для песочниц                                                                                           |
+| Команда               | Что делает                                                                                                                                                                                                 |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run check`       | Всё по порядку до первой ошибки: `format:check`, `lint`, `typecheck`, `arch:check`, `build`, `test`, `spec:check`. Её же запускает CI                                                                      |
+| `npm run build`       | `tsc -b` по всем пакетам                                                                                                                                                                                   |
+| `npm run typecheck`   | Типы пакетов, тестов и скриптов                                                                                                                                                                            |
+| `npm run lint`        | ESLint                                                                                                                                                                                                     |
+| `npm run format`      | Prettier: исправить; `format:check` — только проверить                                                                                                                                                     |
+| `npm test`            | Vitest                                                                                                                                                                                                     |
+| `npm run arch:check`  | Границы ядер: зависимости и импорты `packages/*-core` против белого списка                                                                                                                                 |
+| `npm run spec:check`  | У каждого критерия приёмки спек в работе есть тест с его id                                                                                                                                                |
+| `npm run up`          | Поднять систему в Docker                                                                                                                                                                                   |
+| `npm run dev`         | То же в режиме разработки: правка в `src` оболочки или ядра перезапускает сервис без пересборки образа                                                                                                     |
+| `npm run down`        | Остановить систему                                                                                                                                                                                         |
+| `npm run infra:check` | Проверить с хоста Postgres, NATS, `/health` у `api`, доступность `ui`, `/api/health` у Grafana; `/health` у `orchestrator` — изнутри контейнера, `otel-collector` — из сети compose (порты не публикуются) |
+| `npm run agent:image` | Собрать образ агента `swag-agent:dev` для песочниц                                                                                                                                                         |
 
-`npm run up` сначала собирает образ агента (`npm run agent:image`, профиль `agent`: `docker compose --profile agent build agent`), затем поднимает `postgres`, `nats`, `orchestrator`, `api`, `ui`. Образ агента сам по себе не стартует.
+`npm run up` сначала собирает образ агента (`npm run agent:image`, профиль `agent`: `docker compose --profile agent build agent`), затем поднимает `postgres`, `nats`, `lgtm`, `otel-collector`, `orchestrator`, `api`, `ui`. Образ агента сам по себе не стартует.
 
 ## Как открыть личный кабинет и запустить рой
 
 - Личный кабинет: <http://127.0.0.1:4200> (`UI_PORT`). Новый рой — кнопка «Новый рой», задача и агенты по порядку цепочки.
 - API напрямую: <http://127.0.0.1:3000> (`POST /swarms`, `GET /swarms/:id`, `POST /swarms/:id/stop`).
-- Оркестратор: <http://127.0.0.1:3001> (только для проверки, `api` обращается к нему по сети compose).
+- Оркестратор наружу не публикуется: `api` обращается к нему по сети compose.
 
 Песочницы агентов — контейнеры с меткой `swag.kind=agent`; после роя их не остаётся: `docker ps -a --filter label=swag.kind`.
+
+## Наблюдаемость: трейсы и логи роя
+
+Каждый рой — один трейс OpenTelemetry от `POST /swarms` через оркестратор, песочницы, агентов и сообщения NATS ([спека 016](docs/spec/016-observability.md)). Сервисы и агенты пишут JSON-логи одной схемы (`LogRecord`) в stdout (`docker compose logs api`) и вместе с трейсами шлют их в OpenTelemetry Collector, тот — в Grafana LGTM (Tempo, Loki).
+
+- Grafana: <http://127.0.0.1:3300/grafana/> (`GRAFANA_PORT`, только `127.0.0.1`, без входа). Из личного кабинета — через прокси: <http://127.0.0.1:4200/grafana/>.
+- Трейс роя из UI: в ленте события ссылка «Трейс» открывает Explore с трейсом этого события.
+- Найти рой по `traceId` вручную: `traceId` есть в каждом событии (`GET /swarms/:id/events`). В Grafana → Explore → источник Tempo → запрос TraceQL — сам `traceId`. Логи трейса: из спана — «Logs for this span», или Explore → Loki → `{service_name=~"api|orchestrator|agent"} | trace_id = "<traceId>"`. Из записи лога в Loki трейс открывается по полю `trace_id`.
+- Без Collector сервисы работают: пустой `OTEL_EXPORTER_OTLP_ENDPOINT` — логи только в stdout.
 
 ## Ядро и оболочка
 

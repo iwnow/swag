@@ -139,6 +139,8 @@ export function toLogError(value: unknown): LogError {
 }
 
 const EXPORT_WARN_INTERVAL_MS = 10_000; // AC-016-19: не чаще одной записи в 10 с
+// Пакеты уходят раз в секунду (у SDK по умолчанию 5 с для спанов): короткоживущий агент успевает отправить.
+const EXPORT_DELAY_MS = 1000;
 
 function pinoOptions(options: TelemetryOptions): pino.LoggerOptions {
   return {
@@ -206,7 +208,10 @@ export function startTelemetry(options: TelemetryOptions): Telemetry {
     spanProcessors.push(new SimpleSpanProcessor({ exporter: options.exporters.spans }));
   } else if (endpoint) {
     spanProcessors.push(
-      new BatchSpanProcessor({ exporter: new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }) }),
+      new BatchSpanProcessor({
+        exporter: new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),
+        scheduledDelayMillis: EXPORT_DELAY_MS,
+      }),
     );
   }
   const tracerProvider = new TracerProvider({
@@ -224,6 +229,7 @@ export function startTelemetry(options: TelemetryOptions): Telemetry {
     logProcessors.push(
       new BatchLogRecordProcessor({
         exporter: new OTLPLogExporter({ url: `${endpoint}/v1/logs` }),
+        scheduledDelayMillis: EXPORT_DELAY_MS,
       }),
     );
   }

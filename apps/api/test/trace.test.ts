@@ -11,10 +11,10 @@ import {
   tracedHttpServer,
   type Telemetry,
 } from '@swag/adapter-telemetry';
-import type { PlatformEventInput } from '@swag/contracts';
+import { LogRecord, type PlatformEventInput } from '@swag/contracts';
 import { buildApp } from '../src/app.ts';
 import { buildApp as buildOrchestratorApp } from '../../orchestrator/src/app.ts';
-import { body, silentLog } from './support.ts';
+import { body } from './support.ts';
 
 // AC-016-9: настоящие api и orchestrator на случайных портах, фейковый провайдер песочниц, спаны в памяти.
 const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
@@ -35,13 +35,14 @@ const portOf = (app: FastifyInstance): number => {
 
 async function stack() {
   const memory = createMemoryExporters();
+  const lines: string[] = [];
   telemetry = startTelemetry({
     service: 'api',
     version: 'test',
     otlpEndpoint: null,
-    logLevel: 'error',
+    logLevel: 'debug', // все записи ядер и Fastify — для проверки утечки текста
     flushTimeoutMs: 500,
-    stdout: () => undefined,
+    stdout: (line) => lines.push(line),
     exporters: { spans: memory.spans },
   });
   const current = telemetry;
@@ -65,12 +66,13 @@ async function stack() {
     clock,
     timers: { setTimeout: () => 0, clearTimeout: () => undefined },
     ids,
-    log: silentLog,
+    log: current.logger,
     trace: current.trace,
     agent: { template: 'swag-agent:test', stepDelayMs: 0 },
     timeouts: { agentStartMs: 30000, swarmMs: 300000 },
   });
   const orchestratorApp = buildOrchestratorApp(orchestrator, {
+    loggerInstance: current.logger.pino,
     serverFactory: tracedHttpServer(current),
   });
   apps.push(orchestratorApp);
@@ -84,21 +86,24 @@ async function stack() {
     }),
     clock,
     ids,
-    log: silentLog,
+    log: current.logger,
     trace: current.trace,
     limits: { maxActiveSwarms: 5 },
   });
-  const apiApp = await buildApp(api, { serverFactory: tracedHttpServer(current) });
+  const apiApp = await buildApp(api, {
+    loggerInstance: current.logger.pino,
+    serverFactory: tracedHttpServer(current),
+  });
   apps.push(apiApp);
   await apiApp.listen({ host: '127.0.0.1', port: 0 });
 
-  const post = (traceparent: string) =>
+  const post = (traceparent: string, payload: unknown = body(2)) =>
     fetch(`http://127.0.0.1:${portOf(apiApp)}/swarms`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', traceparent },
-      body: JSON.stringify(body(2)),
+      body: JSON.stringify(payload),
     });
-  return { memory, api, published, post };
+  return { memory, api, published, post, lines };
 }
 
 describe('трассировка HTTP api → orchestrator', () => {
@@ -142,5 +147,30 @@ describe('трассировка HTTP api → orchestrator', () => {
       : undefined;
     expect(created?.traceId).toMatch(/^[0-9a-f]{32}$/);
     expect(created?.traceId).not.toBe(TRACE);
+  });
+
+  it('AC-016-13: через HTTP с Fastify на общем логгере — маркер из задачи и ролей не попадает ни в логи, ни в спаны; все строки — LogRecord с traceId', async () => {
+    const { memory, post, lines } = await stack();
+    const marker = 'SECRET-MARKER-016';
+    const response = await post(`00-${TRACE}-${REMOTE_SPAN}-01`, {
+      task: `Задача ${marker}`,
+      agents: [{ name: 'A', role: `роль ${marker}` }],
+    });
+    expect(response.status).toBe(201);
+    await vi.waitFor(() =>
+      expect(memory.finishedSpans.filter((s) => s.kind === SpanKind.SERVER)).toHaveLength(2),
+    );
+
+    expect(lines.some((line) => line.includes('"msg":"swarm created"'))).toBe(true);
+    expect(lines.some((line) => line.includes('incoming request'))).toBe(true);
+    for (const line of lines) {
+      expect(line).not.toContain(marker);
+      const record = LogRecord.parse(JSON.parse(line));
+      if (record.msg === 'swarm created') expect(record.traceId).toBe(TRACE);
+    }
+    for (const span of memory.finishedSpans) {
+      expect(JSON.stringify(span.attributes)).not.toContain(marker);
+      expect(JSON.stringify(span.events)).not.toContain(marker);
+    }
   });
 });

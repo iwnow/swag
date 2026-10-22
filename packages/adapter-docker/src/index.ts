@@ -24,6 +24,8 @@ interface DockerError {
 }
 
 const TRACER = '@swag/adapter-docker';
+// Грейс остановки: больше TELEMETRY_FLUSH_TIMEOUT_MS агента по умолчанию (2 с), потом Docker шлёт SIGKILL.
+const STOP_GRACE_SECONDS = 5;
 
 // Спан операции песочницы: ошибка — статус ERROR, исключение пробрасывается.
 async function inSpan<T>(
@@ -88,10 +90,20 @@ export function createDockerSandboxProvider(options: DockerSandboxOptions): Sand
     async remove(sandboxId: string) {
       const attributes = { ...known.get(sandboxId), 'sandbox.id': sandboxId };
       await inSpan('sandbox.remove', attributes, async () => {
+        const container = docker.getContainer(sandboxId);
         try {
-          await docker.getContainer(sandboxId).remove({ force: true });
+          // Сначала SIGTERM с грейсом: агент закрывает NATS и сбрасывает телеметрию (REQ-001-17, REQ-016-8),
+          // иначе force-удаление (SIGKILL) теряет его последние спаны и логи. 304 — уже остановлен.
+          await container.stop({ t: STOP_GRACE_SECONDS });
         } catch (error) {
-          if ((error as DockerError).statusCode === 404) return; // нет такой — не ошибка
+          const status = (error as DockerError).statusCode;
+          if (status === 404) return; // нет такой — не ошибка
+          if (status !== 304) throw error;
+        }
+        try {
+          await container.remove({ force: true });
+        } catch (error) {
+          if ((error as DockerError).statusCode === 404) return;
           throw error;
         }
       });

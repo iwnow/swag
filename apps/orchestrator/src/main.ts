@@ -11,17 +11,22 @@ import { buildApp } from './app.ts';
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
 
 // Телеметрия поднимается первой: ошибка конфигурации тоже уходит логом LogRecord (REQ-016-5).
-const telemetryEnv = BaseConfig.pick({
-  OTEL_EXPORTER_OTLP_ENDPOINT: true,
-  LOG_LEVEL: true,
-  TELEMETRY_FLUSH_TIMEOUT_MS: true,
-}).safeParse(process.env);
+// Каждая переменная — отдельно: невалидная одна не обнуляет остальные.
+const field = <
+  K extends 'OTEL_EXPORTER_OTLP_ENDPOINT' | 'LOG_LEVEL' | 'TELEMETRY_FLUSH_TIMEOUT_MS',
+>(
+  key: K,
+  fallback: BaseConfig[K],
+): BaseConfig[K] => {
+  const parsed = BaseConfig.shape[key].safeParse(process.env[key]);
+  return parsed.success ? (parsed.data as BaseConfig[K]) : fallback;
+};
 const telemetry = startTelemetry({
   service: 'orchestrator',
   version,
-  otlpEndpoint: telemetryEnv.data?.OTEL_EXPORTER_OTLP_ENDPOINT ?? null,
-  logLevel: telemetryEnv.data?.LOG_LEVEL ?? 'info',
-  flushTimeoutMs: telemetryEnv.data?.TELEMETRY_FLUSH_TIMEOUT_MS ?? 2000,
+  otlpEndpoint: field('OTEL_EXPORTER_OTLP_ENDPOINT', null),
+  logLevel: field('LOG_LEVEL', 'info'),
+  flushTimeoutMs: field('TELEMETRY_FLUSH_TIMEOUT_MS', 2000),
 });
 const log = telemetry.logger;
 
@@ -70,13 +75,17 @@ const core = createOrchestratorCore({
 });
 
 // Песочницы прошлого запуска не должны висеть (REQ-001-10).
-const orphans = await telemetry.inSpan('cleanup orphans', { parent: null }, () =>
-  core.cleanupOrphans(),
-);
+const orphans = await telemetry
+  .inSpan('cleanup orphans', { parent: null }, () => core.cleanupOrphans())
+  .catch((error: unknown) => fail('orphan cleanup failed', error));
 if (orphans > 0) log.warn('orphan sandboxes removed', { count: orphans });
 
 // Ответы агентов и их события (agent.started, agent.result) — в ядро, каждое — в спане consumer.
-bus.subscribeJson(ALL_EVENTS, (raw) => void core.handleEvent(raw));
+bus.subscribeJson(ALL_EVENTS, (raw) => {
+  core
+    .handleEvent(raw)
+    .catch((error: unknown) => log.error('event handling failed', { err: error }));
+});
 
 // Fastify пишет тем же логгером; каждый запрос, кроме /health, — серверный спан с родителем из traceparent.
 const app = buildApp(core, {
@@ -96,4 +105,6 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   );
 }
 
-await app.listen({ host: '0.0.0.0', port: config.ORCHESTRATOR_PORT });
+await app
+  .listen({ host: '0.0.0.0', port: config.ORCHESTRATOR_PORT })
+  .catch((error: unknown) => fail('listen failed', error));
