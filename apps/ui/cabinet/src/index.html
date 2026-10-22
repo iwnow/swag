@@ -6,33 +6,147 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Swag · Личный кабинет</title>
     <style>
-      :root { color-scheme: light; }
-      body { margin: 0; font: 15px/1.45 system-ui, sans-serif; background: #f5f6f8; color: #111827; }
-      main { max-width: 960px; margin: 0 auto; padding: 16px; }
-      h1 { font-size: 22px; margin: 16px 0; }
-      h2 { font-size: 17px; margin: 20px 0 8px; }
-      table { width: 100%; border-collapse: collapse; background: #fff; }
-      th, td { text-align: left; padding: 8px; border-bottom: 1px solid #e5e7eb; }
-      a { color: #1d4ed8; }
-      .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-      .button, button { background: #1d4ed8; color: #fff; border: 0; border-radius: 6px; padding: 8px 14px; text-decoration: none; cursor: pointer; }
-      button:disabled { background: #9ca3af; cursor: default; }
-      button.secondary { background: #e5e7eb; color: #111827; }
-      input, textarea { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
-      form label { display: block; margin: 12px 0; }
-      .agent-row { display: grid; grid-template-columns: 24px 1fr 2fr auto; gap: 8px; align-items: center; margin: 6px 0; }
-      .agent-row .index { color: #6b7280; text-align: center; }
-      .actions { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; }
-      .hint { color: #6b7280; font-size: 13px; }
-      .error { color: #b91c1c; }
-      pre { background: #fff; padding: 12px; border-radius: 6px; white-space: pre-wrap; border: 1px solid #e5e7eb; }
-      .feed { list-style: none; padding: 0; background: #fff; border-radius: 6px; border: 1px solid #e5e7eb; }
-      .feed li { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; display: flex; gap: 8px; flex-wrap: wrap; }
-      .feed .seq { color: #6b7280; min-width: 40px; }
-      .feed .type { font-weight: 600; }
-      .feed .agent { color: #1d4ed8; }
-      .feed .detail { color: #374151; word-break: break-word; }
-      svg { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; max-width: 100%; height: auto; }
+      :root {
+        color-scheme: light;
+      }
+      body {
+        margin: 0;
+        font:
+          15px/1.45 system-ui,
+          sans-serif;
+        background: #f5f6f8;
+        color: #111827;
+      }
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 16px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 16px 0;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 20px 0 8px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #fff;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      a {
+        color: #1d4ed8;
+      }
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .button,
+      button {
+        background: #1d4ed8;
+        color: #fff;
+        border: 0;
+        border-radius: 6px;
+        padding: 8px 14px;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      button:disabled {
+        background: #9ca3af;
+        cursor: default;
+      }
+      button.secondary {
+        background: #e5e7eb;
+        color: #111827;
+      }
+      input,
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        font: inherit;
+      }
+      form label {
+        display: block;
+        margin: 12px 0;
+      }
+      .agent-row {
+        display: grid;
+        grid-template-columns: 24px 1fr 2fr auto;
+        gap: 8px;
+        align-items: center;
+        margin: 6px 0;
+      }
+      .agent-row .index {
+        color: #6b7280;
+        text-align: center;
+      }
+      .actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 16px;
+      }
+      .hint {
+        color: #6b7280;
+        font-size: 13px;
+      }
+      .error {
+        color: #b91c1c;
+      }
+      pre {
+        background: #fff;
+        padding: 12px;
+        border-radius: 6px;
+        white-space: pre-wrap;
+        border: 1px solid #e5e7eb;
+      }
+      .feed {
+        list-style: none;
+        padding: 0;
+        background: #fff;
+        border-radius: 6px;
+        border: 1px solid #e5e7eb;
+      }
+      .feed li {
+        padding: 8px 12px;
+        border-bottom: 1px solid #f1f5f9;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .feed .seq {
+        color: #6b7280;
+        min-width: 40px;
+      }
+      .feed .type {
+        font-weight: 600;
+      }
+      .feed .agent {
+        color: #1d4ed8;
+      }
+      .feed .detail {
+        color: #374151;
+        word-break: break-word;
+      }
+      svg {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        max-width: 100%;
+        height: auto;
+      }
     </style>
   </head>
   <body>

@@ -14,8 +14,17 @@ import { RouterLink, RouterOutlet } from '@angular/router';
     </main>
   `,
   styles: `
-    header { padding: 12px 24px; background: #111827; }
-    .brand { color: #f9fafb; font: 600 16px system-ui, sans-serif; text-decoration: none; }
+    header {
+      padding: 12px 24px;
+      background: #111827;
+    }
+    .brand {
+      color: #f9fafb;
+      font:
+        600 16px system-ui,
+        sans-serif;
+      text-decoration: none;
+    }
   `,
 })
 export class App {}

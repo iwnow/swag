@@ -21,16 +21,26 @@ interface AgentField {
       </label>
 
       <h2>Агенты</h2>
-      <p class="hint">Порядок сверху вниз — порядок цепочки: каждый агент передаёт результат следующему.</p>
+      <p class="hint">
+        Порядок сверху вниз — порядок цепочки: каждый агент передаёт результат следующему.
+      </p>
       @for (agent of agents(); track $index; let i = $index) {
         <div class="agent-row">
           <span class="index">{{ i + 1 }}</span>
           <input placeholder="Имя" [value]="agent.name" (input)="setAgent(i, 'name', $event)" />
-          <input placeholder="Роль: что делает агент" [value]="agent.role" (input)="setAgent(i, 'role', $event)" />
-          <button type="button" (click)="removeAgent(i)" [disabled]="agents().length === 1">Удалить</button>
+          <input
+            placeholder="Роль: что делает агент"
+            [value]="agent.role"
+            (input)="setAgent(i, 'role', $event)"
+          />
+          <button type="button" (click)="removeAgent(i)" [disabled]="agents().length === 1">
+            Удалить
+          </button>
         </div>
       }
-      <button type="button" (click)="addAgent()" [disabled]="agents().length >= 8">Добавить агента</button>
+      <button type="button" (click)="addAgent()" [disabled]="agents().length >= 8">
+        Добавить агента
+      </button>
 
       @if (issues().length > 0) {
         <ul class="error">
@@ -66,7 +76,9 @@ export class SwarmNewPageComponent {
 
   setAgent(index: number, field: keyof AgentField, event: Event): void {
     const value = (event.target as HTMLInputElement).value;
-    this.agents.update((list) => list.map((agent, i) => (i === index ? { ...agent, [field]: value } : agent)));
+    this.agents.update((list) =>
+      list.map((agent, i) => (i === index ? { ...agent, [field]: value } : agent)),
+    );
   }
 
   addAgent(): void {

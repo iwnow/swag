@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnDestroy,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { PlatformEvent } from '@swag/contracts';
 import type { SwarmView } from '@swag/api-integration';
@@ -27,8 +34,8 @@ const STATUS_LABEL: Record<string, string> = {
         }
       </div>
       <p>
-        Статус: <strong>{{ statusLabel(swarm.status) }}</strong>
-        · {{ connected() ? 'поток подключён' : 'переподключение…' }}
+        Статус: <strong>{{ statusLabel(swarm.status) }}</strong> ·
+        {{ connected() ? 'поток подключён' : 'переподключение…' }}
       </p>
       <app-swarm-graph [view]="swarm" />
 
@@ -41,7 +48,12 @@ const STATUS_LABEL: Record<string, string> = {
       @if (swarm.status === 'failed' && swarm.failure; as failure) {
         <section class="error">
           <h2>Ошибка</h2>
-          <p>{{ failure.reason }}@if (failure.detail) { : {{ failure.detail }} }</p>
+          <p>
+            {{ failure.reason }}
+            @if (failure.detail) {
+              : {{ failure.detail }}
+            }
+          </p>
         </section>
       }
     } @else {
@@ -60,7 +72,9 @@ const STATUS_LABEL: Record<string, string> = {
             <li>
               <span class="seq">#{{ event.seq }}</span>
               <span class="type">{{ event.type }}</span>
-              @if (event.agentId) { <span class="agent">{{ event.agentId }}</span> }
+              @if (event.agentId) {
+                <span class="agent">{{ event.agentId }}</span>
+              }
               <span class="detail">{{ detail(event) }}</span>
             </li>
           }

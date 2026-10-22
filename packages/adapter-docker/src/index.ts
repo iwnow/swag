@@ -47,7 +47,9 @@ export function createDockerSandboxProvider(options: DockerSandboxOptions): Sand
     },
 
     async list(match: Record<string, string | true>) {
-      const labels = Object.entries(match).map(([key, value]) => (value === true ? key : `${key}=${value}`));
+      const labels = Object.entries(match).map(([key, value]) =>
+        value === true ? key : `${key}=${value}`,
+      );
       const containers = await docker.listContainers({ all: true, filters: { label: labels } });
       return containers.map((container) => container.Id);
     },

@@ -19,7 +19,9 @@ async function ensureImage(): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     docker.pull(IMAGE, (error: Error | null, stream: NodeJS.ReadableStream) => {
       if (error) return reject(error);
-      docker.modem.followProgress(stream, (finishError: Error | null) => (finishError ? reject(finishError) : resolve()));
+      docker.modem.followProgress(stream, (finishError: Error | null) =>
+        finishError ? reject(finishError) : resolve(),
+      );
     });
   });
 }
@@ -43,7 +45,9 @@ describe.skipIf(!dockerAvailable)('adapter-docker', () => {
 
       const info = await docker.getContainer(sandboxId).inspect();
       expect(info.Config.Labels).toMatchObject(metadata);
-      expect(info.Config.Env).toEqual(expect.arrayContaining(['NATS_URL=nats://nats:4222', 'AGENT_ID=agent-1']));
+      expect(info.Config.Env).toEqual(
+        expect.arrayContaining(['NATS_URL=nats://nats:4222', 'AGENT_ID=agent-1']),
+      );
       expect(info.HostConfig.Binds ?? []).toEqual([]);
       expect(Object.keys(info.HostConfig.PortBindings ?? {})).toEqual([]);
       expect(info.HostConfig.Privileged).toBe(false);

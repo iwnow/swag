@@ -12,7 +12,10 @@ const ev = (input: PlatformEventInput): PlatformEvent => {
   n += 1;
   return { ...input, seq: n } as PlatformEvent;
 };
-const base = (agentId: 'agent-1' | 'agent-2' | null, source: 'api' | 'orchestrator' | 'agent' = 'agent') => ({
+const base = (
+  agentId: 'agent-1' | 'agent-2' | null,
+  source: 'api' | 'orchestrator' | 'agent' = 'agent',
+) => ({
   id: `0b6f6d2e-6a4c-4c3e-9f5e-${String(900000000000 + n).padStart(12, '0')}`,
   swarmId: SWARM,
   ts: '2026-10-22T10:00:00.000Z',
@@ -72,7 +75,11 @@ describe('projectSwarm', () => {
 
   it('AC-001-2: событие с повторным seq не меняет состояние', () => {
     const events = sequence();
-    const duplicate = { ...events[2]!, type: 'agent.working', data: { messageId: MSG } } as PlatformEvent;
+    const duplicate = {
+      ...events[2]!,
+      type: 'agent.working',
+      data: { messageId: MSG },
+    } as PlatformEvent;
     const before = projectSwarm(events);
     const after = applyEvent(before, { ...duplicate, seq: 3 } as PlatformEvent);
     expect(after).toBe(before);

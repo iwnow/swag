@@ -15,4 +15,5 @@ export const UI = new InjectionToken<UiCore>('ui-core', {
     }),
 });
 
-export const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+export const errorText = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);

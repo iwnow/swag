@@ -62,14 +62,20 @@ export interface ApiCore {
   stopSwarm(id: string): Promise<Result<void>>;
   ingestEvent(raw: unknown): void; // из swarm.*.events
   ingestMessage(raw: unknown): void; // из swarm.*.agent.*.inbox → bus.message
-  subscribe(swarmId: string, after: number, listener: (e: PlatformEvent) => void): Result<() => void>;
+  subscribe(
+    swarmId: string,
+    after: number,
+    listener: (e: PlatformEvent) => void,
+  ): Result<() => void>;
 }
 
 const FINISHED = new Set(['completed', 'stopped', 'failed']);
 
 const ok = <T>(value: T): Result<T> => ({ ok: true, value });
 const fail = <T>(code: string, message: string, issues?: ApiError['issues']): Result<T> =>
-  issues === undefined ? { ok: false, error: { code, message } } : { ok: false, error: { code, message, issues } };
+  issues === undefined
+    ? { ok: false, error: { code, message } }
+    : { ok: false, error: { code, message, issues } };
 
 export function createApiCore(deps: ApiCoreDeps): ApiCore {
   const { store, orchestrator, clock, ids, log } = deps;
@@ -98,13 +104,19 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         return fail(
           'validation_error',
           'Запрос на рой не прошёл проверку',
-          parsed.error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
+          parsed.error.issues.map((issue) => ({
+            path: issue.path.join('.'),
+            message: issue.message,
+          })),
         );
       }
       const views = store.views();
       const active = views.filter((v) => v.status === 'starting' || v.status === 'running').length;
       if (active >= deps.limits.maxActiveSwarms) {
-        return fail('too_many_active_swarms', `Активных роёв не больше ${deps.limits.maxActiveSwarms}`);
+        return fail(
+          'too_many_active_swarms',
+          `Активных роёв не больше ${deps.limits.maxActiveSwarms}`,
+        );
       }
 
       const swarmId = ids.uuid();
@@ -133,7 +145,10 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
           source: 'api',
           agentId: null,
           type: 'swarm.failed',
-          data: { reason: 'orchestrator_unavailable', detail: error instanceof Error ? error.message : String(error) },
+          data: {
+            reason: 'orchestrator_unavailable',
+            detail: error instanceof Error ? error.message : String(error),
+          },
         });
       }
       return ok(store.view(swarmId) as SwarmView);
@@ -142,7 +157,13 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
     listSwarms() {
       return store
         .views()
-        .map((v) => ({ id: v.id, task: v.task, status: v.status, agentCount: v.agents.length, createdAt: v.createdAt }))
+        .map((v) => ({
+          id: v.id,
+          task: v.task,
+          status: v.status,
+          agentCount: v.agents.length,
+          createdAt: v.createdAt,
+        }))
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
     },
 
@@ -176,7 +197,10 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         return;
       }
       if (!store.view(event.swarmId)) {
-        log.warn('событие неизвестного роя отброшено', { swarmId: event.swarmId, type: event.type });
+        log.warn('событие неизвестного роя отброшено', {
+          swarmId: event.swarmId,
+          type: event.type,
+        });
         return;
       }
       commit(event.swarmId, event);

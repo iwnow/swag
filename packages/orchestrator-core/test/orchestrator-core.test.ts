@@ -20,7 +20,14 @@ interface Fake {
   runTimers: (ms: number) => void; // срабатывают активные таймеры с этим ms
 }
 
-function setup(options: { agents?: number; agentStartMs?: number; swarmMs?: number; initial?: Map<string, SandboxSpec> } = {}): Fake {
+function setup(
+  options: {
+    agents?: number;
+    agentStartMs?: number;
+    swarmMs?: number;
+    initial?: Map<string, SandboxSpec>;
+  } = {},
+): Fake {
   let counter = 0;
   const log: string[] = [];
   const events: PlatformEventInput[] = [];
@@ -39,7 +46,11 @@ function setup(options: { agents?: number; agentStartMs?: number; swarmMs?: numb
     },
     list: async (match) =>
       [...sandboxes.entries()]
-        .filter(([, spec]) => Object.entries(match).every(([k, v]) => (v === true ? k in spec.metadata : spec.metadata[k] === v)))
+        .filter(([, spec]) =>
+          Object.entries(match).every(([k, v]) =>
+            v === true ? k in spec.metadata : spec.metadata[k] === v,
+          ),
+        )
         .map(([id]) => id),
   };
   const bus: OrchestratorBus = {
@@ -90,7 +101,11 @@ function setup(options: { agents?: number; agentStartMs?: number; swarmMs?: numb
 }
 
 const agents = (count: number) =>
-  Array.from({ length: count }, (_, i) => ({ id: `agent-${i + 1}`, name: `A${i + 1}`, role: `r${i + 1}` }));
+  Array.from({ length: count }, (_, i) => ({
+    id: `agent-${i + 1}`,
+    name: `A${i + 1}`,
+    role: `r${i + 1}`,
+  }));
 const launchBody = (count: number) => ({ swarmId: SWARM, task: 'T', agents: agents(count) });
 
 let seq = 0;
@@ -117,8 +132,19 @@ describe('orchestrator-core', () => {
     const specs = [...fake.sandboxes.values()];
     expect(specs).toHaveLength(3);
     for (const spec of specs) expect(spec.template).toBe(TEMPLATE);
-    expect(specs[0]?.metadata).toEqual({ 'swag.kind': 'agent', 'swag.swarm': SWARM, 'swag.agent': 'agent-1' });
-    const envKeys = ['AGENT_ID', 'AGENT_NAME', 'AGENT_NEXT', 'AGENT_ROLE', 'AGENT_STEP_DELAY_MS', 'SWARM_ID'];
+    expect(specs[0]?.metadata).toEqual({
+      'swag.kind': 'agent',
+      'swag.swarm': SWARM,
+      'swag.agent': 'agent-1',
+    });
+    const envKeys = [
+      'AGENT_ID',
+      'AGENT_NAME',
+      'AGENT_NEXT',
+      'AGENT_ROLE',
+      'AGENT_STEP_DELAY_MS',
+      'SWARM_ID',
+    ];
     for (const spec of specs) expect(Object.keys(spec.env).sort()).toEqual(envKeys);
     expect(specs.map((s) => s.env['AGENT_NEXT'])).toEqual(['agent-2', 'agent-3', '']);
     expect(specs[0]?.env['AGENT_STEP_DELAY_MS']).toBe('1000');
@@ -140,7 +166,12 @@ describe('orchestrator-core', () => {
     expect(fake.messages).toHaveLength(0);
     await fake.core.handleEvent(agentEvent('agent.started', 'agent-3', {}));
     expect(fake.messages).toHaveLength(1);
-    expect(fake.messages[0]).toMatchObject({ from: 'user', to: 'agent-1', text: 'T', swarmId: SWARM });
+    expect(fake.messages[0]).toMatchObject({
+      from: 'user',
+      to: 'agent-1',
+      text: 'T',
+      swarmId: SWARM,
+    });
     const tail = fake.log.slice(-2);
     expect(tail).toEqual(['message:agent-1', 'event:swarm.started']);
   });
@@ -160,18 +191,25 @@ describe('orchestrator-core', () => {
   it('AC-001-15: agent.result от последнего — песочницы удалены, agent.stopped по каждому, затем swarm.completed', async () => {
     const fake = setup();
     await fake.core.launch(launchBody(3));
-    for (const id of ['agent-1', 'agent-2', 'agent-3']) await fake.core.handleEvent(agentEvent('agent.started', id, {}));
+    for (const id of ['agent-1', 'agent-2', 'agent-3'])
+      await fake.core.handleEvent(agentEvent('agent.started', id, {}));
     await fake.core.handleEvent(agentEvent('agent.result', 'agent-3', { text: 'R' }));
     expect(fake.sandboxes.size).toBe(0);
     const types = fake.events.map((e) => e.type);
-    expect(types.slice(-4)).toEqual(['agent.stopped', 'agent.stopped', 'agent.stopped', 'swarm.completed']);
+    expect(types.slice(-4)).toEqual([
+      'agent.stopped',
+      'agent.stopped',
+      'agent.stopped',
+      'swarm.completed',
+    ]);
     expect(fake.events.at(-1)).toMatchObject({ data: { result: 'R' } });
   });
 
   it('AC-001-16: stop — уборка, agent.stopped, swarm.stopped (reason user); повторный stop — успех без событий; неизвестный — not_found', async () => {
     const fake = setup();
     await fake.core.launch(launchBody(2));
-    for (const id of ['agent-1', 'agent-2']) await fake.core.handleEvent(agentEvent('agent.started', id, {}));
+    for (const id of ['agent-1', 'agent-2'])
+      await fake.core.handleEvent(agentEvent('agent.started', id, {}));
     const before = fake.events.length;
     expect((await fake.core.stop(SWARM)).ok).toBe(true);
     expect(fake.sandboxes.size).toBe(0);
@@ -190,17 +228,35 @@ describe('orchestrator-core', () => {
   it('AC-001-17: swarmMs истёк — уборка и swarm.failed swarm_timeout', async () => {
     const fake = setup({ swarmMs: 300000 });
     await fake.core.launch(launchBody(2));
-    for (const id of ['agent-1', 'agent-2']) await fake.core.handleEvent(agentEvent('agent.started', id, {}));
+    for (const id of ['agent-1', 'agent-2'])
+      await fake.core.handleEvent(agentEvent('agent.started', id, {}));
     fake.runTimers(300000);
     await waitMicrotasks();
     expect(fake.sandboxes.size).toBe(0);
-    expect(fake.events.at(-1)).toMatchObject({ type: 'swarm.failed', data: { reason: 'swarm_timeout' } });
+    expect(fake.events.at(-1)).toMatchObject({
+      type: 'swarm.failed',
+      data: { reason: 'swarm_timeout' },
+    });
   });
 
   it('AC-001-18: cleanupOrphans удаляет песочницы с swag.kind, чужую оставляет, возвращает 2', async () => {
     const initial = new Map<string, SandboxSpec>([
-      ['old-1', { template: 'x', env: {}, metadata: { 'swag.kind': 'agent', 'swag.swarm': 'a', 'swag.agent': 'agent-1' } }],
-      ['old-2', { template: 'x', env: {}, metadata: { 'swag.kind': 'agent', 'swag.swarm': 'b', 'swag.agent': 'agent-1' } }],
+      [
+        'old-1',
+        {
+          template: 'x',
+          env: {},
+          metadata: { 'swag.kind': 'agent', 'swag.swarm': 'a', 'swag.agent': 'agent-1' },
+        },
+      ],
+      [
+        'old-2',
+        {
+          template: 'x',
+          env: {},
+          metadata: { 'swag.kind': 'agent', 'swag.swarm': 'b', 'swag.agent': 'agent-1' },
+        },
+      ],
       ['foreign', { template: 'x', env: {}, metadata: {} }],
     ]);
     const fake = setup({ initial });

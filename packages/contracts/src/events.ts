@@ -11,24 +11,57 @@ const Envelope = {
 };
 
 export const PlatformEventInput = z.discriminatedUnion('type', [
-  z.strictObject({ ...Envelope, type: z.literal('swarm.created'), data: z.strictObject({ task: z.string(), agents: z.array(AgentSpec) }) }),
+  z.strictObject({
+    ...Envelope,
+    type: z.literal('swarm.created'),
+    data: z.strictObject({ task: z.string(), agents: z.array(AgentSpec) }),
+  }),
   z.strictObject({ ...Envelope, type: z.literal('swarm.started'), data: z.strictObject({}) }),
-  z.strictObject({ ...Envelope, type: z.literal('swarm.completed'), data: z.strictObject({ result: z.string() }) }),
-  z.strictObject({ ...Envelope, type: z.literal('swarm.stopped'), data: z.strictObject({ reason: z.literal('user') }) }),
+  z.strictObject({
+    ...Envelope,
+    type: z.literal('swarm.completed'),
+    data: z.strictObject({ result: z.string() }),
+  }),
+  z.strictObject({
+    ...Envelope,
+    type: z.literal('swarm.stopped'),
+    data: z.strictObject({ reason: z.literal('user') }),
+  }),
   z.strictObject({
     ...Envelope,
     type: z.literal('swarm.failed'),
     data: z.strictObject({
-      reason: z.enum(['agent_start_timeout', 'swarm_timeout', 'orchestrator_unavailable', 'sandbox_error']),
+      reason: z.enum([
+        'agent_start_timeout',
+        'swarm_timeout',
+        'orchestrator_unavailable',
+        'sandbox_error',
+      ]),
       detail: z.string().optional(),
     }),
   }),
-  z.strictObject({ ...Envelope, type: z.literal('agent.launched'), data: z.strictObject({ sandboxId: z.string() }) }),
+  z.strictObject({
+    ...Envelope,
+    type: z.literal('agent.launched'),
+    data: z.strictObject({ sandboxId: z.string() }),
+  }),
   z.strictObject({ ...Envelope, type: z.literal('agent.started'), data: z.strictObject({}) }),
-  z.strictObject({ ...Envelope, type: z.literal('agent.working'), data: z.strictObject({ messageId: z.uuid() }) }),
-  z.strictObject({ ...Envelope, type: z.literal('agent.result'), data: z.strictObject({ text: z.string() }) }),
+  z.strictObject({
+    ...Envelope,
+    type: z.literal('agent.working'),
+    data: z.strictObject({ messageId: z.uuid() }),
+  }),
+  z.strictObject({
+    ...Envelope,
+    type: z.literal('agent.result'),
+    data: z.strictObject({ text: z.string() }),
+  }),
   z.strictObject({ ...Envelope, type: z.literal('agent.stopped'), data: z.strictObject({}) }),
-  z.strictObject({ ...Envelope, type: z.literal('agent.failed'), data: z.strictObject({ reason: z.string() }) }),
+  z.strictObject({
+    ...Envelope,
+    type: z.literal('agent.failed'),
+    data: z.strictObject({ reason: z.string() }),
+  }),
   z.strictObject({
     ...Envelope,
     type: z.literal('bus.message'),

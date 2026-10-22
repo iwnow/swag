@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PlatformEvent } from '@swag/contracts';
 import { projectSwarm, type SwarmView } from '@swag/api-integration';
-import { createUiCore, type EventStream, type StreamHandlers, type SwarmsApi } from '../src/index.ts';
+import {
+  createUiCore,
+  type EventStream,
+  type StreamHandlers,
+  type SwarmsApi,
+} from '../src/index.ts';
 
 const SWARM = '0b6f6d2e-6a4c-4c3e-9f5e-111111111111';
 const ev = (seq: number, input: Record<string, unknown>): PlatformEvent =>
@@ -27,7 +32,12 @@ const created = ev(1, {
   },
 });
 const started = ev(2, { type: 'swarm.started', data: {} });
-const agentStarted = ev(3, { type: 'agent.started', source: 'agent', agentId: 'agent-1', data: {} });
+const agentStarted = ev(3, {
+  type: 'agent.started',
+  source: 'agent',
+  agentId: 'agent-1',
+  data: {},
+});
 
 function fakeApi() {
   const api = {

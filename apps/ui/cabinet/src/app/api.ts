@@ -10,9 +10,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     headers: body === undefined ? undefined : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const payload = response.status === 202 || response.status === 204 ? undefined : await response.json();
+  const payload =
+    response.status === 202 || response.status === 204 ? undefined : await response.json();
   if (!response.ok) {
-    const message = (payload as { error?: { message?: string } } | undefined)?.error?.message ?? `HTTP ${response.status}`;
+    const message =
+      (payload as { error?: { message?: string } } | undefined)?.error?.message ??
+      `HTTP ${response.status}`;
     throw new Error(message);
   }
   return payload as T;
