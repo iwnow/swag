@@ -71,6 +71,14 @@
 | Трейс | `traceId`, `spanId` | Цепочка операций одного запроса через все сервисы, шину и песочницы (OpenTelemetry, W3C `traceparent`). `traceId` есть в конверте события платформы. |
 | Контекст трассировки | `traceparent`, `TRACEPARENT` | Заголовок W3C, которым `traceId` передаётся в HTTP и сообщениях NATS; в песочницу — env `TRACEPARENT`. |
 | Структурный лог | `LogRecord` | JSON-запись лога одной схемы во всех сервисах: время, уровень, сервис, сообщение, `traceId`, `spanId`, `swarmId`, `agentId`, ошибка. |
+| Идентификатор трейса | `TraceId` | Схема `traceId` в `@swag/contracts`: 32 hex-символа в нижнем регистре, не нули (W3C). Спека 016. |
+| Уровень лога, имя сервиса | `LogLevel`, `ServiceName` | `debug`, `info`, `warn`, `error`; `api`, `orchestrator`, `agent`. Поля `level` и `service` в `LogRecord`. |
+| Ошибка в логе | `LogError`, `err` | Поле `err` записи лога: тип, сообщение, стек, причина. |
+| Контекст лога | `LogContext` | Второй аргумент методов `Logger`: `swarmId`, `agentId`, `err` и прочие поля — только id, числа, перечисления. |
+| Порт контекста трассировки | `TraceContext`, `currentTraceId()` | Порт ядра: текущий `traceId` или `null`. Ядро переносит его в конверт события как непрозрачную строку. Реализация — `adapter-telemetry`. Спека 016, Q-1. |
+| Адаптер телеметрии | `packages/adapter-telemetry`, `startTelemetry`, `Telemetry`, `inSpan`, `currentTraceparent` | Пакет оболочек: OpenTelemetry SDK, логгер, `TraceContext`, спаны и перенос `traceparent`, сброс при остановке. |
+| Ссылка на трейс | `traceUrl`, `traces.urlTemplate` | Функция `ui-core`: адрес трейса в Grafana по `traceId` из шаблона с `{traceId}`. |
+| Конфигурация наблюдаемости | `ObservabilityConfig` | `GRAFANA_PORT` в `@swag/config` для `infra:check`. |
 | Сборщик телеметрии | OpenTelemetry Collector | Принимает трейсы и логи по OTLP от сервисов и агентов и отправляет в Tempo и Loki. |
 | Grafana LGTM | `grafana/otel-lgtm` | Бэкенд наблюдаемости: Loki (логи), Grafana, Tempo (трейсы), позже метрики Prometheus. Локально — один контейнер. |
 | Журнал инструментов | `ToolJournal` | Записи `started` / результат по каждому `tool_call_id`. |
