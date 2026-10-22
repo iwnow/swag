@@ -19,7 +19,11 @@ describe('loadConfig', () => {
   });
 
   it('порт сервиса приводится к числу и проверяется', () => {
-    const apiEnv = { ...validEnv, ORCHESTRATOR_URL: 'http://orchestrator:3001', MAX_ACTIVE_SWARMS: '3' };
+    const apiEnv = {
+      ...validEnv,
+      ORCHESTRATOR_URL: 'http://orchestrator:3001',
+      MAX_ACTIVE_SWARMS: '3',
+    };
     expect(loadConfig(ApiConfig, { ...apiEnv, API_PORT: '3000' }).API_PORT).toBe(3000);
     expect(() => loadConfig(ApiConfig, { ...apiEnv, API_PORT: 'abc' })).toThrow(/API_PORT/);
   });
@@ -35,7 +39,9 @@ describe('loadConfig', () => {
       AGENT_STEP_DELAY_MS: '1000',
     };
     expect(loadConfig(AgentConfig, agentEnv).AGENT_NEXT).toBeNull();
-    expect(loadConfig(AgentConfig, { ...agentEnv, AGENT_NEXT: 'agent-3' }).AGENT_NEXT).toBe('agent-3');
+    expect(loadConfig(AgentConfig, { ...agentEnv, AGENT_NEXT: 'agent-3' }).AGENT_NEXT).toBe(
+      'agent-3',
+    );
     expect(() => loadConfig(AgentConfig, { ...agentEnv, AGENT_NEXT: 'bob' })).toThrow(/AGENT_NEXT/);
   });
 });

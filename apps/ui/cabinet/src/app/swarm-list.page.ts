@@ -29,12 +29,19 @@ const STATUS_LABEL: Record<string, string> = {
     @if (swarms().length > 0) {
       <table>
         <thead>
-          <tr><th>Задача</th><th>Статус</th><th>Агентов</th><th>Создан</th></tr>
+          <tr>
+            <th>Задача</th>
+            <th>Статус</th>
+            <th>Агентов</th>
+            <th>Создан</th>
+          </tr>
         </thead>
         <tbody>
           @for (swarm of swarms(); track swarm.id) {
             <tr>
-              <td><a [routerLink]="['/swarms', swarm.id]">{{ swarm.task }}</a></td>
+              <td>
+                <a [routerLink]="['/swarms', swarm.id]">{{ swarm.task }}</a>
+              </td>
               <td>{{ statusLabel(swarm.status) }}</td>
               <td>{{ swarm.agentCount }}</td>
               <td>{{ swarm.createdAt }}</td>

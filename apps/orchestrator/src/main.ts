@@ -33,7 +33,8 @@ const sandboxes = createDockerSandboxProvider({
 });
 const ports: OrchestratorBus = {
   publishEvent: async (event) => bus.publishJson(eventsSubject(event.swarmId), event),
-  publishMessage: async (message) => bus.publishJson(inboxSubject(message.swarmId, message.to), message),
+  publishMessage: async (message) =>
+    bus.publishJson(inboxSubject(message.swarmId, message.to), message),
 };
 
 const core = createOrchestratorCore({
@@ -61,7 +62,14 @@ bus.subscribeJson(ALL_EVENTS, (raw) => void core.handleEvent(raw));
 const app = buildApp(core, { logger: true });
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.once(signal, () => void app.close().then(() => bus.close()).then(() => process.exit(0)));
+  process.once(
+    signal,
+    () =>
+      void app
+        .close()
+        .then(() => bus.close())
+        .then(() => process.exit(0)),
+  );
 }
 
 await app.listen({ host: '0.0.0.0', port: config.ORCHESTRATOR_PORT });

@@ -8,7 +8,10 @@ import Fastify, {
 } from 'fastify';
 
 // Оболочка api: REST (4.5.1) и WebSocket (4.5.2). Решений здесь нет — только вход и выход ядра.
-export async function buildApp(core: ApiCore, options: FastifyServerOptions = {}): Promise<FastifyInstance> {
+export async function buildApp(
+  core: ApiCore,
+  options: FastifyServerOptions = {},
+): Promise<FastifyInstance> {
   const app = Fastify(options);
   await app.register(websocket);
 
@@ -19,17 +22,27 @@ export async function buildApp(core: ApiCore, options: FastifyServerOptions = {}
     const status = error.statusCode ?? 500;
     if (status >= 500) app.log.error(error);
     void reply.code(status).send({
-      error: { code: status === 400 ? 'validation_error' : 'internal_error', message: error.message },
+      error: {
+        code: status === 400 ? 'validation_error' : 'internal_error',
+        message: error.message,
+      },
     });
   });
 
-  const send = <T>(reply: FastifyReply, result: Result<T>, okStatus: number, body?: (value: T) => unknown) => {
+  const send = <T>(
+    reply: FastifyReply,
+    result: Result<T>,
+    okStatus: number,
+    body?: (value: T) => unknown,
+  ) => {
     if (result.ok) return reply.code(okStatus).send(body ? body(result.value) : result.value);
     const status = STATUS[result.error.code] ?? 500;
     return reply.code(status).send({ error: result.error });
   };
 
-  app.post('/swarms', async (request, reply) => send(reply, await core.createSwarm(request.body), 201));
+  app.post('/swarms', async (request, reply) =>
+    send(reply, await core.createSwarm(request.body), 201),
+  );
 
   app.get('/swarms', async () => core.listSwarms());
 
@@ -52,9 +65,13 @@ export async function buildApp(core: ApiCore, options: FastifyServerOptions = {}
     '/swarms/:id/stream',
     { websocket: true },
     (socket, request) => {
-      const subscribed = core.subscribe(request.params.id, parseAfter(request.query.after), (event) => {
-        socket.send(JSON.stringify(event));
-      });
+      const subscribed = core.subscribe(
+        request.params.id,
+        parseAfter(request.query.after),
+        (event) => {
+          socket.send(JSON.stringify(event));
+        },
+      );
       if (!subscribed.ok) {
         socket.close(4404, subscribed.error.code);
         return;

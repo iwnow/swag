@@ -2,7 +2,9 @@ import { createApiCore, type ApiCore, type OrchestratorClient } from '@swag/api-
 import { createMemorySwarmStore } from '@swag/adapter-memory';
 
 // Ядро api с памятью и фейковым оркестратором для тестов оболочки.
-export function makeCore(orchestrator: OrchestratorClient = { launch: async () => undefined, stop: async () => undefined }): ApiCore {
+export function makeCore(
+  orchestrator: OrchestratorClient = { launch: async () => undefined, stop: async () => undefined },
+): ApiCore {
   let counter = 0;
   return createApiCore({
     version: 'test',
@@ -17,5 +19,8 @@ export function makeCore(orchestrator: OrchestratorClient = { launch: async () =
 
 export const body = (count: number) => ({
   task: 'Задача',
-  agents: Array.from({ length: count }, (_, i) => ({ name: `Агент ${i + 1}`, role: `роль ${i + 1}` })),
+  agents: Array.from({ length: count }, (_, i) => ({
+    name: `Агент ${i + 1}`,
+    role: `роль ${i + 1}`,
+  })),
 });

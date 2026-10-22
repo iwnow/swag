@@ -8,7 +8,8 @@ export const CORE_ALLOWED_PACKAGES = ['zod', '@swag/contracts', '@swag/api-integ
 // Спека 001, REQ-001-15 и N-3: эти пакеты проверяются правилами ядра, хотя не называются `*-core`.
 export const KERNEL_EXTRA_PACKAGES = ['contracts', 'api-integration'];
 
-const isKernelDir = (name: string): boolean => name.endsWith('-core') || KERNEL_EXTRA_PACKAGES.includes(name);
+const isKernelDir = (name: string): boolean =>
+  name.endsWith('-core') || KERNEL_EXTRA_PACKAGES.includes(name);
 
 interface PackageJson {
   name?: string;

@@ -1,9 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createApiCore, type OrchestratorClient } from '@swag/api-core';
 import { createAgentCore, type AgentBus } from '@swag/agent-core';
-import { createOrchestratorCore, type OrchestratorBus, type SandboxProvider, type SandboxSpec } from '@swag/orchestrator-core';
+import {
+  createOrchestratorCore,
+  type OrchestratorBus,
+  type SandboxProvider,
+  type SandboxSpec,
+} from '@swag/orchestrator-core';
 import { createMemorySwarmStore } from '@swag/adapter-memory';
-import { ALL_EVENTS, ALL_INBOXES, eventsSubject, inboxSubject, type AgentId, type PlatformEventInput } from '@swag/contracts';
+import {
+  ALL_EVENTS,
+  ALL_INBOXES,
+  eventsSubject,
+  inboxSubject,
+  type AgentId,
+  type PlatformEventInput,
+} from '@swag/contracts';
 
 // Сквозной тест без Docker и сети (AC-001-20): api-core, orchestrator-core и три agent-core
 // в одном процессе; шина — в памяти; песочница — фейк, который поднимает agent-core в процессе.
@@ -57,7 +69,8 @@ describe('сквозной скелет без Docker', () => {
             running.set(sandboxId, hub.subscribe(subject, handler));
           },
           publishEvent: async (event) => hub.publish(eventsSubject(event.swarmId), event),
-          publishMessage: async (message) => hub.publish(inboxSubject(message.swarmId, message.to), message),
+          publishMessage: async (message) =>
+            hub.publish(inboxSubject(message.swarmId, message.to), message),
         };
         const agent = createAgentCore({
           version: 'test',
@@ -85,20 +98,29 @@ describe('сквозной скелет без Docker', () => {
       },
       list: async (match) =>
         [...sandboxes.entries()]
-          .filter(([, spec]) => Object.entries(match).every(([k, v]) => (v === true ? k in spec.metadata : spec.metadata[k] === v)))
+          .filter(([, spec]) =>
+            Object.entries(match).every(([k, v]) =>
+              v === true ? k in spec.metadata : spec.metadata[k] === v,
+            ),
+          )
           .map(([id]) => id),
     };
 
     const orchestratorBus: OrchestratorBus = {
-      publishEvent: async (event: PlatformEventInput) => hub.publish(eventsSubject(event.swarmId), event),
-      publishMessage: async (message) => hub.publish(inboxSubject(message.swarmId, message.to), message),
+      publishEvent: async (event: PlatformEventInput) =>
+        hub.publish(eventsSubject(event.swarmId), event),
+      publishMessage: async (message) =>
+        hub.publish(inboxSubject(message.swarmId, message.to), message),
     };
     const orchestrator = createOrchestratorCore({
       version: 'test',
       sandboxes: sandboxProvider,
       bus: orchestratorBus,
       clock,
-      timers: { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>) },
+      timers: {
+        setTimeout: (fn, ms) => setTimeout(fn, ms),
+        clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+      },
       ids,
       log,
       agent: { template: 'swag-agent:test', stepDelayMs: 0 },
@@ -140,14 +162,19 @@ describe('сквозной скелет без Docker', () => {
     if (!created.ok) return;
     const id = created.value.id;
 
-    await vi.waitFor(() => expect(api.getSwarm(id)).toMatchObject({ ok: true, value: { status: 'completed' } }), {
-      timeout: 5000,
-    });
+    await vi.waitFor(
+      () => expect(api.getSwarm(id)).toMatchObject({ ok: true, value: { status: 'completed' } }),
+      {
+        timeout: 5000,
+      },
+    );
 
     const view = api.getSwarm(id);
     if (!view.ok) throw new Error('рой не найден');
     expect(view.value.result).toBe('T\nA (r1): ok\nB (r2): ok\nC (r3): ok');
-    expect(view.value.agents.every((a) => a.status === 'stopped' || a.status === 'done')).toBe(true);
+    expect(view.value.agents.every((a) => a.status === 'stopped' || a.status === 'done')).toBe(
+      true,
+    );
     expect(view.value.edges.map((e) => e.messages)).toEqual([1, 1]);
     expect(sandboxes.size).toBe(0);
     const events = api.getEvents(id, 0);

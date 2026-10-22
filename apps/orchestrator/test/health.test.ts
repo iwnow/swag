@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createOrchestratorCore, type SandboxProvider, type SandboxSpec } from '@swag/orchestrator-core';
+import {
+  createOrchestratorCore,
+  type SandboxProvider,
+  type SandboxSpec,
+} from '@swag/orchestrator-core';
 import { buildApp } from '../src/app.ts';
 
 function makeCore(sandboxes: Map<string, SandboxSpec>) {

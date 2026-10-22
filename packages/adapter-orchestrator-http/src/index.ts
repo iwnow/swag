@@ -24,7 +24,9 @@ export function createOrchestratorHttpClient(options: OrchestratorHttpOptions): 
     },
 
     async stop(swarmId: string): Promise<void> {
-      const response = await doFetch(`${base}/swarms/${encodeURIComponent(swarmId)}/stop`, { method: 'POST' });
+      const response = await doFetch(`${base}/swarms/${encodeURIComponent(swarmId)}/stop`, {
+        method: 'POST',
+      });
       if (response.status !== 202) {
         throw new Error(`оркестратор ответил ${response.status} на остановку роя`);
       }

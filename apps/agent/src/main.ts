@@ -33,7 +33,8 @@ const bus: AgentBus = {
     nats.subscribeJson(subject, handler);
   },
   publishEvent: async (event) => nats.publishJson(eventsSubject(event.swarmId), event),
-  publishMessage: async (message) => nats.publishJson(inboxSubject(message.swarmId, message.to), message),
+  publishMessage: async (message) =>
+    nats.publishJson(inboxSubject(message.swarmId, message.to), message),
 };
 
 const agent = createAgentCore({

@@ -37,7 +37,8 @@ export interface FormIssue {
   message: string;
 }
 
-export type FormResult = { ok: true; value: SwarmCreateRequest } | { ok: false; issues: FormIssue[] };
+export type FormResult =
+  { ok: true; value: SwarmCreateRequest } | { ok: false; issues: FormIssue[] };
 
 export interface SwarmPage {
   readonly view: SwarmView | null;
@@ -63,7 +64,10 @@ export function createUiCore(deps: UiCoreDeps): UiCore {
     if (parsed.success) return { ok: true, value: parsed.data };
     return {
       ok: false,
-      issues: parsed.error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
+      issues: parsed.error.issues.map((issue) => ({
+        path: issue.path.join('.'),
+        message: issue.message,
+      })),
     };
   };
 

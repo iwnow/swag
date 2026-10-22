@@ -1,8 +1,15 @@
 import type { OrchestratorCore } from '@swag/orchestrator-core';
-import Fastify, { type FastifyError, type FastifyInstance, type FastifyServerOptions } from 'fastify';
+import Fastify, {
+  type FastifyError,
+  type FastifyInstance,
+  type FastifyServerOptions,
+} from 'fastify';
 
 // Оболочка оркестратора: HTTP 4.6.1 (вызывает только api). Решений здесь нет.
-export function buildApp(core: OrchestratorCore, options: FastifyServerOptions = {}): FastifyInstance {
+export function buildApp(
+  core: OrchestratorCore,
+  options: FastifyServerOptions = {},
+): FastifyInstance {
   const app = Fastify(options);
   // healthcheck compose опрашивает каждые 2 с — в лог только предупреждения.
   app.get('/health', { logLevel: 'warn' }, async () => ({ status: 'ok', ...core.info() }));
@@ -11,7 +18,10 @@ export function buildApp(core: OrchestratorCore, options: FastifyServerOptions =
     const status = error.statusCode ?? 500;
     if (status >= 500) app.log.error(error);
     void reply.code(status).send({
-      error: { code: status === 400 ? 'validation_error' : 'internal_error', message: error.message },
+      error: {
+        code: status === 400 ? 'validation_error' : 'internal_error',
+        message: error.message,
+      },
     });
   });
 

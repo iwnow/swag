@@ -84,11 +84,16 @@ interface Run {
 type Outcome =
   | { type: 'swarm.completed'; data: { result: string } }
   | { type: 'swarm.stopped'; data: { reason: 'user' } }
-  | { type: 'swarm.failed'; data: { reason: 'agent_start_timeout' | 'swarm_timeout' | 'sandbox_error'; detail?: string } };
+  | {
+      type: 'swarm.failed';
+      data: { reason: 'agent_start_timeout' | 'swarm_timeout' | 'sandbox_error'; detail?: string };
+    };
 
 const ok = (): Result<void> => ({ ok: true, value: undefined });
 const fail = (code: string, message: string, issues?: OrchestratorError['issues']): Result<void> =>
-  issues === undefined ? { ok: false, error: { code, message } } : { ok: false, error: { code, message, issues } };
+  issues === undefined
+    ? { ok: false, error: { code, message } }
+    : { ok: false, error: { code, message, issues } };
 
 export function createOrchestratorCore(deps: OrchestratorCoreDeps): OrchestratorCore {
   const { sandboxes, bus, clock, timers, ids, log } = deps;
@@ -117,7 +122,12 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
       try {
         await sandboxes.remove(sandboxId);
       } catch (error) {
-        log.warn('не удалось удалить песочницу', { swarmId, agentId, sandboxId, reason: String(error) });
+        log.warn('не удалось удалить песочницу', {
+          swarmId,
+          agentId,
+          sandboxId,
+          reason: String(error),
+        });
       }
     }
     for (const agent of run.launch.agents) {
@@ -179,16 +189,29 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
         return fail(
           'validation_error',
           'Запуск роя не прошёл проверку',
-          parsed.error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
+          parsed.error.issues.map((issue) => ({
+            path: issue.path.join('.'),
+            message: issue.message,
+          })),
         );
       }
       const launch = parsed.data;
-      if (runs.has(launch.swarmId)) return fail('swarm_exists', `Рой ${launch.swarmId} уже запущен`);
+      if (runs.has(launch.swarmId))
+        return fail('swarm_exists', `Рой ${launch.swarmId} уже запущен`);
 
-      const run: Run = { launch, phase: 'creating', sandboxes: new Map(), started: new Set(), timers: [] };
+      const run: Run = {
+        launch,
+        phase: 'creating',
+        sandboxes: new Map(),
+        started: new Set(),
+        timers: [],
+      };
       runs.set(launch.swarmId, run);
       run.timers.push(
-        timers.setTimeout(() => void finish(run, { type: 'swarm.failed', data: { reason: 'swarm_timeout' } }), deps.timeouts.swarmMs),
+        timers.setTimeout(
+          () => void finish(run, { type: 'swarm.failed', data: { reason: 'swarm_timeout' } }),
+          deps.timeouts.swarmMs,
+        ),
       );
       run.timers.push(
         timers.setTimeout(() => {
@@ -207,11 +230,18 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
             break;
           }
           run.sandboxes.set(agent.id, sandboxId);
-          await publish({ ...envelope(launch.swarmId, agent.id), type: 'agent.launched', data: { sandboxId } });
+          await publish({
+            ...envelope(launch.swarmId, agent.id),
+            type: 'agent.launched',
+            data: { sandboxId },
+          });
         } catch (error) {
           await finish(run, {
             type: 'swarm.failed',
-            data: { reason: 'sandbox_error', detail: error instanceof Error ? error.message : String(error) },
+            data: {
+              reason: 'sandbox_error',
+              detail: error instanceof Error ? error.message : String(error),
+            },
           });
           return ok();
         }

@@ -1,12 +1,12 @@
 {
-	"mcpServers": {
-		"context7": {
-			"type": "http",
-			"url": "https://mcp.context7.com/mcp",
-			"headers": {
-				"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
-			},
-			"headersHelper": "node -e \"const v=require('fs').readFileSync('.env','utf8').match(/^CONTEXT7_API_KEY=(.*)$/m)[1].trim();process.stdout.write(JSON.stringify({CONTEXT7_API_KEY:v}))\""
-		}
-	}
+  "mcpServers": {
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
+      },
+      "headersHelper": "node -e \"const v=require('fs').readFileSync('.env','utf8').match(/^CONTEXT7_API_KEY=(.*)$/m)[1].trim();process.stdout.write(JSON.stringify({CONTEXT7_API_KEY:v}))\""
+    }
+  }
 }

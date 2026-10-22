@@ -71,15 +71,28 @@ describe('agent-core', () => {
     await vi.waitFor(() => expect(messages).toHaveLength(1));
     expect(events.map((e) => e.type)).toEqual(['agent.started', 'agent.working']);
     expect(events[1]).toMatchObject({ type: 'agent.working', data: { messageId: MSG } });
-    expect(messages[0]).toMatchObject({ from: 'agent-1', to: 'agent-2', text: 'T\nA (r1): ok', swarmId: SWARM });
+    expect(messages[0]).toMatchObject({
+      from: 'agent-1',
+      to: 'agent-2',
+      text: 'T\nA (r1): ok',
+      swarmId: SWARM,
+    });
   });
 
   it('AC-001-19: последний агент публикует agent.result вместо сообщения', async () => {
-    const { core, events, messages, handlers } = setup({ agentNext: null, agentName: 'C', agentRole: 'r3' });
+    const { core, events, messages, handlers } = setup({
+      agentNext: null,
+      agentName: 'C',
+      agentRole: 'r3',
+    });
     await core.start();
     handlers.get(`swarm.${SWARM}.agent.agent-1.inbox`)?.(inbox('T'));
     await vi.waitFor(() => expect(events.some((e) => e.type === 'agent.result')).toBe(true));
     expect(messages).toHaveLength(0);
-    expect(events.at(-1)).toMatchObject({ type: 'agent.result', agentId: 'agent-1', data: { text: 'T\nC (r3): ok' } });
+    expect(events.at(-1)).toMatchObject({
+      type: 'agent.result',
+      agentId: 'agent-1',
+      data: { text: 'T\nC (r3): ok' },
+    });
   });
 });

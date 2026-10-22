@@ -79,7 +79,11 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
       return;
     }
 
-    await bus.publishEvent({ ...envelope(), type: 'agent.working', data: { messageId: message.id } });
+    await bus.publishEvent({
+      ...envelope(),
+      type: 'agent.working',
+      data: { messageId: message.id },
+    });
     await pause(config.stepDelayMs);
 
     const out = `${message.text}\n${config.agentName} (${config.agentRole}): ok`;
@@ -102,9 +106,14 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
 
     async start() {
       await bus.subscribe(inboxSubject(config.swarmId, config.agentId), (raw) => {
-        queue = queue.then(() => relay(raw)).catch((error: unknown) => {
-          log.warn('ошибка обработки сообщения', { agentId: config.agentId, reason: String(error) });
-        });
+        queue = queue
+          .then(() => relay(raw))
+          .catch((error: unknown) => {
+            log.warn('ошибка обработки сообщения', {
+              agentId: config.agentId,
+              reason: String(error),
+            });
+          });
       });
       await bus.publishEvent({ ...envelope(), type: 'agent.started', data: {} });
     },

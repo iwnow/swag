@@ -13,7 +13,15 @@ const PAD = 20;
   template: `
     <svg [attr.width]="width()" [attr.height]="height" role="img" aria-label="Граф роя">
       <defs>
-        <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+        <marker
+          id="arrow"
+          viewBox="0 0 10 10"
+          refX="10"
+          refY="5"
+          markerWidth="8"
+          markerHeight="8"
+          orient="auto-start-reverse"
+        >
           <path d="M 0 0 L 10 5 L 0 10 z" fill="#5b6472" />
         </marker>
       </defs>
@@ -32,18 +40,45 @@ const PAD = 20;
         </text>
       }
       @for (node of nodes(); track node.id) {
-        <g [attr.transform]="'translate(' + node.x + ',' + node.y + ')'" [attr.data-status]="node.status">
-          <rect width="150" height="64" rx="10" [attr.fill]="node.fill" stroke="#2b3240" stroke-width="1.5" />
+        <g
+          [attr.transform]="'translate(' + node.x + ',' + node.y + ')'"
+          [attr.data-status]="node.status"
+        >
+          <rect
+            width="150"
+            height="64"
+            rx="10"
+            [attr.fill]="node.fill"
+            stroke="#2b3240"
+            stroke-width="1.5"
+          />
           <text x="75" y="26" text-anchor="middle" class="node-name">{{ node.name }}</text>
-          <text x="75" y="46" text-anchor="middle" class="node-status">{{ node.id }} · {{ node.statusText }}</text>
+          <text x="75" y="46" text-anchor="middle" class="node-status">
+            {{ node.id }} · {{ node.statusText }}
+          </text>
         </g>
       }
     </svg>
   `,
   styles: `
-    .node-name { font: 600 14px system-ui, sans-serif; fill: #111827; }
-    .node-status { font: 12px system-ui, sans-serif; fill: #374151; }
-    .edge-label { font: 12px system-ui, sans-serif; fill: #374151; }
+    .node-name {
+      font:
+        600 14px system-ui,
+        sans-serif;
+      fill: #111827;
+    }
+    .node-status {
+      font:
+        12px system-ui,
+        sans-serif;
+      fill: #374151;
+    }
+    .edge-label {
+      font:
+        12px system-ui,
+        sans-serif;
+      fill: #374151;
+    }
   `,
 })
 export class SwarmGraphComponent {
@@ -85,7 +120,12 @@ export class SwarmGraphComponent {
     });
   });
 
-  protected readonly width = computed(() => PAD * 2 + this.view().agents.length * NODE_W + Math.max(0, this.view().agents.length - 1) * GAP);
+  protected readonly width = computed(
+    () =>
+      PAD * 2 +
+      this.view().agents.length * NODE_W +
+      Math.max(0, this.view().agents.length - 1) * GAP,
+  );
   protected readonly height = PAD * 2 + NODE_H;
 }
 

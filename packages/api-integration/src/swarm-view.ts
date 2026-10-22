@@ -7,7 +7,14 @@ export interface SwarmView {
   task: string;
   status: SwarmStatus;
   createdAt: string; // ts события swarm.created
-  agents: { id: AgentId; name: string; role: string; status: AgentStatus; messagesIn: number; messagesOut: number }[];
+  agents: {
+    id: AgentId;
+    name: string;
+    role: string;
+    status: AgentStatus;
+    messagesIn: number;
+    messagesOut: number;
+  }[];
   edges: { from: AgentId; to: AgentId; messages: number }[]; // цепочка agent-1 → agent-2 → …
   result: string | null;
   failure: { reason: string; detail?: string } | null;
@@ -63,7 +70,10 @@ function createView(event: Extract<PlatformEvent, { type: 'swarm.created' }>): S
 
 function updateView(view: SwarmView, event: PlatformEvent): SwarmView {
   const next: SwarmView = { ...view, lastSeq: event.seq };
-  const withAgent = (id: AgentId, change: (a: SwarmView['agents'][number]) => SwarmView['agents'][number]): void => {
+  const withAgent = (
+    id: AgentId,
+    change: (a: SwarmView['agents'][number]) => SwarmView['agents'][number],
+  ): void => {
     next.agents = next.agents.map((a) => (a.id === id ? change(a) : a));
   };
 
@@ -80,9 +90,10 @@ function updateView(view: SwarmView, event: PlatformEvent): SwarmView {
       break;
     case 'swarm.failed':
       next.status = 'failed';
-      next.failure = event.data.detail === undefined
-        ? { reason: event.data.reason }
-        : { reason: event.data.reason, detail: event.data.detail };
+      next.failure =
+        event.data.detail === undefined
+          ? { reason: event.data.reason }
+          : { reason: event.data.reason, detail: event.data.detail };
       break;
     case 'agent.started':
       if (event.agentId) withAgent(event.agentId, (a) => ({ ...a, status: 'idle' }));

@@ -6,7 +6,10 @@ import { createApiCore, type OrchestratorClient } from '../src/index.ts';
 const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const body = (count: number) => ({
   task: 'Задача',
-  agents: Array.from({ length: count }, (_, i) => ({ name: `Агент ${i + 1}`, role: `роль ${i + 1}` })),
+  agents: Array.from({ length: count }, (_, i) => ({
+    name: `Агент ${i + 1}`,
+    role: `роль ${i + 1}`,
+  })),
 });
 
 function setup(options: { launch?: () => Promise<void>; maxActiveSwarms?: number } = {}) {
@@ -35,7 +38,11 @@ function setup(options: { launch?: () => Promise<void>; maxActiveSwarms?: number
   return { core, launches, stops, logs };
 }
 
-const sys = (swarmId: string, n: number, input: Omit<PlatformEventInput, 'id' | 'swarmId' | 'ts'>): PlatformEventInput =>
+const sys = (
+  swarmId: string,
+  n: number,
+  input: Omit<PlatformEventInput, 'id' | 'swarmId' | 'ts'>,
+): PlatformEventInput =>
   ({ ...input, id: uuid(9000 + n), swarmId, ts: '2026-10-22T10:00:01.000Z' }) as PlatformEventInput;
 
 describe('api-core', () => {
@@ -77,8 +84,17 @@ describe('api-core', () => {
     expect(second.error.code).toBe('too_many_active_swarms');
 
     const id = first.value.id;
-    core.ingestEvent(sys(id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }));
-    core.ingestEvent(sys(id, 2, { type: 'swarm.completed', source: 'orchestrator', agentId: null, data: { result: 'R' } }));
+    core.ingestEvent(
+      sys(id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
+    );
+    core.ingestEvent(
+      sys(id, 2, {
+        type: 'swarm.completed',
+        source: 'orchestrator',
+        agentId: null,
+        data: { result: 'R' },
+      }),
+    );
     const third = await core.createSwarm(body(1));
     expect(third.ok).toBe(true);
   });
@@ -102,8 +118,12 @@ describe('api-core', () => {
     const created = await core.createSwarm(body(2));
     if (!created.ok) throw new Error('не создан');
     const id = created.value.id;
-    core.ingestEvent(sys(id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }));
-    core.ingestEvent(sys(id, 2, { type: 'agent.started', source: 'agent', agentId: 'agent-1', data: {} }));
+    core.ingestEvent(
+      sys(id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
+    );
+    core.ingestEvent(
+      sys(id, 2, { type: 'agent.started', source: 'agent', agentId: 'agent-1', data: {} }),
+    );
     core.ingestMessage({
       id: uuid(8001),
       swarmId: id,
@@ -117,7 +137,11 @@ describe('api-core', () => {
     expect(events.value.map((e) => e.seq)).toEqual([1, 2, 3, 4]);
     const message = events.value[3];
     expect(message?.type).toBe('bus.message');
-    expect(message && message.type === 'bus.message' && message.data).toMatchObject({ from: 'user', to: 'agent-1', text: 'T' });
+    expect(message && message.type === 'bus.message' && message.data).toMatchObject({
+      from: 'user',
+      to: 'agent-1',
+      text: 'T',
+    });
     const after = core.getEvents(id, 1);
     expect(after.ok && after.value.map((e) => e.seq)).toEqual([2, 3, 4]);
   });
@@ -129,9 +153,18 @@ describe('api-core', () => {
     const id = created.value.id;
     core.ingestEvent({ type: 'мусор' });
     core.ingestMessage({ id: 'не-uuid' });
-    core.ingestEvent(sys(uuid(7777), 3, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }));
+    core.ingestEvent(
+      sys(uuid(7777), 3, {
+        type: 'swarm.started',
+        source: 'orchestrator',
+        agentId: null,
+        data: {},
+      }),
+    );
     expect(logs.length).toBeGreaterThanOrEqual(3);
-    core.ingestEvent(sys(id, 4, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }));
+    core.ingestEvent(
+      sys(id, 4, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
+    );
     const events = core.getEvents(id, 0);
     expect(events.ok && events.value.map((e) => e.seq)).toEqual([1, 2]);
   });
@@ -141,14 +174,23 @@ describe('api-core', () => {
     const created = await core.createSwarm(body(1));
     if (!created.ok) throw new Error('не создан');
     const id = created.value.id;
-    core.ingestEvent(sys(id, 5, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }));
+    core.ingestEvent(
+      sys(id, 5, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
+    );
     const stopped = await core.stopSwarm(id);
     expect(stopped.ok).toBe(true);
     expect(stops).toEqual([id]);
 
     const other = await core.createSwarm(body(1));
     if (!other.ok) throw new Error('не создан');
-    core.ingestEvent(sys(other.value.id, 6, { type: 'swarm.completed', source: 'orchestrator', agentId: null, data: { result: 'R' } }));
+    core.ingestEvent(
+      sys(other.value.id, 6, {
+        type: 'swarm.completed',
+        source: 'orchestrator',
+        agentId: null,
+        data: { result: 'R' },
+      }),
+    );
     const finished = await core.stopSwarm(other.value.id);
     expect(finished.ok === false && finished.error.code).toBe('swarm_finished');
 
@@ -161,14 +203,30 @@ describe('api-core', () => {
     const created = await core.createSwarm(body(1));
     if (!created.ok) throw new Error('не создан');
     const id = created.value.id;
-    core.ingestEvent(sys(id, 10, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }));
+    core.ingestEvent(
+      sys(id, 10, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
+    );
     const seen: number[] = [];
     const sub = core.subscribe(id, 0, (e) => seen.push(e.seq));
     expect(sub.ok).toBe(true);
-    core.ingestEvent(sys(id, 11, { type: 'swarm.stopped', source: 'orchestrator', agentId: null, data: { reason: 'user' } }));
+    core.ingestEvent(
+      sys(id, 11, {
+        type: 'swarm.stopped',
+        source: 'orchestrator',
+        agentId: null,
+        data: { reason: 'user' },
+      }),
+    );
     expect(seen).toEqual([1, 2, 3]);
     if (sub.ok) sub.value();
-    core.ingestEvent(sys(id, 12, { type: 'swarm.failed', source: 'orchestrator', agentId: null, data: { reason: 'swarm_timeout' } }));
+    core.ingestEvent(
+      sys(id, 12, {
+        type: 'swarm.failed',
+        source: 'orchestrator',
+        agentId: null,
+        data: { reason: 'swarm_timeout' },
+      }),
+    );
     expect(seen).toEqual([1, 2, 3]);
   });
 });

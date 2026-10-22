@@ -7,7 +7,9 @@ const request = (agents: unknown[], task = 'Задача') => ({ task, agents })
 describe('SwarmCreateRequest', () => {
   it('AC-001-1: принимает запрос с 1 и с 8 агентами', () => {
     expect(SwarmCreateRequest.safeParse(request([agent(1)])).success).toBe(true);
-    expect(SwarmCreateRequest.safeParse(request(Array.from({ length: 8 }, (_, i) => agent(i)))).success).toBe(true);
+    expect(
+      SwarmCreateRequest.safeParse(request(Array.from({ length: 8 }, (_, i) => agent(i)))).success,
+    ).toBe(true);
   });
 
   it('AC-001-1: отклоняет пустую задачу, 0 или 9 агентов с путём поля', () => {
@@ -19,7 +21,9 @@ describe('SwarmCreateRequest', () => {
     expect(none.success).toBe(false);
     expect(none.error?.issues[0]?.path).toEqual(['agents']);
 
-    const nine = SwarmCreateRequest.safeParse(request(Array.from({ length: 9 }, (_, i) => agent(i))));
+    const nine = SwarmCreateRequest.safeParse(
+      request(Array.from({ length: 9 }, (_, i) => agent(i))),
+    );
     expect(nine.success).toBe(false);
     expect(nine.error?.issues[0]?.path).toEqual(['agents']);
   });
