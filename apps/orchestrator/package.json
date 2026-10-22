@@ -5,8 +5,11 @@
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "dependencies": {
-    "@swag/orchestrator-core": "0.0.0",
+    "@swag/adapter-docker": "0.0.0",
+    "@swag/adapter-nats": "0.0.0",
     "@swag/config": "0.0.0",
+    "@swag/contracts": "0.0.0",
+    "@swag/orchestrator-core": "0.0.0",
     "fastify": "5.12.7"
   },
   "scripts": {

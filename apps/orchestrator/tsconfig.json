@@ -8,7 +8,10 @@
   },
   "include": ["src"],
   "references": [
-    { "path": "../../packages/orchestrator-core" },
-    { "path": "../../packages/config" }
+    { "path": "../../packages/adapter-docker" },
+    { "path": "../../packages/adapter-nats" },
+    { "path": "../../packages/config" },
+    { "path": "../../packages/contracts" },
+    { "path": "../../packages/orchestrator-core" }
   ]
 }
