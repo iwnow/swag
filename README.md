@@ -57,7 +57,7 @@ npm run infra:check
 
 - Grafana: <http://127.0.0.1:3300/grafana/> (`GRAFANA_PORT`, только `127.0.0.1`, без входа). Из личного кабинета — через прокси: <http://127.0.0.1:4200/grafana/>.
 - Трейс роя из UI: в ленте события ссылка «Трейс» открывает Explore с трейсом этого события.
-- Найти рой по `traceId` вручную: `traceId` есть в каждом событии (`GET /swarms/:id/events`). В Grafana → Explore → источник Tempo → запрос TraceQL — сам `traceId`. Логи трейса: из спана — «Logs for this span», или Explore → Loki → `{service_name=~"api|orchestrator|agent"} | trace_id = "<traceId>"`. Из записи лога в Loki трейс открывается по полю `trace_id`.
+- Найти рой по `traceId` вручную: `traceId` есть в каждом событии (`GET /swarms/:id/events`). В Grafana → Explore → источник Tempo → запрос TraceQL — сам `traceId`. Логи трейса: из спана — кнопка «Related logs» в деталях спана, или Explore → Loki → `{service_name=~"api|orchestrator|agent"} | trace_id = "<traceId>"`. Из записи лога в Loki трейс открывается по полю `trace_id`.
 - Без Collector сервисы работают: пустой `OTEL_EXPORTER_OTLP_ENDPOINT` — логи только в stdout.
 
 ## Ядро и оболочка
