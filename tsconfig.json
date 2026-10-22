@@ -11,6 +11,7 @@
     { "path": "packages/agent-core" },
     { "path": "packages/ui-core" },
     { "path": "packages/adapter-memory" },
+    { "path": "packages/adapter-telemetry" },
     { "path": "packages/adapter-nats" },
     { "path": "packages/adapter-orchestrator-http" },
     { "path": "packages/adapter-docker" },

@@ -6,15 +6,15 @@
 
 - `/` — список роёв: задача, статус, число агентов, время; кнопка «Новый рой».
 - `/swarms/new` — форма: задача и агенты (имя, роль), порядок сверху вниз = порядок цепочки.
-- `/swarms/:id` — граф (агенты по статусу, на рёбрах число сообщений), лента событий, результат или причина ошибки, «Стоп» для активного роя. Обновление — из WebSocket.
+- `/swarms/:id` — граф (агенты по статусу, на рёбрах число сообщений), лента событий, результат или причина ошибки, «Стоп» для активного роя. Обновление — из WebSocket. У события с `traceId` в ленте — ссылка «Трейс» в новой вкладке (спека 016).
 
 ## Что внутри сейчас
 
 - `src/app/api.ts` — адаптеры портов `ui-core`: REST и WebSocket по относительному пути `/api`.
-- `src/app/ui.ts` — `ui-core` в DI-токене `UI`.
+- `src/app/ui.ts` — `ui-core` в DI-токене `UI`; `TRACE_URL_TEMPLATE` — шаблон ссылки на трейс в Grafana Explore.
 - `src/app/swarm-graph.ts` — граф роя, чистый SVG без библиотеки (Q-4).
 - Страницы: `swarm-list.page.ts`, `swarm-new.page.ts`, `swarm.page.ts`.
-- `proxy.conf.json` — `/api` → `api:3000` (снимает префикс; WebSocket включён).
+- `proxy.conf.json` — `/api` → `api:3000` (снимает префикс; WebSocket включён); `/grafana` → `lgtm:3000` без снятия префикса (Grafana на подпути).
 - `Dockerfile` — dev-образ для `npm run up` (`ng serve`).
 
 ## Ограничения
@@ -36,8 +36,10 @@
 - Логика вне компонентов: `createUiCore` из `@swag/ui-core` подключается через токен `UI`.
 - Dev-сервер и прокси `/api` → `api:3000` (Q-4). Отклонение: в CI сборка `ng build` не запускается (спека требует `npm run check` без UI-шага).
 - `allowImportingTsExtensions` и `rewriteRelativeImportExtensions` в tsconfig — чтобы Angular собирал TS-исходники `packages/*` с расширениями `.ts`.
+- Ссылка «Трейс» (016, Q-6): относительный адрес `/grafana/explore?...` через прокси `ng serve`, без конфигурации в UI. Шаблон — Explore Grafana с источником Tempo (uid `tempo` в `grafana/otel-lgtm`), запрос TraceQL — сам `traceId`, диапазон — последние 7 дней. Адрес строит `ui-core.traceUrl`, компонент только рисует `<a target="_blank" rel="noopener">`. SDK OpenTelemetry в браузере нет (Q-7).
 
 ## Спеки
 
 - 001 — 4.8, T-13.
+- 016 — 4.10, Q-6, Q-7.
 - 014 — каркас и микрофронтенд.

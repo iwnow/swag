@@ -14,6 +14,13 @@ services:
         - action: rebuild
           path: ./package-lock.json
 
+  # Спека 016: конфигурация Collector смонтирована из репозитория; правка — перезапуск сервиса.
+  otel-collector:
+    develop:
+      watch:
+        - action: restart
+          path: ./infra/otel-collector.yaml
+
   orchestrator:
     develop:
       watch:

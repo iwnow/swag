@@ -71,6 +71,22 @@ describe('arch:check', () => {
     expect(code).toBe(0);
   });
 
+  it('AC-016-15: импорт @opentelemetry/api или pino в ядре — выход 1 с файлом и спецификатором', () => {
+    const { code, output } = check({
+      'packages/demo-core/package.json': corePackage(),
+      'packages/demo-core/src/index.ts':
+        "import { trace } from '@opentelemetry/api';\nexport const t = trace;\n",
+      'packages/demo-core/src/log.ts': "import pino from 'pino';\nexport const log = pino;\n",
+    });
+    expect(code).toBe(1);
+    expect(output).toContain(
+      '@swag/demo-core: packages/demo-core/src/index.ts:1 — запрещённый импорт @opentelemetry/api',
+    );
+    expect(output).toContain(
+      '@swag/demo-core: packages/demo-core/src/log.ts:1 — запрещённый импорт pino',
+    );
+  });
+
   it('AC-001-24: contracts с node:fs — выход 1 с файлом, строкой и спецификатором', () => {
     const { code, output } = check({
       'packages/contracts/package.json': JSON.stringify({

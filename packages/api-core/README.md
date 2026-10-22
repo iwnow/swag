@@ -13,9 +13,10 @@
 
 ## Что внутри сейчас
 
-- `createApiCore(deps)` с портами `SwarmStore`, `OrchestratorClient`, `Clock`, `IdGenerator`, `Logger`.
+- `createApiCore(deps)` с портами `SwarmStore`, `OrchestratorClient`, `Clock`, `IdGenerator`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`.
 - Операции: `createSwarm`, `listSwarms`, `getSwarm`, `getEvents`, `stopSwarm`, `ingestEvent`, `ingestMessage`, `subscribe`, `info`.
-- Тесты: `test/api-core.test.ts` — AC-001-3…8, AC-001-10.
+- Логи по таблице 4.8 спеки 016: `info swarm created`, `error orchestrator unavailable`, `warn event dropped` / `message dropped` с `reason` (`invalid_schema`, `created_from_bus`, `unknown_swarm`, `not_applicable`).
+- Тесты: `test/api-core.test.ts` — AC-001-3…8, AC-001-10, AC-016-4, AC-016-7.
 
 ## Ограничения
 
@@ -39,10 +40,13 @@
 - `createSwarm`: `swarm.created` пишется до вызова оркестратора; ошибка оркестратора → `swarm.failed` (`orchestrator_unavailable`), ответ остаётся 201 (4.5.1, AC-001-6).
 - `subscribe` сначала синхронно отдаёт хвост `seq > after`, затем регистрирует слушателя — между ними событие не теряется, потому что JS однопоточен.
 - Порты `Result` и ошибки — собственные типы ядра (без зависимостей), коды — из 4.5.3.
+- `traceId` (016, Q-1): ядро берёт его из обязательного порта `TraceContext` для событий, которые строит само (`swarm.created`, `swarm.failed`, `bus.message`), и переносит в конверт как непрозрачную строку. Событие из шины хранится с тем `traceId`, с которым его опубликовали. OpenTelemetry ядро не знает.
+- В логах только id, числа и перечисления: текст задачи, ролей и сообщений в контекст не попадает (016, Q-4). Ошибка — в поле `err`.
 - Отклонение: `stopSwarm` при ошибке оркестратора (например, 404) отдаёт исключение, а не код ошибки API — в 4.5.3 такого кода нет. Вопрос к приёмке.
 
 ## Спеки
 
 - 000 — заглушка.
 - 001 — 4.5 ([REST и WebSocket](../../docs/spec/001-walking-skeleton.md#45-api)).
+- 016 — порты `Logger` и `TraceContext`, логи 4.8.
 - 003 — хранение в Postgres; 004 — расходы; 012–013 — пользователи и баланс.

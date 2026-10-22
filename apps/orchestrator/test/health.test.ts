@@ -25,7 +25,13 @@ function makeCore(sandboxes: Map<string, SandboxSpec>) {
     clock: { now: () => '2026-10-22T10:00:00.000Z' },
     timers: { setTimeout: () => 0, clearTimeout: () => undefined },
     ids: { uuid: () => '00000000-0000-4000-8000-000000000001' },
-    log: { warn: () => undefined },
+    log: {
+      debug: () => undefined,
+      info: () => undefined,
+      warn: () => undefined,
+      error: () => undefined,
+    },
+    trace: { currentTraceId: () => null },
     agent: { template: 'swag-agent:test', stepDelayMs: 0 },
     timeouts: { agentStartMs: 30000, swarmMs: 300000 },
   });

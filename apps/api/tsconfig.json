@@ -12,6 +12,7 @@
     { "path": "../../packages/adapter-memory" },
     { "path": "../../packages/adapter-nats" },
     { "path": "../../packages/adapter-orchestrator-http" },
+    { "path": "../../packages/adapter-telemetry" },
     { "path": "../../packages/config" },
     { "path": "../../packages/contracts" }
   ]

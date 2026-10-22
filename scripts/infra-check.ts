@@ -1,7 +1,14 @@
 // Проверка локальной инфраструктуры с хоста: спека 000, раздел 4.7.
 import { jetstreamManager } from '@nats-io/jetstream';
 import { connect } from '@nats-io/transport-node';
-import { ApiConfig, ConfigError, OrchestratorConfig, UiConfig, loadConfig } from '@swag/config';
+import {
+  ApiConfig,
+  ConfigError,
+  ObservabilityConfig,
+  OrchestratorConfig,
+  UiConfig,
+  loadConfig,
+} from '@swag/config';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import pg from 'pg';
@@ -18,7 +25,11 @@ function onHost(url: string): string {
 
 function readConfig() {
   try {
-    return loadConfig(ApiConfig.extend(OrchestratorConfig.shape).extend(UiConfig.shape));
+    return loadConfig(
+      ApiConfig.extend(OrchestratorConfig.shape)
+        .extend(UiConfig.shape)
+        .extend(ObservabilityConfig.shape),
+    );
   } catch (error) {
     if (error instanceof ConfigError) {
       console.error(`${error.message}\nСкопируйте .env.example в .env.`);
@@ -70,12 +81,26 @@ async function checkHttpInContainer(service: string, port: number, path: string)
   );
 }
 
+/**
+ * Collector (спека 016, 4.9): порты не публикуются, а образ distroless — без shell и wget. Поэтому
+ * health_check extension Collector опрашивается из сети compose, изнутри контейнера api (там есть wget).
+ */
+async function checkCollector(): Promise<void> {
+  await execFileAsync(
+    'docker',
+    ['compose', 'exec', '-T', 'api', 'wget', '-qO-', 'http://otel-collector:13133/'],
+    { timeout: TIMEOUT_MS },
+  );
+}
+
 const checks: [string, () => Promise<void>][] = [
   ['postgres', checkPostgres],
   ['nats', checkNats],
   ['api', () => checkHttp(config.API_PORT, '/health')],
   ['orchestrator', () => checkHttpInContainer('orchestrator', config.ORCHESTRATOR_PORT, '/health')],
   ['ui', () => checkHttp(config.UI_PORT, '/')],
+  ['grafana', () => checkHttp(config.GRAFANA_PORT, '/api/health')],
+  ['otel-collector', checkCollector],
 ];
 
 let failed = false;

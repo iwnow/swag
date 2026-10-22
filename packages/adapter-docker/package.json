@@ -8,8 +8,12 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@opentelemetry/api": "1.10.0",
     "@swag/orchestrator-core": "0.0.0",
     "@types/dockerode": "4.0.2",
     "dockerode": "5.0.1"
+  },
+  "devDependencies": {
+    "@swag/adapter-telemetry": "0.0.0"
   }
 }

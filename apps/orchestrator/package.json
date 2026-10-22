@@ -7,6 +7,7 @@
   "dependencies": {
     "@swag/adapter-docker": "0.0.0",
     "@swag/adapter-nats": "0.0.0",
+    "@swag/adapter-telemetry": "0.0.0",
     "@swag/config": "0.0.0",
     "@swag/contracts": "0.0.0",
     "@swag/orchestrator-core": "0.0.0",

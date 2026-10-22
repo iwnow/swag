@@ -20,7 +20,7 @@ export async function buildApp(
 
   app.setErrorHandler((error: FastifyError, _request, reply) => {
     const status = error.statusCode ?? 500;
-    if (status >= 500) app.log.error(error);
+    if (status >= 500) app.log.error({ err: error }, 'request failed');
     void reply.code(status).send({
       error: {
         code: status === 400 ? 'validation_error' : 'internal_error',
