@@ -1,8 +1,6 @@
-import { createAgentCore } from '@swag/agent-core';
-
+// Баннер запуска: версия Node, версия агента и признак готовности процесса.
 export function runAgent(version: string, print: (line: string) => void): void {
-  const info = createAgentCore({ version }).info();
   print(`node ${process.version}`);
-  print(`${info.service} ${info.version}`);
-  print(`${info.service} ok`);
+  print(`agent ${version}`);
+  print('agent ok');
 }
