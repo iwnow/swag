@@ -124,6 +124,20 @@ describe('схема тела ChatRequest', () => {
     });
   });
 
+  it('REQ-002-18: поле учётных данных без messages — отказ по полю, раньше схемы (D-42)', () => {
+    expect(parseChatRequest({ model: 'chat-small', api_key: 'fake' })).toEqual({
+      ok: false,
+      message: 'Client-side provider credentials are not allowed: api_key',
+    });
+  });
+
+  it('REQ-002-18: вложенная ошибка — путь через точку, без пустого префикса (D-43)', () => {
+    expect(parseChatRequest({ ...valid, messages: [{}] })).toEqual({
+      ok: false,
+      message: 'messages.0.role: Invalid input: expected string, received undefined',
+    });
+  });
+
   it('REQ-002-18: messages пустой массив — отказ', () => {
     expect(parseChatRequest({ ...valid, messages: [] })).toEqual({
       ok: false,

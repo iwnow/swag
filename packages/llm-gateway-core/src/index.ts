@@ -26,7 +26,7 @@ export type ChatRequestParse = { ok: true; value: ChatRequest } | { ok: false; m
 // Спека 002, 4.2 и 4.6. Сначала поля провайдера, потом схема; message — текст invalid_request.
 export function parseChatRequest(raw: unknown): ChatRequestParse {
   const credentialField = isRecord(raw)
-    ? CLIENT_CREDENTIAL_FIELDS.find((field) => field in raw)
+    ? CLIENT_CREDENTIAL_FIELDS.find((field) => Object.hasOwn(raw, field))
     : undefined;
   if (credentialField) {
     return {

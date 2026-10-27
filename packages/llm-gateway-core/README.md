@@ -17,7 +17,7 @@
 - `parseUsage(raw)` — `prompt_tokens` → `promptTokens`, `completion_tokens` → `completionTokens`, `prompt_tokens_details.cached_tokens` → `cachedPromptTokens` (нет поля — 0). Возвращает `null`, если нет `prompt_tokens` или `completion_tokens` или они не целые ≥ 0.
 - `parseProviderCost(rawUsage)` — `usage.cost` как конечное число ≥ 0 → `Math.round(cost × 10⁶)`; иначе `null`.
 - `ChatRequest` (zod `looseObject`: `model`, `messages` с минимум одним элементом, `stream`, `stream_options`; остальные поля проходят) и `CLIENT_CREDENTIAL_FIELDS` (7 полей из 4.2).
-- `parseChatRequest(raw)` — сначала поля `CLIENT_CREDENTIAL_FIELDS` (`Client-side provider credentials are not allowed: <поле>`), потом схема; первые 3 ошибки Zod как `path: message` через `; `.
+- `parseChatRequest(raw)` — сначала поля `CLIENT_CREDENTIAL_FIELDS` (`Client-side provider credentials are not allowed: <поле>`), потом схема; первые 3 ошибки Zod как `path: message` через `; ` (сегменты пути через `.`, при пустом пути — только текст; D-43).
 - Тесты: `test/llm-gateway-core.test.ts` — AC-002-7, AC-002-29 (часть про `parseProviderCost`), разбор `parseUsage` в трёх случаях, блок «схема тела ChatRequest» (REQ-002-18).
 
 ## Ограничения
@@ -39,7 +39,7 @@
 
 - Цены в `costMicroUsd` — строки `ModelPrices` и `bigint`-арифметика без `Number` с дробями (4.3): `"0.0001"` дает ровно 1 micro-USD за миллион токенов.
 - Проверка тела — функция с результатом `{ ok, value }` / `{ ok: false, message }`, а не исключение: оболочка переводит `message` в `400 invalid_request` (4.2, 4.4). Имя и форма результата в спеке не заданы, выбраны здесь и записаны в глоссарий.
-- Поля ключа и адреса проверяются до схемы: сообщение «Client-side provider credentials…» точнее, чем ошибка Zod про обязательное `messages`. Порядок внутри шага 3 из 4.2 спека не задаёт; решение записано в журнал спеки.
+- Поля ключа и адреса проверяются до схемы: сообщение «Client-side provider credentials…» точнее, чем ошибка Zod про обязательное `messages`. Порядок внутри шага 3 из 4.2 спека не задаёт; решение — D-42 в `docs/spec/questions.md`.
 - `parseProviderCost` округляет до ближайшего, а `costMicroUsd` — вверх: `providerCostMicroUsd` — факт расхода платформы, `costMicroUsd` — списание с клиента по тарифу (4.3).
 
 ## Спеки
