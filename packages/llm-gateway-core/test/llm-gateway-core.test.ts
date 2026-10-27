@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { costMicroUsd, parseProviderCost, parseUsage } from '../src/index.ts';
+import {
+  CLIENT_CREDENTIAL_FIELDS,
+  costMicroUsd,
+  parseChatRequest,
+  parseProviderCost,
+  parseUsage,
+} from '../src/index.ts';
 
 describe('расчёт стоимости', () => {
   it('AC-002-7: costMicroUsd по таблице 4.3', () => {
@@ -101,5 +107,56 @@ describe('фактическая стоимость провайдера', () =>
     expect(parseProviderCost({ cost: NaN })).toBeNull();
     expect(parseProviderCost({ prompt_tokens: 1 })).toBeNull();
     expect(parseProviderCost(undefined)).toBeNull();
+  });
+});
+
+describe('схема тела ChatRequest', () => {
+  const valid = { model: 'chat-large', messages: [{ role: 'user', content: 'hi' }] };
+
+  it('REQ-002-18: корректное тело проходит, поля сверх схемы сохраняются', () => {
+    expect(parseChatRequest(valid)).toEqual({ ok: true, value: valid });
+  });
+
+  it('REQ-002-18: тело без messages — invalid_request с текстом первой ошибки Zod', () => {
+    expect(parseChatRequest({ model: 'chat-large' })).toEqual({
+      ok: false,
+      message: 'messages: Invalid input: expected array, received undefined',
+    });
+  });
+
+  it('REQ-002-18: messages пустой массив — отказ', () => {
+    expect(parseChatRequest({ ...valid, messages: [] })).toEqual({
+      ok: false,
+      message: 'messages: Too small: expected array to have >=1 items',
+    });
+  });
+
+  it('REQ-002-18: тело-массив — отказ без пути', () => {
+    expect(parseChatRequest([valid])).toEqual({
+      ok: false,
+      message: 'Invalid input: expected object, received array',
+    });
+  });
+
+  it('REQ-002-18: ошибки Zod — не больше трёх, через "; "', () => {
+    expect(parseChatRequest({ stream: 'yes' })).toEqual({
+      ok: false,
+      message:
+        'model: Invalid input: expected string, received undefined; messages: Invalid input: expected array, received undefined; stream: Invalid input: expected boolean, received string',
+    });
+  });
+
+  it.each(CLIENT_CREDENTIAL_FIELDS)('REQ-002-18: поле %s в теле — отказ с именем поля', (field) => {
+    expect(parseChatRequest({ ...valid, [field]: 'x' })).toEqual({
+      ok: false,
+      message: `Client-side provider credentials are not allowed: ${field}`,
+    });
+  });
+
+  it('REQ-002-18: лишнее поле temperature проходит', () => {
+    expect(parseChatRequest({ ...valid, temperature: 0.2 })).toEqual({
+      ok: true,
+      value: { ...valid, temperature: 0.2 },
+    });
   });
 });
