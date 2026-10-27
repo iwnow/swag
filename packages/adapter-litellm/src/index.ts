@@ -58,7 +58,7 @@ function parseJson(text: string): unknown {
 
 function httpFailure(status: number, text: string, secrets: string[]): UpstreamFailure {
   const message = errorMessage(parseJson(text)) ?? `HTTP ${status}`;
-  return { kind: 'http', status, message: redact(message.slice(0, MESSAGE_LIMIT), secrets) };
+  return { kind: 'http', status, message: redact(message, secrets).slice(0, MESSAGE_LIMIT) };
 }
 
 // Спека 002, 4.5: спан litellm.chat, вид client. Тела запроса и ответа в атрибуты не попадают.

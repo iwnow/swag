@@ -146,7 +146,7 @@ describe('complete: ответы, которые фейк не даёт (D-49, D
     }
   });
 
-  it('D-48: message обрезается до 1000 символов, затем redact — секрет в начале заменён на ***', async () => {
+  it('D-48: redact до обрезки — секрет в начале заменён на ***, message не длиннее 1000 символов', async () => {
     const long = `${MASTER_KEY}${'x'.repeat(2000)}`;
     const result = await upstreamFor(STUB_URL, {
       fetch: stubFetch(new Response(JSON.stringify({ error: { message: long } }), { status: 400 })),
@@ -157,7 +157,24 @@ describe('complete: ответы, которые фейк не даёт (D-49, D
     expect(result.failure).toEqual({
       kind: 'http',
       status: 400,
-      message: `***${'x'.repeat(1000 - MASTER_KEY.length)}`,
+      message: `***${'x'.repeat(1000 - 3)}`,
     });
+  });
+
+  it('D-48: секрет, пересекающий 1000-й символ, не оставляет в message ни одного своего префикса длиной от 4', async () => {
+    const secret = 'sk-fake-secret-value-1234567890';
+    const text = `${'x'.repeat(989)}${secret}`;
+    const result = await upstreamFor(STUB_URL, {
+      secrets: [secret],
+      fetch: stubFetch(new Response(JSON.stringify({ error: { message: text } }), { status: 400 })),
+    }).complete(chatRequest('привет'), signal());
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const { message } = result.failure as { message: string };
+    expect(message.length).toBeLessThanOrEqual(1000);
+    for (let length = 4; length <= secret.length; length++) {
+      expect(message).not.toContain(secret.slice(0, length));
+    }
   });
 });
