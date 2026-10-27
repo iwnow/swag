@@ -30,17 +30,17 @@ npm run infra:check
 
 - `llm-gateway` — оболочка `apps/llm-gateway` и ядро `packages/llm-gateway-core`; в сетях `default` и `llm`; наружу — только `127.0.0.1`.
 - `litellm` — только в сети `llm`, порт не публикуется. Переводит форматы провайдеров, виртуальные ключи и БД не используются (D-21).
-- `llm-fake` — фейковый провайдер `infra/llm/fake-provider/server.ts` для профиля `test`, в той же сети `llm`, порт не публикуется.
+- `llm-fake` — фейковый провайдер `infra/llm/fake-provider/server.ts`, в той же сети `llm`, порт не публикуется. Compose поднимает его при любом профиле (`litellm` ждёт его в `depends_on`), но модели ходят в него только в профиле `test`.
 
 Сеть `llm` не `internal`: LiteLLM нужен выход к провайдерам. Из сети `default` (роя, `api`, `orchestrator`, песочниц) до `litellm` не дойти.
 
 **`.env.llm`** — ключи провайдеров и мастер-ключ LiteLLM. Файл в `.gitignore` (`.env.*`), в git не попадает; шаблон — `.env.llm.example`.
 
-| Переменная              | Кто читает               | Что это                                           |
-| ----------------------- | ------------------------ | ------------------------------------------------- |
-| `LITELLM_MASTER_KEY`    | `litellm`, `llm-gateway` | мастер-ключ LiteLLM (`sk-…`)                      |
-| `FAKE_PROVIDER_API_KEY` | `litellm`                | ключ фейкового провайдера, для `test`             |
-| `OPENROUTER_API_KEY`    | `litellm`                | ключ OpenRouter для профилей `dev` и `prod` (Q-2) |
+| Переменная              | Кто читает                                                                      | Что это                                           |
+| ----------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `LITELLM_MASTER_KEY`    | `litellm`, `llm-gateway`                                                        | мастер-ключ LiteLLM (`sk-…`)                      |
+| `FAKE_PROVIDER_API_KEY` | `litellm` (вызов провайдера), `llm-gateway` (только для redact ошибок апстрима) | ключ фейкового провайдера, для `test`             |
+| `OPENROUTER_API_KEY`    | `litellm` (вызов провайдера), `llm-gateway` (только для redact ошибок апстрима) | ключ OpenRouter для профилей `dev` и `prod` (Q-2) |
 
 Только контейнеры `litellm` и `llm-gateway` получают `.env.llm`. `api`, `orchestrator`, `ui` и песочницы агентов его не получают и ключей не видят (AC-002-21, AC-002-22). В `.env.llm.example` значения фейковые; `OPENROUTER_API_KEY` пуст.
 
