@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import type { LlmUsage, ModelPrices } from '@swag/contracts';
+import type {
+  GatewayErrorCode,
+  LlmUsage,
+  ModelCatalog,
+  ModelPrices,
+  PlatformEventInput,
+  ServiceInfo,
+} from '@swag/contracts';
 
 // Спека 002, 4.2. Поля сверх перечисленных пропускаются как есть.
 export const ChatRequest = z.looseObject({
@@ -132,4 +139,104 @@ export interface LlmUpstream {
   stream(body: ChatRequest, signal: UpstreamSignal): Promise<UpstreamStream>;
   // Список моделей апстрима (GET /v1/models). Отказ — как у complete.
   listModels(signal: UpstreamSignal): Promise<UpstreamModels>;
+}
+
+// Спека 002, 4.4. Порты ядра: адаптеры собирает оболочка. Имена и поля — по 4.4 (D-55).
+export interface EventPublisher {
+  publishEvent(event: PlatformEventInput): Promise<void>;
+}
+
+export interface Clock {
+  now(): Date;
+  monotonicMs(): number;
+}
+
+export interface Ids {
+  uuid(): string;
+}
+
+// Как в 016 (api-core): текущий traceId или null вне трейса.
+export interface TraceContext {
+  currentTraceId(): string | null;
+}
+
+// Как в api-core (спека 016, REQ-016-10): контекст лога — только id, числа и перечисления.
+export type LogContext = {
+  swarmId?: string;
+  agentId?: string;
+  err?: unknown;
+  [key: string]: unknown;
+};
+
+export interface Logger {
+  debug(msg: string, ctx?: LogContext): void;
+  info(msg: string, ctx?: LogContext): void;
+  warn(msg: string, ctx?: LogContext): void;
+  error(msg: string, ctx?: LogContext): void;
+}
+
+export interface LlmGatewayDeps {
+  catalog: ModelCatalog; // уже разобран оболочкой
+  upstream: LlmUpstream;
+  events: EventPublisher;
+  clock: Clock;
+  ids: Ids;
+  trace: TraceContext;
+  log: Logger;
+  version: string;
+}
+
+export type CompleteResult =
+  | { kind: 'json'; body: unknown }
+  | { kind: 'stream'; chunks: AsyncIterable<string> } // payload'ы для записи клиенту
+  | { kind: 'error'; status: number; error: { message: string; code: GatewayErrorCode } };
+
+export type CheckUpstreamResult =
+  { ok: true } | { ok: false; missing: string[] } | { ok: false; failure: UpstreamFailure };
+
+export type ModelList = {
+  object: 'list';
+  data: { id: string; object: 'model'; owned_by: 'swag' }[];
+};
+
+export interface LlmGatewayCore {
+  info(): ServiceInfo;
+  listModels(): ModelList;
+  // Сверка каталога: ok — все id каталога есть в upstream; иначе список недостающих.
+  checkUpstream(signal: UpstreamSignal): Promise<CheckUpstreamResult>;
+  // rawCaller — значения заголовков как пришли; signal — обрыв клиентом.
+  complete(
+    rawCaller: { swarmId?: string; agentId?: string },
+    rawBody: unknown,
+    signal: UpstreamSignal,
+  ): Promise<CompleteResult>;
+}
+
+// Спека 002, 4.4. Фабрика ядра; complete — заглушка до T-14…T-18.
+export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
+  const { catalog, upstream, version } = deps;
+  return {
+    info: () => ({ service: 'llm-gateway', version }),
+
+    listModels: () => ({
+      object: 'list',
+      data: catalog.models.map((model): ModelList['data'][number] => ({
+        id: model.id,
+        object: 'model',
+        owned_by: 'swag',
+      })),
+    }),
+
+    async checkUpstream(signal) {
+      const result = await upstream.listModels(signal);
+      if (!result.ok) return { ok: false, failure: result.failure };
+      const available = new Set(result.ids);
+      const missing = catalog.models.map((model) => model.id).filter((id) => !available.has(id));
+      return missing.length === 0 ? { ok: true } : { ok: false, missing };
+    },
+
+    async complete() {
+      throw new Error('not implemented');
+    },
+  };
 }

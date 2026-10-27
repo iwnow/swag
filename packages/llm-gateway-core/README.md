@@ -9,7 +9,9 @@
 - Разобрать `usage` ответа OpenAI-формата в `LlmUsage`; без `prompt_tokens` или `completion_tokens` — `null`.
 - Разобрать фактическую стоимость провайдера `usage.cost` в micro-USD для `providerCostMicroUsd` (REQ-002-19). На `costMicroUsd` она не влияет.
 
-Фабрика ядра, событие `llm.call` и остальные методы ядра — следующие задачи спеки 002 (порт объявляет `complete`, `stream` и `listModels`; ядро пока их не вызывает). Проверка модели в каталоге и `invalid_caller` — T-14.
+- Отдать `GET /v1/models` из каталога и сверить каталог с моделями апстрима при старте (`checkUpstream`, REQ-002-2, AC-002-6, AC-002-18): `createLlmGatewayCore(deps)` даёт `info`, `listModels`, `checkUpstream`.
+
+`complete` пока заглушка (`not implemented`): проверки вызова — T-14, успешный путь и событие `llm.call` — T-15…T-18.
 
 ## Что внутри сейчас
 
@@ -19,7 +21,12 @@
 - `ChatRequest` (zod `looseObject`: `model`, `messages` с минимум одним элементом, `stream`, `stream_options`; остальные поля проходят) и `CLIENT_CREDENTIAL_FIELDS` (7 полей из 4.2).
 - Тип порта апстрима `LlmUpstream` (`complete`, `stream`, `listModels`), `UpstreamFailure`, `UpstreamResponse`, `UpstreamStream`, `UpstreamModels`, класс `UpstreamStreamError` (4.4). `UpstreamStreamError` — поле `failure` явно, без параметра-свойства: Node запускает `.ts` без трансформации. `signal` — структурный тип `UpstreamSignal`: `AbortSignal` без DOM не объявляется (D-47).
 - `parseChatRequest(raw)` — сначала поля `CLIENT_CREDENTIAL_FIELDS` (`Client-side provider credentials are not allowed: <поле>`), потом схема; первые 3 ошибки Zod как `path: message` через `; ` (сегменты пути через `.`, при пустом пути — только текст; D-43).
-- Тесты: `test/llm-gateway-core.test.ts` — AC-002-7, AC-002-29 (часть про `parseProviderCost`), разбор `parseUsage` в трёх случаях, блок «схема тела ChatRequest» (REQ-002-18).
+- `createLlmGatewayCore(deps: LlmGatewayDeps)` — фабрика ядра (4.4). `deps`: `catalog` (уже разобран оболочкой), `upstream: LlmUpstream`, `events: EventPublisher`, `clock: Clock`, `ids: Ids`, `trace: TraceContext`, `log: Logger`, `version`.
+- `listModels()` — `{ object: 'list', data }` по порядку каталога, `owned_by: 'swag'`; апстрим не вызывается.
+- `checkUpstream(signal)` — `listModels` апстрима; все `id` каталога есть → `{ ok: true }`; нет части → `{ ok: false, missing }` в порядке каталога; ошибка апстрима → `{ ok: false, failure }`.
+- Порты `EventPublisher`, `Clock` (`now(): Date`, `monotonicMs()`), `Ids`, `TraceContext`, `Logger` и `LogContext`, типы `CompleteResult`, `CheckUpstreamResult`, `ModelList`.
+- Тесты: `test/llm-gateway-core.test.ts` — AC-002-7, AC-002-29 (часть про `parseProviderCost`), разбор `parseUsage` в трёх случаях, блок «схема тела ChatRequest» (REQ-002-18); `test/gateway-core.test.ts` — AC-002-6 (`listModels`), AC-002-18 (`checkUpstream` на уровне ядра), `info`.
+- `test/fakes.ts` — фейковые порты в памяти: `fakeUpstream` (сценарии `models`, `complete`, `stream`, запись вызовов), `chunksThen` (поток из payload'ов и последующий `UpstreamStreamError`), `fakeEvents` (массив `published`), `fakeClock` (`advance(ms)`), `fakeIds`, `fakeTrace`, `fakeLog` (массив `entries`), `fakeDeps` (собирает `LlmGatewayDeps`). Каталог `testCatalog`: `chat-small`, `chat-large`.
 
 ## Ограничения
 
@@ -42,7 +49,9 @@
 - Проверка тела — функция с результатом `{ ok, value }` / `{ ok: false, message }`, а не исключение: оболочка переводит `message` в `400 invalid_request` (4.2, 4.4). Имя и форма результата в спеке не заданы, выбраны здесь и записаны в глоссарий.
 - Поля ключа и адреса проверяются до схемы: сообщение «Client-side provider credentials…» точнее, чем ошибка Zod про обязательное `messages`. Порядок внутри шага 3 из 4.2 спека не задаёт; решение — D-42 в `docs/spec/questions.md`.
 - `parseProviderCost` округляет до ближайшего, а `costMicroUsd` — вверх: `providerCostMicroUsd` — факт расхода платформы, `costMicroUsd` — списание с клиента по тарифу (4.3).
+- Порты с именами и полями из 4.4, а не из других ядер: `Ids` вместо `IdGenerator`, `Clock.now()` возвращает `Date` (D-55). Лог и трейс — той же формы, что в `api-core`.
+- `complete` — `async`, заглушка бросает `not implemented` отклонённым промисом; сигнатура готова для T-14.
 
 ## Спеки
 
-- 002 — 4.3 ([стоимость](../../docs/spec/002-llm-gateway.md#43-стоимость)), 4.14 (пакеты).
+- 002 — 4.3 ([стоимость](../../docs/spec/002-llm-gateway.md#43-стоимость)), 4.4 ([ядро](../../docs/spec/002-llm-gateway.md#44-ядро-packagesllm-gateway-core)), 4.14 (пакеты).
