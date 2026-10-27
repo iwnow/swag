@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
 
-const CHECKED_STATUSES = ['in-progress', 'review', 'done'];
+const CHECKED_STATUSES = ['review', 'done'];
 const SKIPPED_DIRS = ['node_modules', 'dist'];
 
 const isDigit = (char: string | undefined) => char !== undefined && char >= '0' && char <= '9';
