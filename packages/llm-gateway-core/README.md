@@ -21,7 +21,7 @@
 
 Правила ядра ([архитектура](../../docs/architecture.md), [спека 000, 4.2](../../docs/spec/000-foundation.md#42-правила-ядра-и-оболочки)):
 
-- Зависимости — `zod`, `@swag/contracts`.
+- Зависимости — `@swag/contracts` и `zod`. `zod` по 4.14 нужен для схемы `ChatRequest` (T-6); до T-6 в `src` он не импортируется, зависимость объявлена в `package.json` заранее.
 - Нет Node API, `process`, env, файлов, сети: `tsconfig` без `@types/node` и DOM.
 
 Нарушения ловят `npm run arch:check` и `npm run typecheck`.
@@ -35,7 +35,6 @@
 ## Ключевые решения
 
 - Цены в `costMicroUsd` — строки `ModelPrices` и `bigint`-арифметика без `Number` с дробями (4.3): `"0.0001"` дает ровно 1 micro-USD за миллион токенов.
-- `parseUsage` ограничивает `cachedPromptTokens` значением `promptTokens`: `LlmUsage` по контракту (4.1) не допускает больше. Трактовка 4.3, принята при реализации T-5 (спека 002).
 - `parseProviderCost` округляет до ближайшего, а `costMicroUsd` — вверх: `providerCostMicroUsd` — факт расхода платформы, `costMicroUsd` — списание с клиента по тарифу (4.3).
 
 ## Спеки

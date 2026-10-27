@@ -810,3 +810,4 @@ export const LlmGatewayConfig = z.object({
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+| 2026-10-27 | `spec/002-t5-llm-gateway-core-cost` / `1dbfc2e` | T-5: каркас `llm-gateway-core`, `costMicroUsd` / `parseUsage` / `parseProviderCost`. Новые имена в глоссарии: `costMicroUsd`, `parseUsage`, `@swag/llm-gateway-core`. | `export type ModelPrices` добавлен в `packages/contracts/src/llm.ts`: в блоке 4.1 его нет, нужен как тип параметра `costMicroUsd` из 4.3. |

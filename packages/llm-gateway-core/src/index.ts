@@ -34,7 +34,7 @@ export function parseUsage(raw: unknown): LlmUsage | null {
   const cached = isRecord(details) ? details.cached_tokens : undefined;
   return {
     promptTokens,
-    cachedPromptTokens: isCount(cached) ? Math.min(cached, promptTokens) : 0,
+    cachedPromptTokens: isCount(cached) ? cached : 0,
     completionTokens,
   };
 }

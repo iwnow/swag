@@ -53,6 +53,43 @@ describe('разбор usage', () => {
       completionTokens: 500,
     });
   });
+
+  it('parseUsage: prompt_tokens или completion_tokens нецелое или отрицательное — null', () => {
+    expect(parseUsage({ prompt_tokens: 1.5, completion_tokens: 500 })).toBeNull();
+    expect(parseUsage({ prompt_tokens: -1, completion_tokens: 500 })).toBeNull();
+    expect(parseUsage({ prompt_tokens: 1000, completion_tokens: 2.5 })).toBeNull();
+    expect(parseUsage({ prompt_tokens: 1000, completion_tokens: -1 })).toBeNull();
+  });
+
+  it('parseUsage: нечисловой cached_tokens — cachedPromptTokens 0', () => {
+    expect(
+      parseUsage({
+        prompt_tokens: 1000,
+        completion_tokens: 500,
+        prompt_tokens_details: { cached_tokens: '200' },
+      }),
+    ).toEqual({ promptTokens: 1000, cachedPromptTokens: 0, completionTokens: 500 });
+  });
+
+  it('parseUsage: cached_tokens больше prompt_tokens — возвращается как есть, costMicroUsd считает по min', () => {
+    expect(
+      parseUsage({
+        prompt_tokens: 100,
+        completion_tokens: 0,
+        prompt_tokens_details: { cached_tokens: 150 },
+      }),
+    ).toEqual({ promptTokens: 100, cachedPromptTokens: 150, completionTokens: 0 });
+    expect(
+      costMicroUsd(
+        { promptTokens: 100, cachedPromptTokens: 150, completionTokens: 0 },
+        {
+          inputPerMTokUsd: '1.00',
+          cachedInputPerMTokUsd: '0.50',
+          outputPerMTokUsd: '0',
+        },
+      ),
+    ).toBe(50);
+  });
 });
 
 describe('фактическая стоимость провайдера', () => {
