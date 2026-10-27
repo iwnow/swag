@@ -61,9 +61,16 @@ describe('spec:check', () => {
     expect(code).toBe(0);
   });
 
+  it('спека в in-progress без тестов не влияет на результат (D-40)', () => {
+    const { code } = check({
+      'docs/spec/905-demo.md': spec('905', 'in-progress', ['- **AC-905-1** — *Given* …']),
+    });
+    expect(code).toBe(0);
+  });
+
   it('тест в node_modules или dist не закрывает критерий', () => {
     const { code, output } = check({
-      'docs/spec/904-demo.md': spec('904', 'in-progress', ['- **AC-904-1** — *Given* …']),
+      'docs/spec/904-demo.md': spec('904', 'review', ['- **AC-904-1** — *Given* …']),
       'node_modules/x/a.test.ts': "it('AC-904-1', () => {});\n",
       'apps/demo/dist/a.test.ts': "it('AC-904-1', () => {});\n",
     });
