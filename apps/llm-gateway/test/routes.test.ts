@@ -1,68 +1,24 @@
-import { randomUUID } from 'node:crypto';
 import http from 'node:http';
-import type { AddressInfo } from 'node:net';
-import type { FastifyInstance } from 'fastify';
 import { PlatformEventInput } from '@swag/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildApp } from '../src/app.ts';
-import { startFakeProvider, type FakeProvider } from '../../../infra/llm/fake-provider/server.ts';
 import {
+  authorized,
+  caller,
+  closeAll,
   GATEWAY_TOKEN,
-  createMemoryBus,
-  gatewayOptions,
-  makeCore,
-  recordingLog,
-  type LogEntry,
+  listenUrl,
+  openGateway,
+  SWARM_ID,
+  type OpenGateway,
 } from './support.ts';
 
 // Спека 002, 4.2 и 4.6: оболочка против фейка. Отказы до ядра и до апстрима не вызывают фейк и не публикуют событий.
 
-const SWARM_ID = randomUUID();
 const validBody = { model: 'chat-small', messages: [{ role: 'user', content: 'hi' }] };
-const authorized = { authorization: `Bearer ${GATEWAY_TOKEN}` };
-const caller = { ...authorized, 'x-swag-swarm-id': SWARM_ID, 'x-swag-agent-id': 'agent-1' };
 
-interface Gateway {
-  app: FastifyInstance;
-  fake: FakeProvider;
-  events: PlatformEventInput[];
-  logs: LogEntry[];
-}
+afterEach(closeAll);
 
-const closers: (() => Promise<void>)[] = [];
-
-afterEach(async () => {
-  for (const close of closers.splice(0)) await close();
-});
-
-// События уходят в шину в памяти и читаются подпиской, как у api (REQ-002-7).
-async function openGateway(
-  options: { bodyLimitBytes?: number; idleTimeoutMs?: number; traceId?: string } = {},
-): Promise<Gateway> {
-  const fake = await startFakeProvider({ port: 0 });
-  closers.push(() => fake.close());
-  const bus = createMemoryBus();
-  const events: PlatformEventInput[] = [];
-  bus.subscribe(`swarm.${SWARM_ID}.events`, (event) => void events.push(event));
-  const { log, entries } = recordingLog();
-  const core = makeCore(
-    fake.url,
-    log,
-    { publishEvent: async (event) => bus.publish(`swarm.${event.swarmId}.events`, event) },
-    {
-      ...(options.idleTimeoutMs && { idleTimeoutMs: options.idleTimeoutMs }),
-      ...(options.traceId && { traceId: options.traceId }),
-    },
-  );
-  const app = await buildApp(core, {
-    ...gatewayOptions,
-    ...(options.bodyLimitBytes && { bodyLimitBytes: options.bodyLimitBytes }),
-  });
-  closers.push(() => app.close());
-  return { app, fake, events, logs: entries };
-}
-
-const chat = (gateway: Gateway, payload: unknown, headers: Record<string, string>) =>
+const chat = (gateway: OpenGateway, payload: unknown, headers: Record<string, string>) =>
   gateway.app.inject({
     method: 'POST',
     url: '/v1/chat/completions',
@@ -368,10 +324,9 @@ describe('оболочка llm-gateway: ответ JSON и отмена (спе�
 
   it('обычный вызов по сети (не inject) — 200: отмена не срабатывает на закрытии запроса после чтения тела (D-67, без AC-id)', async () => {
     const gateway = await openGateway();
-    await gateway.app.listen({ port: 0, host: '127.0.0.1' });
-    const { port } = gateway.app.server.address() as AddressInfo;
+    const base = await listenUrl(gateway.app);
 
-    const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+    const response = await fetch(`${base}/v1/chat/completions`, {
       method: 'POST',
       headers: { ...caller, 'content-type': 'application/json' },
       body: JSON.stringify(validBody),
@@ -383,13 +338,9 @@ describe('оболочка llm-gateway: ответ JSON и отмена (спе�
 
   it('клиент ушёл до ответа — вызов апстрима отменён: фейк видит закрытие, событие error upstream_error по D-58 (без AC-id)', async () => {
     const gateway = await openGateway();
-    await gateway.app.listen({ port: 0, host: '127.0.0.1' });
-    const { port } = gateway.app.server.address() as AddressInfo;
-    const request = http.request({
-      host: '127.0.0.1',
-      port,
+    const base = await listenUrl(gateway.app);
+    const request = http.request(`${base}/v1/chat/completions`, {
       method: 'POST',
-      path: '/v1/chat/completions',
       headers: { ...caller, 'content-type': 'application/json' },
     });
     request.on('error', () => undefined);
