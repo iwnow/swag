@@ -138,4 +138,5 @@
 | Ошибка старта: нет моделей | `upstream_models_mismatch` | Лог `error` при старте шлюза, когда в апстриме нет моделей каталога; поле `missing` — их id (002, REQ-002-13, AC-002-18). |
 | Секреты апстрима | `upstreamSecrets` | Значения, которые адаптер LiteLLM заменяет на `***`: мастер-ключ и непустые `*_API_KEY` из env (002, 4.9). |
 | Каталог моделей (файл) | `readCatalog` | Чтение `infra/llm/<профиль>/models.json` по `LLM_CATALOG_PATH` и проверка схемой `ModelCatalog` в оболочке шлюза (002, 4.7). |
+| Замер задержки шлюза | `NFR-002-1`, `LLM_GATEWAY_BENCH` | Тест-замер `apps/llm-gateway/test/nfr-latency.test.ts`: p95 шлюза и прямого вызова к апстриму, разница печатается, порога нет; запускается с `LLM_GATEWAY_BENCH=1`, не в `npm run check` (002, раздел 6). |
 | Опции Fastify телеметрии | `telemetryAppOptions` | Опции Fastify оболочки `apps/llm-gateway`: логгер телеметрии и серверный спан на запрос, кроме `/health`; общие для `main.ts` и тестов (002, 4.10, REQ-002-14). |
