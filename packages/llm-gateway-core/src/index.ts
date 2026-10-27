@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LlmCaller } from '@swag/contracts';
 import type {
   GatewayErrorCode,
   LlmUsage,
@@ -212,7 +213,15 @@ export interface LlmGatewayCore {
   ): Promise<CompleteResult>;
 }
 
-// Спека 002, 4.4. Фабрика ядра; complete — заглушка до T-14…T-18.
+const CALLER_MESSAGE = 'Missing or invalid x-swag-swarm-id / x-swag-agent-id';
+const MODEL_NAME_LIMIT = 100;
+
+// Спека 002, 4.6. Отказ до апстрима: без обращения к LiteLLM и без события.
+function refusal(status: number, code: GatewayErrorCode, message: string): CompleteResult {
+  return { kind: 'error', status, error: { message, code } };
+}
+
+// Спека 002, 4.4. Фабрика ядра; complete — проверки 2–4 из 4.2, успешный путь — T-15…T-18.
 export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
   const { catalog, upstream, version } = deps;
   return {
@@ -235,7 +244,19 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
       return missing.length === 0 ? { ok: true } : { ok: false, missing };
     },
 
-    async complete() {
+    async complete(rawCaller, rawBody) {
+      if (
+        !LlmCaller.safeParse({ swarmId: rawCaller.swarmId, agentId: rawCaller.agentId }).success
+      ) {
+        return refusal(400, 'invalid_caller', CALLER_MESSAGE);
+      }
+      const parsed = parseChatRequest(rawBody);
+      if (!parsed.ok) return refusal(400, 'invalid_request', parsed.message);
+      const { model } = parsed.value;
+      if (!catalog.models.some((entry) => entry.id === model)) {
+        const name = Array.from(model).slice(0, MODEL_NAME_LIMIT).join('');
+        return refusal(400, 'model_not_found', `Unknown model: ${name}`);
+      }
       throw new Error('not implemented');
     },
   };
