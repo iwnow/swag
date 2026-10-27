@@ -17,6 +17,8 @@ export const ModelPrices = z.strictObject({
   outputPerMTokUsd: PricePerMTok,
 });
 
+export type ModelPrices = z.infer<typeof ModelPrices>;
+
 export const CatalogModel = z.strictObject({ id: ModelId, prices: ModelPrices });
 
 // infra/llm/<профиль>/models.json; id уникальны, порядок задаёт порядок в GET /v1/models.

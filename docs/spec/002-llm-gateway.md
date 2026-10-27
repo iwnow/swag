@@ -724,7 +724,7 @@ export const LlmGatewayConfig = z.object({
 
 **Ядро `packages/llm-gateway-core`: функции**
 
-- [ ] **T-5.** Каркас пакета по образцу `packages/api-core`: `package.json` (`@swag/llm-gateway-core`), `tsconfig`, индекс, README по схеме CLAUDE.md. Внутри — `costMicroUsd` и `parseUsage` по 4.3. Читать: 4.3, 4.14. Плюс `parseProviderCost` по 4.3. Закрывает: REQ-002-6, AC-002-7, AC-002-29 (тест `parseProviderCost`). Готово, когда: тесты AC-002-7, `parseProviderCost` и `parseUsage` (поле есть, поля нет, `cached_tokens` нет) зелёные, `arch:check` зелёный.
+- [x] **T-5.** Каркас пакета по образцу `packages/api-core`: `package.json` (`@swag/llm-gateway-core`), `tsconfig`, индекс, README по схеме CLAUDE.md. Внутри — `costMicroUsd` и `parseUsage` по 4.3. Читать: 4.3, 4.14. Плюс `parseProviderCost` по 4.3. Закрывает: REQ-002-6, AC-002-7, AC-002-29 (тест `parseProviderCost`). Готово, когда: тесты AC-002-7, `parseProviderCost` и `parseUsage` (поле есть, поля нет, `cached_tokens` нет) зелёные, `arch:check` зелёный.
 - [ ] **T-6.** В ядре — схема `ChatRequest` и `CLIENT_CREDENTIAL_FIELDS` по 4.2, функция проверки тела: результат — разобранное тело или `message` по таблице 4.6 (первые 3 ошибки Zod `path: message` через `; `; для поля из `CLIENT_CREDENTIAL_FIELDS` — `Client-side provider credentials are not allowed: <поле>`). Читать: 4.2, 4.6. Закрывает: REQ-002-18 (схема). Готово, когда: юнит-тесты на тело без `messages`, `messages: []`, тело-массив, каждое поле из `CLIENT_CREDENTIAL_FIELDS` и тело с лишним полем `temperature` (проходит) зелёные.
 
 **Фейковый провайдер**

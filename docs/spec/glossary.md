@@ -37,6 +37,9 @@
 | Цены модели | `ModelPrices`, `PricePerMTok` | USD за 1 млн токенов: вход, вход из кэша, выход — десятичные строки. |
 | Использование токенов | `LlmUsage` | `promptTokens`, `cachedPromptTokens`, `completionTokens` из `usage` ответа. |
 | Вызов модели | `llm.call`, `LlmCallData`, `LlmCallStatus`, `callId` | Событие на каждый запрос, ушедший к LiteLLM: модель, `usage`, `costMicroUsd`, `providerCostMicroUsd`, задержка, статус `ok` / `error` / `aborted`. |
+| Стоимость вызова | `costMicroUsd` | Функция `llm-gateway-core`: стоимость по `usage` и ценам модели, micro-USD, округление вверх (спека 002, 4.3). |
+| Разбор usage | `parseUsage` | Функция `llm-gateway-core`: `usage` ответа OpenAI → `LlmUsage`; нет `prompt_tokens`/`completion_tokens` — `null`. |
+| Ядро LLM Gateway | `@swag/llm-gateway-core` | Пакет `packages/llm-gateway-core`: расчёт стоимости и разбор usage; в 002 — ядро `llm-gateway`. |
 | Фактическая стоимость провайдера | `providerCostMicroUsd`, `parseProviderCost` | Сколько вызов стоил платформе у провайдера по её ключу, из `usage.cost` ответа (OpenRouter), в micro-USD. Только для счёта платформы (D-38); списание с организации — `costMicroUsd` по тарифу. |
 | Код ошибки gateway | `GatewayErrorCode` | `unauthorized`, `invalid_caller`, `invalid_request`, `model_not_found`, `upstream_bad_request`, `rate_limited`, `upstream_error`, `upstream_timeout`. |
 | Вызывающий gateway | `LlmCaller`, `SWARM_ID_HEADER`, `AGENT_ID_HEADER` | `swarmId` и `agentId` из заголовков `x-swag-swarm-id`, `x-swag-agent-id` (имена заголовков — константы); до спеки 004 (Q-3 спеки 002). |
