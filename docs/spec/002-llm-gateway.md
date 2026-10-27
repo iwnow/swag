@@ -715,7 +715,7 @@ export const LlmGatewayConfig = z.object({
   Перед правкой проверить, что тег образа опубликован. Если не опубликован — `blocked`, Q в раздел 9. Затем `npm run check`, пересобрать образы.
 
   Готово, когда: нигде в репозитории нет `24.20.0`, `npm run check` зелёный.
-- [ ] **T-2.** В `vitest.config.ts` добавить `'.claude/**'` в `exclude` (из N-5). Готово, когда: `npm test` не находит тесты в `.claude/worktrees`.
+- [x] **T-2.** В `vitest.config.ts` добавить `'.claude/**'` в `exclude` (из N-5). Готово, когда: `npm test` не находит тесты в `.claude/worktrees`.
 
 **Контракты**
 
