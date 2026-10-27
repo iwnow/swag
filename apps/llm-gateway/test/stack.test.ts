@@ -17,9 +17,6 @@ const json = { 'content-type': 'application/json' };
 const EXEC_TIMEOUT_MS = 20_000;
 const FETCH_TIMEOUT_MS = 15_000;
 
-// Ключи dev-инструментов, не провайдеров моделей (D-73).
-const NOT_PROVIDER_KEYS = new Set(['CONTEXT7_API_KEY']);
-
 // Фейк профиля test: 1000 входных токенов, из них 200 из кэша, 500 выходных.
 // Цены test за 1 млн токенов: вход 3,00, кэш 0,30, выход 15,00. В микродолларах:
 // 800 · 3,00 + 200 · 0,30 + 500 · 15,00 = 2400 + 60 + 7500 = 9960.
@@ -232,9 +229,7 @@ describe.skipIf(!gatewayUrl)('llm-gateway [stack]', () => {
       const values = env.map((entry) => entry.slice(entry.indexOf('=') + 1));
       const forbidden = names.filter(
         (name) =>
-          name === 'LITELLM_MASTER_KEY' ||
-          (name.endsWith('_API_KEY') && !NOT_PROVIDER_KEYS.has(name)) ||
-          secrets.names.has(name),
+          name === 'LITELLM_MASTER_KEY' || name.endsWith('_API_KEY') || secrets.names.has(name),
       );
       expect(forbidden, service).toEqual([]);
       // Печатаются только имена: значение секрета в сообщении об ошибке не появляется.

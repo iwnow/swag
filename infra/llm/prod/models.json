@@ -3,17 +3,17 @@
     {
       "id": "chat-small",
       "prices": {
-        "inputPerMTokUsd": "0.10",
-        "cachedInputPerMTokUsd": "0.01",
-        "outputPerMTokUsd": "0.50"
+        "inputPerMTokUsd": "0.047",
+        "cachedInputPerMTokUsd": "0.0095",
+        "outputPerMTokUsd": "0.095"
       }
     },
     {
       "id": "chat-large",
       "prices": {
-        "inputPerMTokUsd": "2.00",
-        "cachedInputPerMTokUsd": "0.10",
-        "outputPerMTokUsd": "10.00"
+        "inputPerMTokUsd": "0.877",
+        "cachedInputPerMTokUsd": "0.073",
+        "outputPerMTokUsd": "1.754"
       }
     }
   ]

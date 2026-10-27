@@ -17,7 +17,7 @@
   ```
 
 - Стек: `npm run up` поднимает `litellm`, `llm-fake`, `llm-gateway` и остальные сервисы (`compose.yaml`, 4.8). Профиль моделей — `LLM_PROFILE` в `.env` (по умолчанию `test`). Проверка — `npm run infra:check` (строка `llm-gateway`: `GET /health` → `service: 'llm-gateway'`). Остановка — `npm run down`.
-  - Образ LiteLLM: `ghcr.io/berriai/litellm:main-v1.83.14-stable` (`compose.yaml`, сервис `litellm`). Выбран по шаблону 4.8: самый новый тег `main-v<версия>-stable` на ghcr.io по состоянию на 2026-10-27; `main-v1.83.14-stable` создан 2026-05-02. Патч `main-v1.83.14-stable.patch.3` не взят (D-71). Конфиг монтируется из `infra/llm/${LLM_PROFILE}/litellm.yaml`, порт наружу не публикуется, сеть `llm`.
+  - Образ LiteLLM: `ghcr.io/berriai/litellm:main-v1.83.14-stable.patch.3` (`compose.yaml`, сервис `litellm`). Выбран по шаблону 4.8 с поправкой решения приёмки D-71: патч `main-v1.83.14-stable.patch.3` (вместо `main-v1.83.14-stable`, с которым шаблон 4.8 взят при T-27). Конфиг монтируется из `infra/llm/${LLM_PROFILE}/litellm.yaml`, порт наружу не публикуется, сеть `llm`.
   - Проверено на стеке `test` (T-27): префикс `openai/` LiteLLM снимает (фейк получает `fake-small`); `usage.cost` фейка без потока доходит до клиента, в потоке LiteLLM его не передаёт (D-72), поэтому `providerCostMicroUsd` в потоке через стек — `null`.
 
 ## Что внутри сейчас
@@ -26,7 +26,7 @@
 - `src/main.ts` — телеметрия (`startTelemetry`, сервис `llm-gateway`), конфигурация, каталог, NATS, адаптер, ядро (`trace: telemetry.trace`), приложение с опциями `telemetryAppOptions(telemetry)`, запуск, остановка по `SIGINT`/`SIGTERM` со сбросом телеметрии. Слушает `0.0.0.0` внутри контейнера.
 - `src/start.ts` — `startGateway` (сверка, затем `listen`, либо выход 1), `waitForUpstream` (повтор раз в 1 с до таймаута), `upstreamSecrets`.
 - `src/catalog.ts` — `readCatalog`: читает файл и проверяет его схемой `ModelCatalog`.
-- `src/app.ts` — `telemetryAppOptions(telemetry)`: опции Fastify телеметрии (логгер `telemetry.logger.pino`, `tracedHttpServer` с `ignorePaths: ['/health']`), общие для `main.ts` и `test/telemetry.test.ts`; `buildApp(core, { token, bodyLimitBytes }, options)`: Fastify с `GET /health` (без токена), `GET /v1/models` и `POST /v1/chat/completions` за проверкой токена в `onRequest`; заголовки вызывающего и тело уходят в ядро как есть; отказ ядра — статус и тело по 4.2; `kind: 'json'` отвечает `200` с телом ядра как есть; `kind: 'stream'` пишет SSE (`writeStream`: `200`, `content-type: text/event-stream`, `cache-control: no-cache`, каждый фрагмент — `data: <payload>\n\n` сразу после получения, `reply.hijack()` и `reply.raw`); вызов отменяется, если клиент ушёл до ответа; ошибка разбора тела (больше `bodyLimitBytes` — `413`, не JSON — `400`) — тело по 4.2 с `code: 'invalid_request'` (D-65).
+- `src/app.ts` — `telemetryAppOptions(telemetry)`: опции Fastify телеметрии (логгер `telemetry.logger.pino`, `tracedHttpServer` с `ignorePaths: ['/health']`), общие для `main.ts` и `test/telemetry.test.ts`; `buildApp(core, { token, bodyLimitBytes }, options)`: Fastify с `GET /health` (без токена), `GET /v1/models` и `POST /v1/chat/completions` за проверкой токена в `onRequest`; заголовки вызывающего и тело уходят в ядро как есть; отказ ядра — статус и тело по 4.2; `kind: 'json'` отвечает `200` с телом ядра как есть; `kind: 'stream'` пишет SSE (`writeStream`: `200`, `content-type: text/event-stream`, `cache-control: no-cache`, каждый фрагмент — `data: <payload>\n\n` сразу после получения, `reply.hijack()` и `reply.raw`); вызов отменяется, если клиент ушёл до ответа; ошибка разбора тела (больше `bodyLimitBytes` — `413`, не JSON — `400`) — тело по 4.2 с `code: 'invalid_request'` (D-65); ошибка 5xx (исключение без `statusCode`) — `500` с телом 4.2, `message: 'Internal error'`, `code: 'upstream_error'`, текст исключения только в логе (D-66).
 - `test/support.ts` — общие хелперы тестов: `openGateway(options)` (фейк, ядро, шина в памяти с подпиской на события, лог; порт не слушается), `makeCore(url, log, events, options)` (опции `traceId` — стаб трейса, `trace` — порт телеметрии, `secrets`, `masterKey` — ключ, уходящий апстриму), `listenUrl(app)` (`127.0.0.1` на свободном порту), `closeAll` (ставится в `afterEach` каждого файла), `caller`, `authorized`, `SWARM_ID`, фикстура каталога.
 - `test/telemetry.test.ts` — оболочка с телеметрией, как в `apps/api`: `startTelemetry` с выводом строк в массив и спанами в памяти (`createMemoryExporters`), Fastify на `loggerInstance` и `tracedHttpServer`, сеть по `listen`: AC-002-23 (без потока и потоком: маркер нет в логах, спанах и событии; на каждый вызов одна `llm call` — `LogRecord` с `service: 'llm-gateway'`), AC-002-17 в двух проходах (`masterKey` — мастер-ключ и ключ фейка: ключ прохода реально уходит фейку в `Authorization`, в ответе `Bearer ***`, ни одного ключа в логах, спанах и событии), REQ-002-14 в двух вариантах — без потока и потоком (трейс из `traceparent`: запись, событие и серверный спан в трейсе запроса).
 - `test/routes.test.ts` — тесты на фейке через `app.inject`:
@@ -59,10 +59,10 @@
 | ------- | ------------ | ------------------------------------------ | ------- | -------------------------------- | ------------------- |
 | dev     | `chat-small` | `openrouter/free` (роутер по free-моделям) | да      | 0 / 0 / 0                        | 2026-02-01          |
 | dev     | `chat-large` | `nvidia/nemotron-3-ultra-550b-a55b:free`   | да      | 0 / 0 / 0                        | 2026-06-04          |
-| prod    | `chat-small` | `anthropic/claude-haiku-5.5`               | да      | 0.10 / 0.01 / 0.50               | 2026-10-07          |
-| prod    | `chat-large` | `anthropic/claude-sonnet-5.5`              | да      | 2.00 / 0.10 / 10.00              | 2026-09-28          |
+| prod    | `chat-small` | `deepseek/deepseek-v4-flash`               | да      | 0.047 / 0.0095 / 0.095           | 2026-04-24          |
+| prod    | `chat-large` | `deepseek/deepseek-v4-pro`                 | да      | 0.877 / 0.073 / 1.754            | 2026-04-24          |
 
-Выбор моделей внутри класса и `:free`-суффикс — D-69 в `docs/spec/questions.md`. `chat-small` в dev — роутер `openrouter/free`: OpenRouter сам выбирает доступную бесплатную модель с нужными параметрами запроса, поэтому лимит одной free-модели у провайдера не останавливает вызовы; модель от вызова к вызову может отличаться (решение человека 2026-10-28, D-69). `chat-large` в dev — конкретная модель. Бесплатные модели имеют суточные лимиты OpenRouter (Q-2). Цены и поддержка меняются у провайдера: при смене профиля сверять заново.
+Цены `prod` — по API OpenRouter на 2026-10-28 (поля `prompt`, `cache`, `completion`), в каталог взяты значения решения приёмки (D-69, D-70), не точные значения API: вход 0.04732 и 0.877134, кэш 0.009464 и 0.0730945, выход 0.09464 и 1.754268 USD за 1 млн. У моделей `prod` ступеней цены нет. Поддержка `tools` у моделей `prod` в этой сверке не проверена (в таблице «?»). Выбор моделей внутри класса и `:free`-суффикс — D-69 в `docs/spec/questions.md`. `chat-small` в dev — роутер `openrouter/free`: OpenRouter сам выбирает доступную бесплатную модель с нужными параметрами запроса, поэтому лимит одной free-модели у провайдера не останавливает вызовы; модель от вызова к вызову может отличаться (решение человека 2026-10-28, D-69). `chat-large` в dev — конкретная модель. Бесплатные модели имеют суточные лимиты OpenRouter (Q-2). Цены и поддержка меняются у провайдера: при смене профиля сверять заново.
 
 Тесты профилей: `scripts/repo.test.ts` (AC-002-8, вторая часть; AC-002-19).
 
@@ -70,9 +70,9 @@
 
 - Поток SSE пишется без ожидания `drain`: медленный клиент копит фрагменты в памяти процесса (D-68).
 - Каталог читается один раз при старте; смена каталога требует перезапуска.
-- Каталог хранит одну цену на модель. У `prod` `chat-small` (`anthropic/claude-haiku-5.5`) OpenRouter задаёт вторую ценовую ступень от 100 000 входных токенов (вход 0.50, кэш 0.05, выход 2.50 USD за 1 млн, в 5 раз дороже): для длинных запросов `costMicroUsd` занижен (D-70).
+- Каталог хранит одну цену на модель. У моделей `prod` ступеней цены нет (D-70 снят).
 - Полный запуск (`main.ts`) требует NATS и LiteLLM; в тестах не запускается, проверяется `startGateway` с фейком.
-- В потоке через LiteLLM `usage.cost` провайдера не приходит (D-72): `providerCostMicroUsd` в потоке при работе со стеком `null`; тесты адаптера с фейком напрямую проверяют поток.
+- В потоке через LiteLLM `usage.cost` провайдера не приходит (D-72): сверка с фактической стоимостью провайдера — в спеке 004. `providerCostMicroUsd` в потоке при работе со стеком `null`; тесты адаптера с фейком напрямую проверяют поток.
 
 ## Связи
 
@@ -91,7 +91,7 @@ npm run down
 ```
 
 - `LLM_GATEWAY_TOKEN` — из `.env`; адрес `api` — `STACK_API_URL` (по умолчанию `http://127.0.0.1:3000`), для него тест создаёт рой через `POST /swarms`.
-- AC-002-21: в env `api`, `orchestrator`, `ui` не должно быть `LITELLM_MASTER_KEY` и `*_API_KEY` из `.env.llm`, кроме allowlist `CONTEXT7_API_KEY` (ключ dev-инструмента, D-73); значения секретов из `.env.llm` тоже не должны встречаться. Нужен `.env.llm` — его читает compose.
+- AC-002-21: в env `api`, `orchestrator`, `ui` не должно быть `LITELLM_MASTER_KEY` и `*_API_KEY` из `.env.llm`, без исключений (D-73: `api` и `orchestrator` получают явный `environment`, не весь `.env`); значения секретов из `.env.llm` тоже не должны встречаться. Нужен `.env.llm` — его читает compose.
 - Пример вызова, который проверяет тест (ответ `fake reply`, usage 1000/200/500):
 
   ```bash
@@ -112,7 +112,7 @@ npm run down
 - Секреты адаптера (4.9): мастер-ключ LiteLLM и непустые значения переменных `*_API_KEY`; они редактируются в сообщениях ошибок адаптера.
 - `version` берётся из `package.json`, как в `apps/api`.
 - Токен (`LLM_GATEWAY_TOKEN`) проверяется в `onRequest`, до разбора тела; сравнение через `crypto.timingSafeEqual`, разная длина — `401` без сравнения (4.2).
-- Лимит тела — `bodyLimit` Fastify из `LLM_GATEWAY_BODY_LIMIT_BYTES`. Тело ошибки — формат 4.2, `code: 'invalid_request'` для `413` и для тела не-JSON: 4.6 таких строк не задаёт (D-65).
+- Лимит тела — `bodyLimit` Fastify из `LLM_GATEWAY_BODY_LIMIT_BYTES`. Тело ошибки — формат 4.2, `code: 'invalid_request'` для `413` и для тела не-JSON: 4.6 таких строк не задаёт (D-65). Ошибка 5xx — `500`, `message: 'Internal error'`, текст исключения пишется в лог `request.log.error` и клиенту не уходит (D-66). В `GatewayErrorCode` кода для 500 нет, взят ближайший `upstream_error` — решение приёмки D-66; сам код ответа 500, не 502.
 - Отмена вызова по уходу клиента: `AbortController` прерывается по `close` у `reply.raw`, только если ответ не дописан (`writableFinished` ложно). Слушать `close` у `request.raw` нельзя: на Node 24 он приходит сразу после чтения тела, и каждый вызов отменялся бы (D-67).
 - Заголовки `x-swag-swarm-id` и `x-swag-agent-id` передаются в ядро как есть; нет заголовка или он задан дважды — пустая строка, которую `LlmCaller` отклоняет как `invalid_caller`.
 - Поток SSE (4.2): итерация ядра начинается сразу после ответа апстрима и идёт до конца или до ошибки, без `return()` до первого `next()`: событие и лог пишутся в `finally` генератора ядра (D-60). Ответ берётся через `reply.hijack()` и пишется в `reply.raw`, `flushHeaders` отдаёт заголовки до первого фрагмента. Если записать заголовки не удалось, ошибка логируется, а итерация всё равно запускается и `finally` закрывает ответ: поток ядра дочитывается (D-60).
@@ -127,7 +127,7 @@ npm run down
   - `reply.hijack()` и `reply.raw` — по https://fastify.dev/docs/latest/Reference/Reply/.
   - Хук `onRequest`: в нём `request.body` не разобран (https://fastify.dev/docs/latest/Reference/Hooks/), поэтому токен проверяется до тела.
   - Async-хук, отправивший ответ и вернувший `reply`, останавливает цепочку, как написано в доке.
-  - Документация не описывает, что делает `setErrorHandler`, если обработчик бросает исключение; по исходникам Fastify (`lib/error-handler.js`) это уходит в обработчик родителя по умолчанию, поэтому 5xx остаются штатным ответом Fastify (код не менялся).
+  - Документация не описывает, что делает `setErrorHandler`, если обработчик бросает исключение; обработчик 5xx не бросает исключение и отвечает сам (D-66).
 - AC-002-17 проверяется в двух проходах: `masterKey` оболочки — мастер-ключ и ключ фейка (`FAKE_PROVIDER_API_KEY`). Во втором проходе ключ фейка реально приходит фейку в `Authorization`, поэтому отсутствие ключа в выводе проверено не пустым множеством (T-24).
 
 ## Спеки

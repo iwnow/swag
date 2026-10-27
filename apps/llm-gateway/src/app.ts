@@ -67,10 +67,15 @@ export async function buildApp(
   });
 
   // Ошибки разбора тела Fastify: 413 — лимит LLM_GATEWAY_BODY_LIMIT_BYTES, 400 — не JSON.
-  // Тело — по 4.2, код — invalid_request: 4.6 кода для 413 не задаёт (D-65). Ошибки 5xx — штатный ответ Fastify.
-  app.setErrorHandler((error: FastifyError, _request, reply) => {
+  // Тело — по 4.2, код — invalid_request: 4.6 кода для 413 не задаёт (D-65).
+  // Ошибки 5xx (D-66): текст исключения только в лог, клиенту — фиксированный Internal error. Кода для 500 в
+  // GatewayErrorCode нет, взят ближайший — upstream_error (решение приёмки D-66).
+  app.setErrorHandler((error: FastifyError, request, reply) => {
     const status = error.statusCode ?? 500;
-    if (status >= 500) throw error;
+    if (status >= 500) {
+      request.log.error({ err: error }, 'llm gateway internal error');
+      return reply.code(500).send(gatewayError('Internal error', 'upstream_error'));
+    }
     return reply.code(status).send(gatewayError(error.message, 'invalid_request'));
   });
 
