@@ -198,9 +198,10 @@ describe('complete без потока: providerCostMicroUsd', () => {
 
 describe('complete без потока: сбой публикации', () => {
   it('AC-002-9: сбой шины — лог error event_publish_failed с callId, ответ клиенту не меняется', async () => {
-    const { core, log } = setup(OK, { publishFails: true });
+    const { core, log, events } = setup(OK, { publishFails: true });
     const result = await core.complete(caller, body, signal);
     expect(result).toEqual({ kind: 'json', body: usageOf(FULL_USAGE) });
+    expect(events.published).toEqual([]);
     expect(log.entries).toContainEqual(
       expect.objectContaining({
         level: 'error',
@@ -208,5 +209,17 @@ describe('complete без потока: сбой публикации', () => {
         ctx: expect.objectContaining({ callId: CALL_ID }),
       }),
     );
+    expect(log.entries).toContainEqual(expect.objectContaining({ level: 'info', msg: 'llm call' }));
+  });
+});
+
+describe('complete с stream: true', () => {
+  it('поток — заглушка до T-17: отказ, апстрим не вызван, событие не опубликовано', async () => {
+    const { core, upstream, events } = setup();
+    await expect(core.complete(caller, { ...body, stream: true }, signal)).rejects.toThrow(
+      'not implemented',
+    );
+    expect(upstream.calls).toEqual([]);
+    expect(events.published).toEqual([]);
   });
 });

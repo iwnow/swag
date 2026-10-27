@@ -226,7 +226,7 @@ function refusal(status: number, code: GatewayErrorCode, message: string): Compl
 function callLogFields(data: LlmCallData, caller: LlmCaller): LogContext {
   const { usage, ...rest } = data;
   const fields = { swarmId: caller.swarmId, agentId: caller.agentId, ...rest, ...usage };
-  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== null));
+  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value != null));
 }
 
 // Спека 002, 4.4. Фабрика ядра; complete — проверки 2–4 из 4.2 и успешный путь без потока (шаги 2–7); ошибки и поток — T-16…T-18.
@@ -268,6 +268,8 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
         const name = Array.from(body.model).slice(0, MODEL_NAME_LIMIT).join('');
         return refusal(400, 'model_not_found', `Unknown model: ${name}`);
       }
+
+      if (body.stream === true) throw new Error('not implemented');
 
       const callId = ids.uuid();
       const t0 = clock.monotonicMs();
