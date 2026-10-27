@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { LlmCaller } from '@swag/contracts';
 import type {
   GatewayErrorCode,
+  LlmCallData,
   LlmUsage,
   ModelCatalog,
   ModelPrices,
@@ -221,9 +222,16 @@ function refusal(status: number, code: GatewayErrorCode, message: string): Compl
   return { kind: 'error', status, error: { message, code } };
 }
 
-// Спека 002, 4.4. Фабрика ядра; complete — проверки 2–4 из 4.2, успешный путь — T-15…T-18.
+// Спека 002, 4.10. Поля лога — из данных события; null-значения не пишутся.
+function callLogFields(data: LlmCallData, caller: LlmCaller): LogContext {
+  const { usage, ...rest } = data;
+  const fields = { swarmId: caller.swarmId, agentId: caller.agentId, ...rest, ...usage };
+  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value != null));
+}
+
+// Спека 002, 4.4. Фабрика ядра; complete — проверки 2–4 из 4.2 и успешный путь без потока (шаги 2–7); ошибки и поток — T-16…T-18.
 export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
-  const { catalog, upstream, version } = deps;
+  const { catalog, upstream, events, clock, ids, trace, log, version } = deps;
   return {
     info: () => ({ service: 'llm-gateway', version }),
 
@@ -244,20 +252,61 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
       return missing.length === 0 ? { ok: true } : { ok: false, missing };
     },
 
-    async complete(rawCaller, rawBody) {
-      if (
-        !LlmCaller.safeParse({ swarmId: rawCaller.swarmId, agentId: rawCaller.agentId }).success
-      ) {
+    async complete(rawCaller, rawBody, signal) {
+      const caller = LlmCaller.safeParse({
+        swarmId: rawCaller.swarmId,
+        agentId: rawCaller.agentId,
+      });
+      if (!caller.success) {
         return refusal(400, 'invalid_caller', CALLER_MESSAGE);
       }
       const parsed = parseChatRequest(rawBody);
       if (!parsed.ok) return refusal(400, 'invalid_request', parsed.message);
-      const { model } = parsed.value;
-      if (!catalog.models.some((entry) => entry.id === model)) {
-        const name = Array.from(model).slice(0, MODEL_NAME_LIMIT).join('');
+      const body = parsed.value;
+      const entry = catalog.models.find((model) => model.id === body.model);
+      if (!entry) {
+        const name = Array.from(body.model).slice(0, MODEL_NAME_LIMIT).join('');
         return refusal(400, 'model_not_found', `Unknown model: ${name}`);
       }
-      throw new Error('not implemented');
+
+      if (body.stream === true) throw new Error('not implemented');
+
+      const callId = ids.uuid();
+      const t0 = clock.monotonicMs();
+      const response = await upstream.complete(body, signal);
+      if (!response.ok) throw new Error('not implemented');
+      const latencyMs = Math.round(clock.monotonicMs() - t0);
+
+      const rawUsage = isRecord(response.body) ? response.body.usage : undefined;
+      const usage = parseUsage(rawUsage);
+      if (!usage) log.warn('usage_missing', { callId });
+      const data: LlmCallData = {
+        callId,
+        model: body.model,
+        stream: false,
+        status: 'ok',
+        usage,
+        costMicroUsd: usage ? costMicroUsd(usage, entry.prices) : null,
+        providerCostMicroUsd: usage ? parseProviderCost(rawUsage) : null,
+        latencyMs,
+      };
+      const event: PlatformEventInput = {
+        id: ids.uuid(),
+        swarmId: caller.data.swarmId,
+        agentId: caller.data.agentId,
+        ts: clock.now().toISOString(),
+        source: 'llm-gateway',
+        traceId: trace.currentTraceId(),
+        type: 'llm.call',
+        data,
+      };
+      try {
+        await events.publishEvent(event);
+      } catch (err) {
+        log.error('event_publish_failed', { callId, err });
+      }
+      log.info('llm call', callLogFields(data, caller.data));
+      return { kind: 'json', body: response.body };
     },
   };
 }

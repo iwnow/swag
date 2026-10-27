@@ -13,7 +13,9 @@
 
 - Проверить вызов `complete` до апстрима (REQ-002-4, REQ-002-18, AC-002-3, -4, -5, -28): вызывающий `LlmCaller` → `invalid_caller`, тело `ChatRequest` → `invalid_request`, модель каталога → `model_not_found`. Отказ — `{ kind: 'error' }`, апстрим не вызывается, событие не публикуется.
 
-`complete` для запросов, которые прошли проверки, пока заглушка (`not implemented`): успешный путь — T-15…T-18.
+- Успешный `complete` без потока (REQ-002-1, REQ-002-7, REQ-002-19, AC-002-1, -9, -14, -29): `callId`, замер задержки, `usage` и стоимость, событие `llm.call` `status: 'ok'`, лог `llm call`, `usage_missing` без `usage`, `event_publish_failed` при сбое шины.
+
+Ошибки апстрима (T-16) и поток (T-17, T-18) пока заглушка (`not implemented`). Поток — not implemented до T-17: `complete` с `stream: true` отклоняется до апстрима, событие не публикуется.
 
 ## Что внутри сейчас
 
@@ -28,8 +30,9 @@
 - `checkUpstream(signal)` — `listModels` апстрима; все `id` каталога есть → `{ ok: true }`; нет части → `{ ok: false, missing }` в порядке каталога; ошибка апстрима → `{ ok: false, failure }`.
 - Порты `EventPublisher`, `Clock` (`now(): Date`, `monotonicMs()`), `Ids`, `TraceContext`, `Logger` и `LogContext`, типы `CompleteResult`, `CheckUpstreamResult`, `ModelList`.
 - `complete(rawCaller, rawBody)` — проверки 2–4 из 4.2 по порядку: `LlmCaller.safeParse` на `swarmId`/`agentId` (`invalid_caller`), `parseChatRequest` (`invalid_request`), поиск `model` в каталоге (`model_not_found`, `Unknown model: <имя>`, имя обрезается до 100 символов). Ответ — `CompleteResult` `kind: 'error'` с `status: 400` и `error` по 4.6.
-- Тесты: `test/complete-checks.test.ts` — AC-002-3, -4, -5, -28 на уровне ядра (`complete` до апстрима); `test/llm-gateway-core.test.ts` — AC-002-7, AC-002-29 (часть про `parseProviderCost`), разбор `parseUsage` в трёх случаях, блок «схема тела ChatRequest» (REQ-002-18); `test/gateway-core.test.ts` — AC-002-6 (`listModels`), AC-002-18 (`checkUpstream` на уровне ядра), `info`.
-- `test/fakes.ts` — фейковые порты в памяти: `fakeUpstream` (сценарии `models`, `complete`, `stream`, запись вызовов), `chunksThen` (поток из payload'ов и последующий `UpstreamStreamError`), `fakeEvents` (массив `published`), `fakeClock` (`advance(ms)`), `fakeIds`, `fakeTrace`, `fakeLog` (массив `entries`), `fakeDeps` (собирает `LlmGatewayDeps`). Каталог `testCatalog`: `chat-small`, `chat-large`.
+- `complete` после проверок: `ids.uuid()` → `callId`, `upstream.complete(body, signal)`; при успехе `latencyMs = round(monotonicMs() − t0)`, `usage` через `parseUsage` от `body.usage`, `costMicroUsd` по ценам модели из каталога, `providerCostMicroUsd` через `parseProviderCost` (только при `usage`). Событие публикуется, сбой публикации — `error` `event_publish_failed` с `callId`; затем лог `llm call` info (`callLogFields`: поля из данных события, null-значения не пишутся).
+- Тесты: `test/complete-ok.test.ts` — AC-002-1, -9, -14, -29 без потока (успешный путь, `usage` отсутствует, сбой публикации); `test/complete-checks.test.ts` — AC-002-3, -4, -5, -28 на уровне ядра (`complete` до апстрима); `test/llm-gateway-core.test.ts` — AC-002-7, AC-002-29 (часть про `parseProviderCost`), разбор `parseUsage` в трёх случаях, блок «схема тела ChatRequest» (REQ-002-18); `test/gateway-core.test.ts` — AC-002-6 (`listModels`), AC-002-18 (`checkUpstream` на уровне ядра), `info`.
+- `test/fakes.ts` — фейковые порты в памяти: `fakeUpstream` (сценарии `models`, `complete`, `stream`, запись вызовов), `chunksThen` (поток из payload'ов и последующий `UpstreamStreamError`), `fakeEvents` (массив `published`, `fail` — отказ публикации), `fakeClock` (`advance(ms)`), `fakeIds`, `fakeTrace`, `fakeLog` (массив `entries`), `fakeDeps` (собирает `LlmGatewayDeps`). Каталог `testCatalog`: `chat-small`, `chat-large`.
 
 ## Ограничения
 
@@ -53,8 +56,9 @@
 - Поля ключа и адреса проверяются до схемы: сообщение «Client-side provider credentials…» точнее, чем ошибка Zod про обязательное `messages`. Порядок внутри шага 3 из 4.2 спека не задаёт; решение — D-42 в `docs/spec/questions.md`.
 - `parseProviderCost` округляет до ближайшего, а `costMicroUsd` — вверх: `providerCostMicroUsd` — факт расхода платформы, `costMicroUsd` — списание с клиента по тарифу (4.3).
 - Порты с именами и полями из 4.4, а не из других ядер: `Ids` вместо `IdGenerator`, `Clock.now()` возвращает `Date` (D-55). Лог и трейс — той же формы, что в `api-core`.
-- `complete` — `async`, для запроса после проверок бросает `not implemented` отклонённым промисом до T-15.
+- `complete` — `async`, для запроса после проверок бросает `not implemented` отклонённым промисом для ошибок апстрима (T-16) и потока (T-17, T-18).
 - Порядок проверок — как в 4.2: сначала вызывающий, потом тело, потом модель. Отказ возвращается значением (`kind: 'error'`), а не исключением: оболочка переводит его в HTTP-ответ по 4.6.
+- `latencyMs` считается сразу после ответа апстрима, до публикации: поле входит в событие, а 4.4 задаёт его после него (D-57). `ts` события — `clock.now()` в тот же момент.
 - Имя модели в `model_not_found` обрезается по символам Unicode (`Array.from`), а не по UTF-16 единицам, чтобы не разрезать эмодзи (D-56); трактовка «100 символов» записана в журнале спеки.
 
 ## Спеки
