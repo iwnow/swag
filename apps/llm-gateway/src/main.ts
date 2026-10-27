@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createLiteLlmUpstream } from '@swag/adapter-litellm';
 import { connectNatsBus } from '@swag/adapter-nats';
-import { startTelemetry, type Telemetry } from '@swag/adapter-telemetry';
+import { startTelemetry, tracedHttpServer, type Telemetry } from '@swag/adapter-telemetry';
 import { BaseConfig, LlmGatewayConfig, loadConfig } from '@swag/config';
 import { eventsSubject, type ModelCatalog } from '@swag/contracts';
 import { createLlmGatewayCore } from '@swag/llm-gateway-core';
@@ -75,10 +75,18 @@ const core = createLlmGatewayCore({
   version,
 });
 
-const app = await buildApp(core, {
-  token: config.LLM_GATEWAY_TOKEN,
-  bodyLimitBytes: config.LLM_GATEWAY_BODY_LIMIT_BYTES,
-});
+// Fastify пишет тем же логгером; каждый запрос, кроме /health, — серверный спан с родителем из traceparent (как в apps/api).
+const app = await buildApp(
+  core,
+  {
+    token: config.LLM_GATEWAY_TOKEN,
+    bodyLimitBytes: config.LLM_GATEWAY_BODY_LIMIT_BYTES,
+  },
+  {
+    loggerInstance: telemetry.logger.pino,
+    serverFactory: tracedHttpServer(telemetry, { ignorePaths: ['/health'] }),
+  },
+);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(

@@ -9,6 +9,7 @@ import {
   type EventPublisher,
   type Logger,
   type LlmGatewayCore,
+  type TraceContext,
 } from '@swag/llm-gateway-core';
 import { buildApp } from '../src/app.ts';
 import { readCatalog } from '../src/catalog.ts';
@@ -44,12 +45,18 @@ export function recordingLog(): { log: Logger; entries: LogEntry[] } {
 
 // Ядро шлюза над настоящим адаптером LiteLLM, направленным на фейк, и каталогом из фикстуры.
 // events по умолчанию не пишет; тест передаёт свой, чтобы проверить отсутствие или наличие событий.
-// traceId — трейс, который ядро берёт для события (в оболочке его задаёт T-24); idleTimeoutMs — 5 с по умолчанию.
+// traceId — трейс стаба, если trace не передан; trace — порт телеметрии (T-24); idleTimeoutMs — 5 с по умолчанию.
+// secrets — по умолчанию только мастер-ключ; тест телеметрии передаёт и ключ фейка (4.9).
 export function makeCore(
   upstreamUrl: string,
   log: Logger,
   events: EventPublisher = { publishEvent: async () => undefined },
-  options: { idleTimeoutMs?: number; traceId?: string } = {},
+  options: {
+    idleTimeoutMs?: number;
+    traceId?: string;
+    trace?: TraceContext;
+    secrets?: string[];
+  } = {},
 ): LlmGatewayCore {
   return createLlmGatewayCore({
     catalog: readCatalog(catalogPath),
@@ -57,12 +64,12 @@ export function makeCore(
       baseUrl: upstreamUrl,
       masterKey: MASTER_KEY,
       idleTimeoutMs: options.idleTimeoutMs ?? 5_000,
-      secrets: [MASTER_KEY],
+      secrets: options.secrets ?? [MASTER_KEY],
     }),
     events,
     clock: { now: () => new Date(), monotonicMs: () => performance.now() },
     ids: { uuid: () => randomUUID() },
-    trace: { currentTraceId: () => options.traceId ?? null },
+    trace: options.trace ?? { currentTraceId: () => options.traceId ?? null },
     log,
     version: 'test',
   });
