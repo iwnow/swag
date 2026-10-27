@@ -41,7 +41,7 @@ async function openGateway(
 ): Promise<Gateway> {
   const fake = await startFakeProvider({ port: 0 });
   closers.push(() => fake.close());
-  const bus = createMemoryBus<PlatformEventInput>();
+  const bus = createMemoryBus();
   const events: PlatformEventInput[] = [];
   bus.subscribe(`swarm.${SWARM_ID}.events`, (event) => void events.push(event));
   const { log, entries } = recordingLog();
@@ -246,6 +246,7 @@ describe('оболочка llm-gateway: ответ JSON и отмена (спе�
     const response = await chat(gateway, sent, caller);
 
     expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toContain('application/json');
     expect(response.json()).toEqual({
       id: 'chatcmpl-fake',
       object: 'chat.completion',
@@ -325,20 +326,28 @@ describe('оболочка llm-gateway: ответ JSON и отмена (спе�
     const cases = [
       { marker: '__fail_500__', status: 502, code: 'upstream_error', message: 'Upstream error' },
       { marker: '__fail_429__', status: 429, code: 'rate_limited', message: 'Provider rate limit' },
-      { marker: '__fail_400__', status: 400, code: 'upstream_bad_request', message: 'bad request' },
     ];
 
     for (const { marker, status, code, message } of cases) {
       const body = { ...validBody, messages: [{ role: 'user', content: marker }] };
       const response = await chat(gateway, body, caller);
-      const failure = response.json() as { error: { message: string; code: string } };
       expect(response.statusCode).toBe(status);
-      expect(failure.error.code).toBe(code);
-      expect(failure.error.message).toContain(message);
+      expect(response.json()).toEqual(error(code, message));
     }
-    expect(gateway.events).toMatchObject(
-      cases.map(({ code }) => ({ data: { status: 'error', stream: false, errorCode: code } })),
-    );
+
+    const badBody = { ...validBody, messages: [{ role: 'user', content: '__fail_400__' }] };
+    const badRequest = await chat(gateway, badBody, caller);
+    const failure = badRequest.json() as { error: { type: string; message: string; code: string } };
+    expect(badRequest.statusCode).toBe(400);
+    expect(failure.error.type).toBe('swag_gateway_error');
+    expect(failure.error.code).toBe('upstream_bad_request');
+    expect(failure.error.message).toContain('bad request');
+
+    expect(gateway.events).toMatchObject([
+      { data: { status: 'error', stream: false, errorCode: 'upstream_error' } },
+      { data: { status: 'error', stream: false, errorCode: 'rate_limited' } },
+      { data: { status: 'error', stream: false, errorCode: 'upstream_bad_request' } },
+    ]);
   });
 
   it('AC-002-16: таймаут простоя 200 мс, __hang__ — через 200–1000 мс 504 upstream_timeout, событие error с upstream_timeout', async () => {
@@ -391,6 +400,7 @@ describe('оболочка llm-gateway: ответ JSON и отмена (спе�
 
     await until(
       () => gateway.fake.requests[0]?.closedByClient === true && gateway.events.length === 1,
+      3000,
     );
     expect(gateway.events).toMatchObject([
       { data: { status: 'error', errorCode: 'upstream_error' } },

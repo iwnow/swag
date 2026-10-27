@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import type { PlatformEventInput } from '@swag/contracts';
 import { createLiteLlmUpstream } from '@swag/adapter-litellm';
 import {
   createLlmGatewayCore,
@@ -40,7 +41,7 @@ export function makeCore(
   upstreamUrl: string,
   log: Logger,
   events: EventPublisher = { publishEvent: async () => undefined },
-  options: { idleTimeoutMs?: number; traceId?: string | null } = {},
+  options: { idleTimeoutMs?: number; traceId?: string } = {},
 ): LlmGatewayCore {
   return createLlmGatewayCore({
     catalog: readCatalog(catalogPath),
@@ -59,14 +60,14 @@ export function makeCore(
   });
 }
 
-// Шина в памяти с подпиской по subject, как в apps/api/test/e2e.test.ts: публикация синхронная.
-export function createMemoryBus<T = unknown>() {
-  const handlers = new Map<string, ((value: T) => void)[]>();
+// простая шина в памяти: публикация синхронная, подписка по точному subject.
+export function createMemoryBus() {
+  const handlers = new Map<string, ((value: PlatformEventInput) => void)[]>();
   return {
-    subscribe(subject: string, handler: (value: T) => void): void {
+    subscribe(subject: string, handler: (value: PlatformEventInput) => void): void {
       handlers.set(subject, [...(handlers.get(subject) ?? []), handler]);
     },
-    publish(subject: string, value: T): void {
+    publish(subject: string, value: PlatformEventInput): void {
       for (const handler of handlers.get(subject) ?? []) handler(value);
     },
   };
