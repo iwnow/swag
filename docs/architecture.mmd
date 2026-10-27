@@ -4,15 +4,21 @@ flowchart TB
     subgraph CP["Control plane"]
         ID["Identity<br/>вход, токены, роли, права"]
         API["API / Coordinator<br/>план роя, баланс, доступ"]
-        ORCH["Orchestrator<br/>песочницы, ключи, сети"]
+        ORCH["Orchestrator<br/>песочницы, сети, уборка"]
         REG["Skill Registry"]
-        LLM["LiteLLM Proxy<br/>вирт. ключи, $, бюджет"]
+        GW["LLM Gateway<br/>проверки, стоимость, событие llm.call"]
+        LLM["LiteLLM<br/>только перевод форматов"]
         EV["Event Stream"]
         PG[("Postgres<br/>ledger, баланс, история, события")]
         S3[("S3 / MinIO<br/>файлы, скиллы, артефакты")]
     end
 
-    PROV["Провайдеры моделей<br/>Anthropic, OpenAI, DeepSeek, ..."]
+    PROV["OpenRouter<br/>провайдеры моделей"]
+
+    subgraph OBS["Наблюдаемость"]
+        OTEL["OpenTelemetry Collector"]
+        LGTM["Tempo, Loki → Grafana"]
+    end
 
     subgraph SA["Swarm A: своя сеть, свой NATS account"]
         A1["agent-1<br/>/skills/x:ro, /work"]
@@ -25,13 +31,15 @@ flowchart TB
         BUSB{{"NATS account B"}}
     end
 
+    PLAN["Планируется: граф процесса, реестр узлов,<br/>каналы (Авито), чат-бот и диалоги"]
+
     UI <-->|WebSocket| EV
     UI -->|вход| ID
     UI -->|токен| API
     ID --> PG
     API --> ORCH
     ORCH --> REG
-    ORCH -->|"создаёт песочницы,<br/>выпускает ключи"| SA
+    ORCH -->|создаёт песочницы| SA
     ORCH --> SB
     REG -.->|read-only mount| A1
     REG -.->|read-only mount| A2
@@ -40,11 +48,20 @@ flowchart TB
     A2 <--> BUSA
     B1 <--> BUSB
 
-    A1 -->|OpenAI-формат| LLM
-    A2 -->|OpenAI-формат| LLM
-    B1 -->|OpenAI-формат| LLM
+    A1 -->|OpenAI-формат| GW
+    A2 -->|OpenAI-формат| GW
+    B1 -->|OpenAI-формат| GW
+    GW --> LLM
     LLM --> PROV
-    LLM -->|"callback: tokens, $"| EV
-    BUSA -->|bus.message| EV
+    GW -->|llm.call| BUSA
+    GW -->|llm.call| BUSB
+    BUSA -->|события роя| EV
+    BUSB -->|события роя| EV
     EV --> PG
     ORCH -->|снимки /work| S3
+
+    CP -.->|OTLP: трейсы, логи| OTEL
+    OTEL --> LGTM
+
+    API -.-> PLAN
+    style PLAN stroke-dasharray: 5 5
