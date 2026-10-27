@@ -171,6 +171,30 @@ describe('оболочка llm-gateway: маршруты против фейка
     expect(gateway.events).toEqual([]);
   });
 
+  it('без токена тело больше лимита — 401, а не 413: токен проверяется до разбора тела', async () => {
+    const gateway = await openGateway(1024);
+    const big = { ...validBody, messages: [{ role: 'user', content: 'x'.repeat(2000) }] };
+
+    const response = await chat(gateway, big, {
+      'x-swag-swarm-id': SWARM_ID,
+      'x-swag-agent-id': 'agent-1',
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual(error('unauthorized', 'Invalid gateway token'));
+    expect(gateway.fake.requests).toEqual([]);
+  });
+
+  it('тело не JSON при валидном токене — 400 invalid_request по 4.2, фейк не вызван', async () => {
+    const gateway = await openGateway();
+
+    const response = await chat(gateway, '{not json', caller);
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual(error('invalid_request'));
+    expect(gateway.fake.requests).toEqual([]);
+  });
+
   it('валидный вызов доходит до апстрима с телом запроса (ответ до T-22 — 501)', async () => {
     const gateway = await openGateway();
 
