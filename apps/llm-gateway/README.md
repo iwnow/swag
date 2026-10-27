@@ -16,7 +16,9 @@
   docker run --rm swag-llm-gateway:t25        # без переменных: код 1, `Ошибка конфигурации` с LLM_GATEWAY_TOKEN
   ```
 
-  Для полного запуска нужны переменные из 4.9 (`NATS_URL`, `LLM_GATEWAY_TOKEN`, `LLM_CATALOG_PATH`, `LITELLM_URL`, `LITELLM_MASTER_KEY`, `LLM_GATEWAY_PORT`) и доступные NATS и LiteLLM; проверка на живом стеке — T-27.
+- Стек: `npm run up` поднимает `litellm`, `llm-fake`, `llm-gateway` и остальные сервисы (`compose.yaml`, 4.8). Профиль моделей — `LLM_PROFILE` в `.env` (по умолчанию `test`). Проверка — `npm run infra:check` (строка `llm-gateway`: `GET /health` → `service: 'llm-gateway'`). Остановка — `npm run down`.
+  - Образ LiteLLM: `ghcr.io/berriai/litellm:main-v1.83.14-stable` (`compose.yaml`, сервис `litellm`). Выбран по шаблону 4.8: самый новый тег `main-v<версия>-stable` на ghcr.io по состоянию на 2026-10-27; `main-v1.83.14-stable` создан 2026-05-02. Патч `main-v1.83.14-stable.patch.3` не взят (D-71). Конфиг монтируется из `infra/llm/${LLM_PROFILE}/litellm.yaml`, порт наружу не публикуется, сеть `llm`.
+  - Проверено на стеке `test` (T-27): префикс `openai/` LiteLLM снимает (фейк получает `fake-small`); `usage.cost` фейка без потока доходит до клиента, в потоке LiteLLM его не передаёт (D-72), поэтому `providerCostMicroUsd` в потоке через стек — `null`.
 
 ## Что внутри сейчас
 
@@ -62,6 +64,7 @@
 - Каталог читается один раз при старте; смена каталога требует перезапуска.
 - Каталог хранит одну цену на модель. У `prod` `chat-small` (`anthropic/claude-haiku-5.5`) OpenRouter задаёт вторую ценовую ступень от 100 000 входных токенов (вход 0.50, кэш 0.05, выход 2.50 USD за 1 млн, в 5 раз дороже): для длинных запросов `costMicroUsd` занижен (D-70).
 - Полный запуск (`main.ts`) требует NATS и LiteLLM; в тестах не запускается, проверяется `startGateway` с фейком.
+- В потоке через LiteLLM `usage.cost` провайдера не приходит (D-72): `providerCostMicroUsd` в потоке при работе со стеком `null`; тесты адаптера с фейком напрямую проверяют поток.
 
 ## Связи
 
@@ -93,4 +96,4 @@
 
 ## Спеки
 
-- 002 — 4.2 (`/health`, `/v1/models`, `/v1/chat/completions`, тело ошибки), 4.6, 4.9, 4.10, 4.14; REQ-002-3, REQ-002-11 (оболочка), REQ-002-13, REQ-002-14; AC-002-1, -2, -3, -4, -5, -6, -9, -10, -11, -12, -13, -14, -15, -16, -17, -18, -23, -28; REQ-002-12; AC-002-8 (вторая часть), AC-002-19; задачи T-20, T-21, T-22, T-23, T-24, T-25, T-26.
+- 002 — 4.2 (`/health`, `/v1/models`, `/v1/chat/completions`, тело ошибки), 4.6, 4.9, 4.10, 4.14; REQ-002-3, REQ-002-11 (оболочка), REQ-002-13, REQ-002-14; AC-002-1, -2, -3, -4, -5, -6, -9, -10, -11, -12, -13, -14, -15, -16, -17, -18, -23, -28; REQ-002-12; AC-002-8 (вторая часть), AC-002-19; REQ-002-5 (compose: сервисы и порты, `scripts/repo.test.ts`), REQ-002-16; задачи T-20, T-21, T-22, T-23, T-24, T-25, T-26, T-27.

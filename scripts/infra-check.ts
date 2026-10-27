@@ -4,6 +4,7 @@ import { connect } from '@nats-io/transport-node';
 import {
   ApiConfig,
   ConfigError,
+  LlmGatewayConfig,
   ObservabilityConfig,
   OrchestratorConfig,
   UiConfig,
@@ -28,7 +29,8 @@ function readConfig() {
     return loadConfig(
       ApiConfig.extend(OrchestratorConfig.shape)
         .extend(UiConfig.shape)
-        .extend(ObservabilityConfig.shape),
+        .extend(ObservabilityConfig.shape)
+        .extend(LlmGatewayConfig.pick({ LLM_GATEWAY_PORT: true }).shape),
     );
   } catch (error) {
     if (error instanceof ConfigError) {
@@ -72,6 +74,16 @@ async function checkHttp(port: number, path: string): Promise<void> {
   if (response.status !== 200) throw new Error(`HTTP ${response.status}`);
 }
 
+/** Спека 002, 4.9: `/health` gateway отдаёт `service: 'llm-gateway'`. */
+async function checkLlmGateway(port: number): Promise<void> {
+  const response = await fetch(`http://127.0.0.1:${port}/health`, {
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (response.status !== 200) throw new Error(`HTTP ${response.status}`);
+  const body = (await response.json()) as { service?: unknown };
+  if (body.service !== 'llm-gateway') throw new Error(`service ${String(body.service)}`);
+}
+
 /** Сервис без опубликованного порта (оркестратор, Q-7 спеки 001) проверяется изнутри своего контейнера. */
 async function checkHttpInContainer(service: string, port: number, path: string): Promise<void> {
   await execFileAsync(
@@ -101,6 +113,7 @@ const checks: [string, () => Promise<void>][] = [
   ['ui', () => checkHttp(config.UI_PORT, '/')],
   ['grafana', () => checkHttp(config.GRAFANA_PORT, '/api/health')],
   ['otel-collector', checkCollector],
+  ['llm-gateway', () => checkLlmGateway(config.LLM_GATEWAY_PORT)],
 ];
 
 let failed = false;

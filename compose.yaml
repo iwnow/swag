@@ -1,6 +1,10 @@
 # Локальная разработка. Порты публикуются только на 127.0.0.1.
 name: swag
 
+# Спека 002, 4.8: сеть `llm` — выход LiteLLM к провайдерам; `litellm` и `llm-fake` в ней одни, их не видно из default.
+networks:
+  llm:
+
 services:
   postgres:
     image: postgres:17.11-alpine3.23
@@ -124,6 +128,77 @@ services:
       interval: 2s
       timeout: 3s
       retries: 90
+
+  # Спека 002, 4.8: LiteLLM — единственный выход к провайдерам. Ключи — из .env.llm, порта наружу нет.
+  # Профиль (test, dev, prod) выбирает LLM_PROFILE из .env: конфиг моделей монтируется по нему.
+  litellm:
+    image: ghcr.io/berriai/litellm:main-v1.83.14-stable
+    command: ['--config', '/app/config.yaml', '--port', '4000']
+    env_file: .env.llm
+    networks:
+      - llm
+    volumes:
+      - ./infra/llm/${LLM_PROFILE}/litellm.yaml:/app/config.yaml:ro
+    depends_on:
+      llm-fake:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  # Фейковый провайдер (спека 002, 4.12): профиль test. Node 24 запускает server.ts со снятием типов.
+  llm-fake:
+    image: node:24.22.1-alpine3.23
+    command: ['node', '/app/server.ts']
+    environment:
+      FAKE_PROVIDER_PORT: 4010
+    networks:
+      - llm
+    volumes:
+      - ./infra/llm/fake-provider:/app:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:$$FAKE_PROVIDER_PORT/v1/models" > /dev/null']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Спека 002, 4.8: вход для роёв и агентов; сеть default для api и песочниц, llm — к LiteLLM.
+  llm-gateway:
+    build:
+      context: .
+      dockerfile: apps/llm-gateway/Dockerfile
+    env_file:
+      - .env
+      - .env.llm
+    environment:
+      LLM_CATALOG_PATH: /etc/swag/models.json
+    ports:
+      - 127.0.0.1:${LLM_GATEWAY_PORT}:${LLM_GATEWAY_PORT}
+    networks:
+      - default
+      - llm
+    volumes:
+      - ./infra/llm/${LLM_PROFILE}/models.json:/etc/swag/models.json:ro
+    depends_on:
+      litellm:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:$$LLM_GATEWAY_PORT/health" > /dev/null']
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
   # Не запускается в `npm run up`: образ агента для песочниц, собирается `npm run agent:image`.
   agent:
