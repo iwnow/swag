@@ -82,8 +82,13 @@ LLM_GATEWAY_URL=http://127.0.0.1:3002 node --env-file-if-exists=.env node_module
 npm run down
 ```
 
-- `LLM_GATEWAY_TOKEN` — из `.env`; адрес `api` — `STACK_API_URL` (по умолчанию `http://127.0.0.1:3000`).
-- Секреты, которых не должно быть в env `api`, `orchestrator`, `ui`, читаются из локального `.env.llm`; трактовка `*_API_KEY` — D-73.
+- `LLM_GATEWAY_TOKEN` — из `.env`; адрес `api` — `STACK_API_URL` (по умолчанию `http://127.0.0.1:3000`), для него тест создаёт рой через `POST /swarms`.
+- AC-002-21: в env `api`, `orchestrator`, `ui` не должно быть `LITELLM_MASTER_KEY` и `*_API_KEY` из `.env.llm`, кроме allowlist `CONTEXT7_API_KEY` (ключ dev-инструмента, D-73); значения секретов из `.env.llm` тоже не должны встречаться. Нужен `.env.llm` — его читает compose.
+- Пример вызова, который проверяет тест (ответ `fake reply`, usage 1000/200/500):
+
+  ```bash
+  curl -s -X POST "$LLM_GATEWAY_URL/v1/chat/completions" -H "authorization: Bearer $LLM_GATEWAY_TOKEN" -H "x-swag-swarm-id: <uuid роя>" -H "x-swag-agent-id: agent-1" -H "content-type: application/json" -d '{"model":"chat-small","messages":[{"role":"user","content":"ping"}]}'
+  ```
 
 ## Ключевые решения
 
