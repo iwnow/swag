@@ -69,12 +69,23 @@ export function fakeUpstream(script: UpstreamScript = {}): FakeUpstream {
 }
 
 // Поток из заданных payload'ов; если передан error — после них бросает его, как UpstreamStreamError из порта.
-export async function* chunksThen(
+// closed — итератор закрыт (return() или конец): тест фиксирует, что ядро закрыло апстрим.
+export function chunksThen(
   payloads: string[],
   error?: UpstreamStreamError,
-): AsyncGenerator<string> {
-  for (const payload of payloads) yield payload;
-  if (error) throw error;
+): AsyncGenerator<string> & { readonly closed: boolean } {
+  let closed = false;
+  async function* gen(): AsyncGenerator<string> {
+    try {
+      for (const payload of payloads) yield payload;
+      if (error) throw error;
+    } finally {
+      closed = true;
+    }
+  }
+  return Object.defineProperty(gen(), 'closed', { get: () => closed }) as AsyncGenerator<string> & {
+    readonly closed: boolean;
+  };
 }
 
 export interface FakeEvents extends EventPublisher {

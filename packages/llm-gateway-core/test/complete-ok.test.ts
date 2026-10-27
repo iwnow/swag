@@ -212,14 +212,3 @@ describe('complete без потока: сбой публикации', () => {
     expect(log.entries).toContainEqual(expect.objectContaining({ level: 'info', msg: 'llm call' }));
   });
 });
-
-describe('complete с stream: true', () => {
-  it('поток — заглушка до T-17: отказ, апстрим не вызван, событие не опубликовано', async () => {
-    const { core, upstream, events } = setup();
-    await expect(core.complete(caller, { ...body, stream: true }, signal)).rejects.toThrow(
-      'not implemented',
-    );
-    expect(upstream.calls).toEqual([]);
-    expect(events.published).toEqual([]);
-  });
-});

@@ -255,7 +255,22 @@ function callLogFields(data: LlmCallData, caller: LlmCaller, upstreamStatus?: nu
   return Object.fromEntries(Object.entries(fields).filter(([, value]) => value != null));
 }
 
-// Спека 002, 4.4. Фабрика ядра; complete — проверки 2–4 из 4.2, вызов без потока (шаги 2–7); поток — T-17, T-18.
+const DONE = '[DONE]';
+
+// Спека 002, 4.4 (поток, шаг 3): usage фрагмента и его стоимость у провайдера; фрагмент не JSON или без usage — null.
+function chunkUsage(payload: string): { usage: LlmUsage; providerCost: number | null } | null {
+  let chunk: unknown;
+  try {
+    chunk = JSON.parse(payload);
+  } catch {
+    return null;
+  }
+  const raw = isRecord(chunk) ? chunk.usage : undefined;
+  const usage = parseUsage(raw);
+  return usage ? { usage, providerCost: parseProviderCost(raw) } : null;
+}
+
+// Спека 002, 4.4. Фабрика ядра; complete — проверки 2–4 из 4.2, вызов (шаги 2–7 без потока, поток — шаги 1–4); обрывы потока — T-18.
 export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
   const { catalog, upstream, events, clock, ids, trace, log, version } = deps;
 
@@ -279,6 +294,95 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
     const fields = callLogFields(data, caller, upstreamStatus);
     if (data.status === 'ok') log.info('llm call', fields);
     else log.warn('llm call', fields);
+  }
+
+  // Спека 002, 4.4 (шаг 5) и 4.6: отказ апстрима — событие `error` и ответ клиенту; общий для вызова и потока.
+  async function upstreamFailed(
+    base: Pick<LlmCallData, 'callId' | 'model' | 'stream' | 'latencyMs'>,
+    caller: LlmCaller,
+    failure: UpstreamFailure,
+  ): Promise<CompleteResult> {
+    const reply = upstreamReply(failure);
+    await publishCall(
+      {
+        ...base,
+        status: 'error',
+        usage: null,
+        costMicroUsd: null,
+        providerCostMicroUsd: null,
+        errorCode: reply.code,
+      },
+      caller,
+      failure.kind === 'http' ? failure.status : undefined,
+    );
+    return {
+      kind: 'error',
+      status: reply.status,
+      error: { message: reply.message, code: reply.code },
+    };
+  }
+
+  // Спека 002, 4.4, поток (шаги 1–4). Фрагменты уходят клиенту без изменений; событие и лог — в finally генератора.
+  async function streamReply(
+    callId: string,
+    t0: number,
+    body: ChatRequest,
+    prices: ModelPrices,
+    caller: LlmCaller,
+    signal: UpstreamSignal,
+  ): Promise<CompleteResult> {
+    const response = await upstream.stream(
+      { ...body, stream_options: { ...body.stream_options, include_usage: true } },
+      signal,
+    );
+    if (!response.ok) {
+      const latencyMs = Math.round(clock.monotonicMs() - t0); // D-57: до публикации события
+      return upstreamFailed(
+        { callId, model: body.model, stream: true, latencyMs },
+        caller,
+        response.failure,
+      );
+    }
+    const payloads = response.chunks;
+
+    async function* relay(): AsyncGenerator<string> {
+      let usage: LlmUsage | null = null;
+      let providerCost: number | null = null;
+      let done = false;
+      try {
+        for await (const payload of payloads) {
+          if (payload === DONE) {
+            done = true;
+            yield payload;
+            break;
+          }
+          const found = chunkUsage(payload);
+          if (found) {
+            usage = found.usage;
+            providerCost = found.providerCost;
+          }
+          yield payload;
+        }
+      } finally {
+        // D-59: latencyMs замеряется в finally, то есть по концу потока.
+        const latencyMs = Math.round(clock.monotonicMs() - t0);
+        await publishCall(
+          {
+            callId,
+            model: body.model,
+            stream: true,
+            status: done ? 'ok' : 'aborted',
+            usage,
+            costMicroUsd: usage ? costMicroUsd(usage, prices) : null,
+            providerCostMicroUsd: providerCost,
+            latencyMs,
+          },
+          caller,
+        );
+      }
+    }
+
+    return { kind: 'stream', chunks: relay() };
   }
 
   return {
@@ -318,35 +422,20 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
         return refusal(400, 'model_not_found', `Unknown model: ${name}`);
       }
 
-      if (body.stream === true) throw new Error('not implemented');
-
       const callId = ids.uuid();
       const t0 = clock.monotonicMs();
+      if (body.stream === true) {
+        return streamReply(callId, t0, body, entry.prices, caller.data, signal);
+      }
       const response = await upstream.complete(body, signal);
       const latencyMs = Math.round(clock.monotonicMs() - t0); // D-57: до публикации события
 
       if (!response.ok) {
-        const reply = upstreamReply(response.failure);
-        await publishCall(
-          {
-            callId,
-            model: body.model,
-            stream: false,
-            status: 'error',
-            usage: null,
-            costMicroUsd: null,
-            providerCostMicroUsd: null,
-            latencyMs,
-            errorCode: reply.code,
-          },
+        return upstreamFailed(
+          { callId, model: body.model, stream: false, latencyMs },
           caller.data,
-          response.failure.kind === 'http' ? response.failure.status : undefined,
+          response.failure,
         );
-        return {
-          kind: 'error',
-          status: reply.status,
-          error: { message: reply.message, code: reply.code },
-        };
       }
 
       const rawUsage = isRecord(response.body) ? response.body.usage : undefined;
