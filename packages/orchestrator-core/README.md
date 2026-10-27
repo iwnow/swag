@@ -13,13 +13,13 @@
 
 - `createOrchestratorCore(deps)` с портами `SandboxProvider`, `OrchestratorBus`, `Timers`, `Clock`, `IdGenerator`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`.
 - Логи по таблице 4.8 спеки 016: `info swarm launch`, `error sandbox create failed`, `error agent start timeout` (с `missing`), `error swarm timeout`, `info swarm finished` (со `status`), `warn sandbox remove failed`; невалидное событие шины — `warn event dropped`.
-- Тесты: `test/orchestrator-core.test.ts` — AC-001-11, 13…18, AC-002-22, AC-016-5, AC-016-7; `apps/orchestrator/test` — AC-001-12.
+- Тесты: `test/orchestrator-core.test.ts` — AC-000-16, AC-001-11…18 (AC-001-12 — также в `apps/orchestrator/test`), AC-002-22, AC-016-5, AC-016-7.
 
 ## Ограничения
 
 Правила ядра ([архитектура](../../docs/architecture.md), [спека 000, 4.2](../../docs/spec/000-foundation.md#42-правила-ядра-и-оболочки)):
 
-- Зависимости — `zod`, `@swag/contracts`.
+- Зависимости — `@swag/contracts`.
 - Нет окружения и инфраструктуры. Шаблон песочницы — только из конфигурации; из запроса не принимается.
 - Упавший агент (`agent.failed`) в 001 не отслеживается: рой завершится по таймауту (спека 008).
 

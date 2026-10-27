@@ -6,7 +6,7 @@
 
 - REST роёв (спека 001, 4.5.1): `POST /swarms`, `GET /swarms`, `GET /swarms/:id`, `GET /swarms/:id/events?after=`, `POST /swarms/:id/stop`, `GET /health`.
 - WebSocket `GET /swarms/:id/stream?after=` (4.5.2): события с `seq > after`, неизвестный рой — закрытие с кодом `4404`.
-- Подписки NATS `swarm.*.events` и `swarm.*.agent.*.inbox` → `ingestEvent` / `ingestMessage`.
+- Подписки NATS `swarm.*.events` и `swarm.*.agent.*.inbox` → `ingestEvent` / `ingestMessage`. Событие `llm.call` от `llm-gateway` идёт по той же подписке (спека 002).
 
 ## Что внутри сейчас
 
@@ -38,4 +38,4 @@
 
 ## Спеки
 
-- 000 — `/health`. 001 — 4.5, T-10. 016 — 4.5, REQ-016-5, AC-016-9.
+- 000 — `/health`. 001 — 4.5, T-10. 016 — 4.5, REQ-016-5, AC-016-9. 002 — приём `llm.call` (REQ-002-15; AC-002-26 — тест в `api-core`).

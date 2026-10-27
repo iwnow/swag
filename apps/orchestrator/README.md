@@ -5,7 +5,7 @@
 ## Задачи
 
 - HTTP (спека 001, 4.6.1): `POST /swarms` → `202` (строгая схема, лишнее поле → `400`), `POST /swarms/:id/stop` → `202` / `404`, `GET /health`.
-- Подписка `swarm.*.events` → `core.handleEvent` (agent.started, agent.result).
+- Подписка `swarm.*.events` → `core.handleEvent` (agent.started, agent.result; остальные события, включая `llm.call`, ядро игнорирует).
 - `cleanupOrphans` при старте (REQ-001-10).
 
 ## Что внутри сейчас
@@ -36,4 +36,4 @@
 
 ## Спеки
 
-- 000 — `/health`. 001 — 4.6, T-8. 016 — 4.5, 4.7, REQ-016-5.
+- 000 — `/health`. 001 — 4.6, T-8. 016 — 4.5, 4.7, REQ-016-5. 002 — оболочка получает только `.env` (REQ-002-5, AC-002-21); AC-002-22 — в `orchestrator-core`.

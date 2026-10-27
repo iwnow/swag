@@ -24,14 +24,14 @@
 
 ## Связи
 
-- Используют: оболочки `apps/api`, `apps/orchestrator`, `apps/agent`, `scripts/infra-check.ts`; `apps/llm-gateway` (T-20).
+- Используют: оболочки `apps/api`, `apps/orchestrator`, `apps/agent`, `scripts/infra-check.ts`; `apps/llm-gateway`.
 - Использует: `zod`, `@swag/contracts` (`LogLevel`).
 
 ## Ключевые решения
 
 - `AGENT_NEXT=''` в env превращается в `null` (последний агент) через `transform`, а не отдельным флагом (4.7.1).
 - `UiConfig` (только `UI_PORT`) добавлен для `infra:check`; сам UI env не читает.
-- Лимиты и таймауты — env, без значений по умолчанию: отсутствие переменной — ошибка запуска (Q-3, REQ-000-9).
+- Лимиты и таймауты `ApiConfig`, `OrchestratorConfig`, `AgentConfig` — env без значений по умолчанию: отсутствие переменной — ошибка запуска (Q-3, REQ-000-9). Умолчания есть только у телеметрии и трёх `LLM_GATEWAY_*` (см. «Ограничения»).
 - Адреса телеметрии (`OTEL_EXPORTER_OTLP_ENDPOINT`, `DOCKER_AGENT_OTLP_ENDPOINT`) — общий тип: не задан или пустая строка — `null`, иначе URL. Пустое значение — штатный режим «только stdout» (REQ-016-6). `DOCKER_AGENT_OTLP_ENDPOINT` необязательна по той же логике (трактовка, D-18).
 - `LOG_LEVEL` — та же схема `LogLevel`, что и поле `level` в `LogRecord` (`@swag/contracts`): уровни логгера и записи не расходятся.
 - Оболочки разбирают переменные телеметрии отдельно (`BaseConfig.pick`, `AgentConfig.pick`) до полной конфигурации: так и ошибка конфигурации уходит логом `LogRecord`.

@@ -1,6 +1,6 @@
 # @swag/adapter-nats
 
-Адаптер шины: публикация и подписка JSON поверх Core NATS (без JetStream) с переносом контекста трассировки в заголовке сообщения. Общий для `api`, `orchestrator` и `agent`: порты шины каждого ядра оболочка собирает поверх этого адаптера.
+Адаптер шины: публикация и подписка JSON поверх Core NATS (без JetStream) с переносом контекста трассировки в заголовке сообщения. Общий для `api`, `orchestrator`, `agent` и `llm-gateway`: порты шины каждого ядра оболочка собирает поверх этого адаптера.
 
 ## Задачи
 
@@ -24,7 +24,7 @@
 
 - Использует: `@nats-io/transport-node`, `@opentelemetry/api`.
 - Тесты: `@swag/adapter-telemetry` (devDependency) — SDK и экспорт спанов в память.
-- Оболочки: `apps/api`, `apps/orchestrator`, `apps/agent`.
+- Оболочки: `apps/api`, `apps/orchestrator`, `apps/agent`, `apps/llm-gateway`.
 
 ## Ключевые решения
 
@@ -41,3 +41,4 @@
 
 - 001 — 4.2, AC-001-21.
 - 016 — 4.6, REQ-016-15, AC-016-8.
+- 002 — оболочка `llm-gateway` публикует `llm.call` через этот адаптер.

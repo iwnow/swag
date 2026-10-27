@@ -11,7 +11,7 @@
 
 ## Что внутри сейчас
 
-- `swarm.ts` — `AgentId`, `SwarmId`, `SwarmCreateRequest`, `AgentSpec`, `SwarmStatus`, `AgentStatus`, `SwarmLaunch`, `SwarmSummary`.
+- `swarm.ts` — `AgentId`, `SwarmId`, `AgentDraft`, `SwarmCreateRequest`, `AgentSpec`, `SwarmStatus`, `AgentStatus`, `SwarmLaunch`, `SwarmSummary`.
 - `bus.ts` — `BusMessage`, subjects `inboxSubject`, `eventsSubject`, `ALL_INBOXES`, `ALL_EVENTS`.
 - `events.ts` — `TraceId`, `PlatformEventInput` (дискриминированное объединение по `type`, в конверте `traceId: TraceId | null`; вариант `llm.call` с `LlmCallData`, источник `llm-gateway`), `PlatformEvent` (с `seq`).
 - `log.ts` — `LogLevel`, `ServiceName` (с `llm-gateway`), `LogError`, `LogRecord`.
@@ -35,6 +35,10 @@
 - `traceId` в конверте обязателен, но допускает `null` (016, 4.1): событие без контекста не отбрасывается, а отсутствие поля — ошибка схемы.
 - `LogRecord` — `z.looseObject`: Fastify добавляет `req`, `res`, `responseTime`; `err` — строгий `LogError`, поэтому лишние поля ошибки (например, `code`) адаптер логгера отбрасывает.
 - Отклонение от 4.1: `SwarmSummary` добавлен в `swarm.ts` (нужен и `api`, и `ui`), не в отдельный файл.
+- LLM: цены в `ModelPrices` — десятичные строки до 4 знаков после точки, не больше 10000 USD за 1 млн токенов; `ModelId` — `^[a-z][a-z0-9-]{1,39}$`, `ModelCatalog` требует уникальные `id` (спека 002, 4.1).
+- LLM: `usage` и `costMicroUsd` в `LlmCallData` — `null`, если провайдер не прислал usage или поток оборван до него; `costMicroUsd` задан тогда и только тогда, когда задан `usage` (по комментарию в схеме, схема этого не проверяет).
+- LLM: `providerCostMicroUsd` — фактическая стоимость у провайдера для счёта платформы (D-38); на `costMicroUsd` не влияет.
+- LLM: заголовки `x-swag-swarm-id` и `x-swag-agent-id` — до спеки 004 агент называет себя сам (Q-3).
 
 ## Спеки
 
