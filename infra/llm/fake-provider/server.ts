@@ -18,6 +18,7 @@ export interface FakeRequest {
 export interface FakeProvider {
   url: string;
   close(): Promise<void>;
+  // Только POST /v1/chat/completions: GET /v1/models и неизвестные пути не записываются.
   requests: FakeRequest[];
 }
 
@@ -89,9 +90,7 @@ async function handle(
   requests: FakeRequest[],
 ): Promise<void> {
   const path = new URL(req.url ?? '/', 'http://fake').pathname;
-  const body = parseBody(await readRaw(req));
-  const headers = flattenHeaders(req.headers);
-  requests.push({ path, headers, body, closedByClient: false });
+  const raw = await readRaw(req);
 
   if (req.method === 'GET' && path === '/v1/models') {
     sendJson(res, 200, { object: 'list', data: models.map((id) => ({ id })) });
@@ -101,6 +100,10 @@ async function handle(
     sendJson(res, 404, { error: { message: 'not found' } });
     return;
   }
+
+  const body = parseBody(raw);
+  const headers = flattenHeaders(req.headers);
+  requests.push({ path, headers, body, closedByClient: false });
 
   const text = lastMessageText(body);
   if (text.includes('__fail_500__')) return sendJson(res, 500, { error: { message: 'boom' } });
@@ -145,6 +148,14 @@ export function startFakeProvider(opts: {
   port: number;
   models?: string[];
 }): Promise<FakeProvider> {
+  return listenFakeProvider(opts, '127.0.0.1');
+}
+
+// host: тесты — 127.0.0.1; запуск скриптом — 0.0.0.0, чтобы litellm достучался по имени сервиса (D-44).
+function listenFakeProvider(
+  opts: { port: number; models?: string[] },
+  host: string,
+): Promise<FakeProvider> {
   const models = opts.models ?? DEFAULT_MODELS;
   const requests: FakeRequest[] = [];
   const server = createServer((req, res) => {
@@ -155,7 +166,7 @@ export function startFakeProvider(opts: {
 
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(opts.port, () => {
+    server.listen(opts.port, host, () => {
       const address = server.address();
       if (!isRecord(address)) {
         reject(new Error('fake provider: нет адреса сервера'));
@@ -176,7 +187,7 @@ if (import.meta.main) {
     console.error('FAKE_PROVIDER_PORT не задан или не целое положительное число');
     process.exit(1);
   }
-  startFakeProvider({ port })
+  listenFakeProvider({ port }, '0.0.0.0')
     .then((fake) => console.log(`llm-fake слушает порт ${String(port)} (${fake.url})`))
     .catch((error: unknown) => {
       console.error(error);

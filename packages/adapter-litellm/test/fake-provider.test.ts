@@ -168,4 +168,19 @@ describe('фейковый провайдер, часть без потока (�
       await custom.close();
     }
   });
+
+  it('в requests попадает только POST /v1/chat/completions: GET /v1/models не записывается', async () => {
+    await fetch(`${fake.url}/v1/models`);
+    await post(chatBody('привет'));
+
+    expect(fake.requests).toHaveLength(1);
+    expect(fake.requests[0]?.path).toBe('/v1/chat/completions');
+  });
+
+  it('неизвестный путь — 404 и не попадает в requests', async () => {
+    const res = await fetch(`${fake.url}/v1/unknown`);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: { message: 'not found' } });
+    expect(fake.requests).toHaveLength(0);
+  });
 });
