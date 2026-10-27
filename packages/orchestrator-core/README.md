@@ -13,7 +13,7 @@
 
 - `createOrchestratorCore(deps)` с портами `SandboxProvider`, `OrchestratorBus`, `Timers`, `Clock`, `IdGenerator`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`.
 - Логи по таблице 4.8 спеки 016: `info swarm launch`, `error sandbox create failed`, `error agent start timeout` (с `missing`), `error swarm timeout`, `info swarm finished` (со `status`), `warn sandbox remove failed`; невалидное событие шины — `warn event dropped`.
-- Тесты: `test/orchestrator-core.test.ts` — AC-001-11, 13…18, AC-016-5, AC-016-7; `apps/orchestrator/test` — AC-001-12.
+- Тесты: `test/orchestrator-core.test.ts` — AC-001-11, 13…18, AC-002-22, AC-016-5, AC-016-7; `apps/orchestrator/test` — AC-001-12.
 
 ## Ограничения
 
@@ -44,5 +44,6 @@
 
 - 000 — заглушка.
 - 001 — 4.6 (ядро и порядок запуска).
+- 002 — AC-002-22: env песочниц роя не содержит ключей провайдеров и LiteLLM (тест на фейке `SandboxProvider`).
 - 016 — порты `Logger` и `TraceContext`, логи 4.8.
 - 005 — тёплый пул, лимиты, reaper; 007 — изоляция шины; 008 — устойчивость агента.

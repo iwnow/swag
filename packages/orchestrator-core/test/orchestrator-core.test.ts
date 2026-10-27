@@ -361,6 +361,35 @@ describe('orchestrator-core', () => {
     expect(await fake.core.cleanupOrphans()).toBe(2);
     expect([...fake.sandboxes.keys()]).toEqual(['foreign']);
   });
+
+  it('AC-002-22: env песочниц роя не содержит ключей провайдеров и LiteLLM', async () => {
+    const secrets = {
+      OPENROUTER_API_KEY: 'sk-or-fake-test-value',
+      LITELLM_MASTER_KEY: 'sk-litellm-fake-test-value',
+    };
+    const saved = Object.keys(secrets).map((key) => [key, process.env[key]] as const);
+    Object.assign(process.env, secrets);
+    try {
+      const fake = setup();
+      await fake.core.launch(launchBody(3));
+      const specs = [...fake.sandboxes.values()];
+      expect(specs).toHaveLength(3);
+      const envKeys = specs.flatMap((spec) => Object.keys(spec.env));
+      expect(envKeys.length).toBeGreaterThan(0);
+      expect(envKeys.filter((key) => /API_KEY|LITELLM/.test(key))).toEqual([]);
+      const envValues = specs.flatMap((spec) => Object.values(spec.env));
+      expect(
+        Object.keys(secrets).filter((key) =>
+          envValues.includes(secrets[key as keyof typeof secrets]),
+        ),
+      ).toEqual([]);
+    } finally {
+      for (const [key, value] of saved) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
 });
 
 // Даём отработать асинхронным обработчикам после срабатывания таймера.
