@@ -93,7 +93,7 @@ describe('complete (спека 002, 4.5, без таймаута)', () => {
     expect(result).toEqual({ ok: false, failure: { kind: 'network' } });
   });
 
-  it('traceparent из активного спана уходит в заголовке запроса', async () => {
+  it('traceparent несёт контекст спана litellm.chat, он дочерний к спану вызывающего', async () => {
     const memory = createMemoryExporters();
     const telemetry = startTelemetry({
       service: 'llm-gateway',
@@ -106,18 +106,19 @@ describe('complete (спека 002, 4.5, без таймаута)', () => {
     });
     try {
       const upstream = upstreamFor(fake.current.url);
-      let expected: string | null = null;
 
-      await telemetry.inSpan('test.complete', { kind: 'client' }, () => {
-        expected = telemetry.currentTraceparent();
-        return upstream.complete(chatRequest('привет'), signal());
-      });
-
-      expect(expected).not.toBeNull();
-      expect(fake.current.requests[0]?.headers['traceparent']).toBe(expected);
+      await telemetry.inSpan('test.complete', { kind: 'client' }, () =>
+        upstream.complete(chatRequest('привет'), signal()),
+      );
     } finally {
       await telemetry.shutdown();
     }
+
+    const outer = memory.finishedSpans.find((span) => span.name === 'test.complete');
+    const chat = memory.finishedSpans.find((span) => span.name === 'litellm.chat');
+    expect(chat?.parentSpanContext?.spanId).toBe(outer?.spanContext().spanId);
+    const { traceId, spanId } = chat?.spanContext() ?? { traceId: '', spanId: '' };
+    expect(fake.current.requests[0]?.headers['traceparent']).toBe(`00-${traceId}-${spanId}-01`);
   });
 });
 

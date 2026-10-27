@@ -1,6 +1,14 @@
-import { context, propagation } from '@opentelemetry/api';
+import {
+  SpanKind,
+  SpanStatusCode,
+  context,
+  propagation,
+  trace,
+  type Span,
+} from '@opentelemetry/api';
 import {
   UpstreamStreamError,
+  parseUsage,
   type ChatRequest,
   type LlmUpstream,
   type UpstreamFailure,
@@ -9,7 +17,7 @@ import {
   type UpstreamStream,
 } from '@swag/llm-gateway-core';
 
-// Спека 002, 4.5: адаптер LiteLLM. Спан litellm.chat — T-12.
+// Спека 002, 4.5: адаптер LiteLLM.
 
 export interface LiteLlmOptions {
   baseUrl: string; // LITELLM_URL
@@ -22,6 +30,7 @@ export interface LiteLlmOptions {
 const MESSAGE_LIMIT = 1000;
 const CHAT_PATH = '/v1/chat/completions';
 const DONE = '[DONE]';
+const TRACER = '@swag/adapter-litellm';
 
 // Пустые строки игнорируются: иначе replaceAll('', '***') вставит маркер между всеми символами.
 export function redact(text: string, secrets: string[]): string {
@@ -50,6 +59,57 @@ function parseJson(text: string): unknown {
 function httpFailure(status: number, text: string, secrets: string[]): UpstreamFailure {
   const message = errorMessage(parseJson(text)) ?? `HTTP ${status}`;
   return { kind: 'http', status, message: redact(message.slice(0, MESSAGE_LIMIT), secrets) };
+}
+
+// Спека 002, 4.5: спан litellm.chat, вид client. Тела запроса и ответа в атрибуты не попадают.
+function startChatSpan(body: ChatRequest, stream: boolean): Span {
+  return trace.getTracer(TRACER).startSpan('litellm.chat', {
+    kind: SpanKind.CLIENT,
+    attributes: { 'gen_ai.request.model': body.model, 'swag.llm.stream': stream },
+  });
+}
+
+// Спан активен на время вызова: traceparent, который инжектирует authHeaders, несёт его контекст.
+const inSpanContext = <T>(span: Span, run: () => T): T =>
+  context.with(trace.setSpan(context.active(), span), run);
+
+type LlmUsage = NonNullable<ReturnType<typeof parseUsage>>;
+
+function failSpan(span: Span): void {
+  span.setStatus({ code: SpanStatusCode.ERROR });
+}
+
+function setUsage(span: Span, usage: LlmUsage | null): void {
+  if (usage === null) return;
+  span.setAttributes({
+    'gen_ai.usage.input_tokens': usage.promptTokens,
+    'gen_ai.usage.output_tokens': usage.completionTokens,
+  });
+}
+
+// usage тела ответа или фрагмента потока; нет поля или не по форме — null.
+const usageOf = (body: unknown): LlmUsage | null =>
+  typeof body === 'object' && body !== null && 'usage' in body ? parseUsage(body.usage) : null;
+
+const usageOfPayload = (payload: string): LlmUsage | null =>
+  payload === DONE ? null : usageOf(parseJson(payload));
+
+// Спека 002, 4.5: спан заканчивается по концу генератора — и при [DONE], и при раннем выходе, и при ошибке.
+// usage берётся из последнего фрагмента, где он есть (как в ядре, 4.4).
+async function* observeStream(chunks: AsyncIterable<string>, span: Span): AsyncGenerator<string> {
+  let usage: LlmUsage | null = null;
+  try {
+    for await (const payload of chunks) {
+      usage = usageOfPayload(payload) ?? usage;
+      yield payload;
+    }
+  } catch (error) {
+    failSpan(span);
+    throw error;
+  } finally {
+    setUsage(span, usage);
+    span.end();
+  }
 }
 
 // Причина срабатывания таймера: по ней отличаем таймаут от внешнего abort.
@@ -130,6 +190,7 @@ async function open(
   path: string,
   init: Init,
   signal: AbortSignal,
+  span?: Span,
 ): Promise<Opened> {
   const idle = idleGuard(signal, options.idleTimeoutMs);
   try {
@@ -137,6 +198,7 @@ async function open(
       ...init,
       signal: idle.signal,
     });
+    span?.setAttribute('http.response.status_code', res.status);
     return { ok: true, res, idle };
   } catch {
     idle.stop();
@@ -164,8 +226,9 @@ async function callUpstream(
   path: string,
   init: Init,
   signal: AbortSignal,
+  span?: Span,
 ): Promise<UpstreamResponse> {
-  const opened = await open(options, path, init, signal);
+  const opened = await open(options, path, init, signal, span);
   if (!opened.ok) return opened;
   const whole = await readWhole(opened);
   if (!whole.ok) return whole;
@@ -236,8 +299,9 @@ async function openStream(
   options: LiteLlmOptions,
   body: ChatRequest,
   signal: AbortSignal,
+  span: Span,
 ): Promise<UpstreamStream> {
-  const opened = await open(options, CHAT_PATH, postJson(options, body), signal);
+  const opened = await open(options, CHAT_PATH, postJson(options, body), signal, span);
   if (!opened.ok) return opened;
   if (opened.res.ok) {
     opened.idle.stop();
@@ -264,10 +328,34 @@ function modelIds(body: unknown): string[] | null {
 export function createLiteLlmUpstream(options: LiteLlmOptions): LlmUpstream {
   return {
     async complete(body: ChatRequest, signal: AbortSignal): Promise<UpstreamResponse> {
-      return callUpstream(options, CHAT_PATH, postJson(options, body), signal);
+      const span = startChatSpan(body, false);
+      try {
+        const response = await inSpanContext(span, () =>
+          callUpstream(options, CHAT_PATH, postJson(options, body), signal, span),
+        );
+        if (response.ok) setUsage(span, usageOf(response.body));
+        else failSpan(span);
+        return response;
+      } finally {
+        span.end();
+      }
     },
     async stream(body: ChatRequest, signal: AbortSignal): Promise<UpstreamStream> {
-      return openStream(options, body, signal);
+      const span = startChatSpan(body, true);
+      let result: UpstreamStream;
+      try {
+        result = await inSpanContext(span, () => openStream(options, body, signal, span));
+      } catch (error) {
+        failSpan(span);
+        span.end();
+        throw error;
+      }
+      if (!result.ok) {
+        failSpan(span);
+        span.end();
+        return result;
+      }
+      return { ok: true, chunks: observeStream(result.chunks, span) };
     },
     async listModels(signal: AbortSignal): Promise<UpstreamModels> {
       const response = await callUpstream(
