@@ -1,6 +1,6 @@
 # @swag/adapter-litellm
 
-Адаптер LiteLLM для LLM Gateway (спека 002): порт `LlmUpstream` поверх `POST {LITELLM_URL}/v1/chat/completions` и `GET {LITELLM_URL}/v1/models` у LiteLLM Proxy. Реализованы `complete`, `stream`, `listModels`, таймаут простоя и `redact`; спан `litellm.chat` — T-12.
+Адаптер LiteLLM для LLM Gateway (спека 002): порт `LlmUpstream` поверх `POST {LITELLM_URL}/v1/chat/completions` и `GET {LITELLM_URL}/v1/models` у LiteLLM Proxy. Реализованы `complete`, `stream`, `listModels`, таймаут простоя, `redact` и спан `litellm.chat` у `complete` и `stream`.
 
 ## Задачи
 
@@ -9,11 +9,13 @@
 - Таймаут простоя (REQ-002-10): простой — ожидание куска от апстрима дольше `idleTimeoutMs` → `timeout`; пауза потребителя между payload'ами в простой не входит. Для `complete` внешний `signal` прерван → `network`.
 - `listModels` — `{ data: [{ id }] }` → `ids`; другая форма ответа → `network` (D-50).
 - `redact(text, secrets)` — замена каждого вхождения секрета на `***`; пустые строки в `secrets` игнорируются (REQ-002-11).
+- Спан `litellm.chat` (вид `client`) у `complete` и `stream`: `gen_ai.request.model`, `swag.llm.stream`, `http.response.status_code` (если пришли заголовки ответа), `gen_ai.usage.input_tokens` и `gen_ai.usage.output_tokens` (если есть `usage`). Тела запроса и ответа в атрибуты не попадают.
 
 ## Что внутри сейчас
 
-- `src/index.ts` — `LiteLlmOptions`, `redact`, `sseData`, `createLiteLlmUpstream`; внутри — `idleGuard` (таймер и `AbortSignal.any`), `textChunks` (тело куском за куском, отмена при раннем выходе), `open` и `readWhole` (общий путь запроса для `complete`, `stream` и `listModels`), `callUpstream` (без потока), `payloads` (генератор потока).
-- `test/complete.test.ts` — обычный ответ и заголовок `Authorization`, `__fail_400__` / `__fail_500__` / `__fail_429__`, недоступный порт, `traceparent` в спане `startTelemetry`, `redact` (AC-002-17); через подставной `fetch`: `2xx` с не-JSON телом → `network` (D-49), не-`2xx` без JSON → `HTTP <статус>`, обрезка `message` до 1000 и `redact` (D-48).
+- `src/index.ts` — `LiteLlmOptions`, `redact`, `sseData`, `createLiteLlmUpstream`; внутри — `idleGuard` (таймер и `AbortSignal.any`), `textChunks` (тело куском за куском, отмена при раннем выходе), `open` и `readWhole` (общий путь запроса для `complete`, `stream` и `listModels`), `callUpstream` (без потока), `payloads` (генератор потока), `startChatSpan` и `observeStream` (спан `litellm.chat`).
+- `test/complete.test.ts` — обычный ответ и заголовок `Authorization`, `__fail_400__` / `__fail_500__` / `__fail_429__`, недоступный порт, `traceparent` у спана `litellm.chat` (дочерний к спану вызывающего, в `startTelemetry`), `redact` (AC-002-17); через подставной `fetch`: `2xx` с не-JSON телом → `network` (D-49), не-`2xx` без JSON → `HTTP <статус>`, обрезка `message` до 1000 и `redact` (D-48).
+- `test/span.test.ts` — спан `litellm.chat` в in-memory экспортёре: атрибуты у `complete` и `stream` (usage из фрагмента), без usage, конец спана при раннем выходе из потока, статус `500` и сетевой отказ (без `http.response.status_code`); в атрибутах нет текста сообщений. Без AC-id.
 - `test/idle-timeout.test.ts` — `__hang__` при `idleTimeoutMs` 200 → `timeout` за 200–1000 мс; таймер перезапускается на каждом куске тела; внешний abort → `network`; `listModels` с зависшим сервером. Без AC-id (AC-002-16 про ответ шлюза).
 - `test/list-models.test.ts` — `listModels` на фейке, путь и `Authorization`, `http`, `2xx` не по форме (D-50).
 - `test/helpers.ts` — общие `MASTER_KEY`, `upstreamFor`, `chatRequest`, `stubFetch` и `useFake` (подъём и закрытие фейка) для тестов пакета; vitest его не запускает (`**/*.test.ts`), `tsconfig.dev.json` типизирует.
@@ -22,8 +24,9 @@
 
 ## Ограничения
 
-- Спан `litellm.chat` не создаётся (T-12).
 - Фейк не проверяет модели.
+- Спан потока заканчивается, когда генератор закончился. Если потребитель не начал итерацию, спан остаётся открытым (D-54).
+- Спана у `listModels` нет: 4.5 задаёт спан только для чата.
 
 ## Связи
 
@@ -41,6 +44,7 @@
 - Получение заголовков таймер не перезапускает: он взведён с момента вызова `fetch`, перезапуск — только на кусках тела (буква 4.5).
 - Внешний `signal` и таймер объединяются в `AbortSignal.any`; таймер отменяет свой контроллер с маркером `TIMEOUT_REASON`, и `callUpstream` по `reason` сигнала отличает таймаут от внешнего abort.
 - Тип сигнала в порте — структурный, см. D-47.
+- Спан `litellm.chat` создаётся внутри `complete` и `stream`, его контекст активен при инжекте `traceparent`: заголовок несёт контекст самого спана, а не внешнего (поправлено тест `traceparent` из T-9). Статус `ERROR` при любом отказе, включая `http` с любым статусом и `aborted`; `usage` потока адаптер берёт из фрагмента с `usage` тем же `parseUsage`, что ядро (D-54).
 - Ответы не-`2xx` без JSON-тела — `message` `HTTP <статус>`.
 - Поток: `sseData` склеивает строки `data:` через `\n`, один ведущий пробел убирается, `\r\n` поддержан, одиночный `\r` — нет; незавершённое событие на конце тела отбрасывается (D-52).
 - Таймер простоя в потоке: до заголовков — как у `complete`; после заголовков таймер снимается до первого `next()`. Дальше он взводится перед каждым ожиданием куска от апстрима и снимается, как только кусок пришёл. Пауза потребителя между payload'ами в простой не входит: простой — ожидание куска от апстрима.
@@ -50,4 +54,4 @@
 
 ## Спеки
 
-- 002 — 4.4, 4.5, 4.12, 4.14; T-7, T-8, T-9, T-10, T-11; REQ-002-10, REQ-002-11, AC-002-17.
+- 002 — 4.4, 4.5, 4.12, 4.14; T-7, T-8, T-9, T-10, T-11, T-12; REQ-002-10, REQ-002-11, REQ-002-14 (спан), AC-002-17.
