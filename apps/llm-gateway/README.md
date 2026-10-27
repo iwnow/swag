@@ -17,7 +17,7 @@
   ```
 
 - Стек: `npm run up` поднимает `litellm`, `llm-fake`, `llm-gateway` и остальные сервисы (`compose.yaml`, 4.8). Профиль моделей — `LLM_PROFILE` в `.env` (по умолчанию `test`). Проверка — `npm run infra:check` (строка `llm-gateway`: `GET /health` → `service: 'llm-gateway'`). Остановка — `npm run down`.
-  - Образ LiteLLM: `ghcr.io/berriai/litellm:main-v1.83.14-stable` (`compose.yaml`, сервис `litellm`). Выбран по шаблону 4.8: самый новый тег `main-v<версия>-stable` на ghcr.io по состоянию на 2026-10-27; `main-v1.83.14-stable` создан 2026-05-02. Патч `main-v1.83.14-stable.patch.3` не взят (D-71). Конфиг монтируется из `infra/llm/${LLM_PROFILE}/litellm.yaml`, порт наружу не публикуется, сеть `llm`.
+  - Образ LiteLLM: `ghcr.io/berriai/litellm:main-v1.83.14-stable.patch.3` (`compose.yaml`, сервис `litellm`). Выбран по шаблону 4.8 с поправкой решения приёмки D-71: патч `main-v1.83.14-stable.patch.3` (вместо `main-v1.83.14-stable`, с которым шаблон 4.8 взят при T-27). Конфиг монтируется из `infra/llm/${LLM_PROFILE}/litellm.yaml`, порт наружу не публикуется, сеть `llm`.
   - Проверено на стеке `test` (T-27): префикс `openai/` LiteLLM снимает (фейк получает `fake-small`); `usage.cost` фейка без потока доходит до клиента, в потоке LiteLLM его не передаёт (D-72), поэтому `providerCostMicroUsd` в потоке через стек — `null`.
 
 ## Что внутри сейчас
