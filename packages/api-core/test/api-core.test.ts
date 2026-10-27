@@ -341,12 +341,17 @@ describe('api-core', () => {
       },
     };
 
+    const delivered: Array<[string, number]> = [];
+    const sub = core.subscribe(id, 1, (e) => delivered.push([e.type, e.seq]));
+    expect(sub.ok).toBe(true);
     core.ingestEvent(sys(id, 20, llmCall));
     const events = core.getEvents(id, 0);
     expect(events.ok && events.value.map((e) => [e.type, e.source, e.seq])).toEqual([
       ['swarm.created', 'api', 1],
       ['llm.call', 'llm-gateway', 2],
     ]);
+    expect(delivered).toEqual([['llm.call', 2]]);
+    if (sub.ok) sub.value();
 
     core.ingestEvent(sys(uuid(7777), 21, llmCall));
     expect(entries).toContainEqual({
