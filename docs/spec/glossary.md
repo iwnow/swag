@@ -52,6 +52,7 @@
 | Ошибка в потоке gateway | `swag_gateway_error` | Значение `type` в payload `{"error":{message, type, code}}`, которым поток завершается после обрыва апстрима (спека 002, 4.4, шаг 5; T-18). |
 | Вызывающий gateway | `LlmCaller`, `SWARM_ID_HEADER`, `AGENT_ID_HEADER` | `swarmId` и `agentId` из заголовков `x-swag-swarm-id`, `x-swag-agent-id` (имена заголовков — константы); до спеки 004 (Q-3 спеки 002). |
 | Фейковый провайдер | `llm-fake`, `startFakeProvider` | OpenAI-совместимый сервер для тестов и профиля `test`, `infra/llm/fake-provider`. |
+| Сеть LLM | `llm` (сеть compose) | Обычная bridge-сеть compose (4.8), в которой живут `litellm` и `llm-fake`; `llm-gateway` входит в неё и в `default`. Порт `litellm` не публикуется. |
 | Запись запроса к фейку | `FakeRequest` | Что фейк записал о запросе: `path`, `headers`, `body`, `closedByClient`; тесты читают список `requests`. |
 | Маркер сценария фейка | `__no_usage__`, `__no_cost__`, `__fail_500__`, `__fail_429__`, `__fail_400__`, `__slow_chunks__`, `__cut__`, `__hang__` | Текст в последнем сообщении `messages` выбирает ответ фейка (4.12). |
 | Ledger | `Ledger`, `LedgerEntry` | Журнал денежных операций пользователя: пополнения и траты (LLM, compute), деньги — целые микро-единицы USD (`amountMicroUsd`). |

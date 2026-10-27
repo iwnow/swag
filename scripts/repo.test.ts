@@ -22,6 +22,14 @@ interface LiteLlmConfig {
 const liteLlmText = (profile: string) => readFileSync(profileFile(profile, 'litellm.yaml'), 'utf8');
 const liteLlmConfig = (profile: string) => parse(liteLlmText(profile)) as LiteLlmConfig;
 
+interface ComposeService {
+  ports?: string[];
+  networks?: string[];
+}
+interface ComposeFile {
+  services: { litellm: ComposeService; 'llm-fake': ComposeService; 'llm-gateway': ComposeService };
+}
+
 describe('политики репозитория', () => {
   it('AC-000-9: у каждого package.json private: true и лицензия SEE LICENSE IN LICENSE', () => {
     const files = git('ls-files', '--cached', '--others', '--exclude-standard', '**package.json');
@@ -73,6 +81,19 @@ describe('политики репозитория', () => {
         (ref) => typeof ref !== 'string' || !ref.startsWith('os.environ/'),
       );
       expect(literals, profile).toEqual([]);
+    }
+  });
+
+  it('REQ-002-5: litellm и llm-fake не публикуют порты и не входят в сеть default; llm-gateway публикует только на 127.0.0.1', () => {
+    const services = (parse(readFileSync(new URL('compose.yaml', root), 'utf8')) as ComposeFile)
+      .services;
+    expect(services.litellm.ports, 'litellm').toBeUndefined();
+    expect(services.litellm.networks, 'litellm').toEqual(['llm']);
+    expect(services['llm-fake'].ports, 'llm-fake').toBeUndefined();
+    expect(services['llm-fake'].networks, 'llm-fake').toEqual(['llm']);
+    expect(services['llm-gateway'].networks, 'llm-gateway').toEqual(['default', 'llm']);
+    for (const port of services['llm-gateway'].ports ?? []) {
+      expect(port, 'llm-gateway').toMatch(/^127\.0\.0\.1:/);
     }
   });
 
