@@ -29,8 +29,17 @@
 | Шина | `Bus` | NATS: обмен сообщениями агентов внутри роя. |
 | Account шины | `BusAccount` | Изолированный NATS account одного роя. |
 | Общее состояние роя | `SwarmState` | NATS KV роя, обновление через compare-and-set. |
-| LLM-прокси | `LiteLLM` | Единая точка вызова моделей: OpenAI-формат, виртуальные ключи, бюджеты, учёт стоимости. |
-| Виртуальный ключ | `VirtualKey` | Ключ LiteLLM на одного агента с бюджетом и списком моделей. |
+| LLM Gateway | `llm-gateway`, `LlmGatewayCore` | Единственная точка выхода к моделям: OpenAI-совместимый API, ключи провайдеров за ним, стоимость вызова по ценам платформы, событие `llm.call` (спека 002). |
+| LiteLLM | `LiteLLM`, `LlmUpstream` | Адаптер форматов провайдеров за LLM Gateway; виртуальные ключи, бюджеты и БД LiteLLM не используются (D-21, спека 002). |
+| Профиль моделей | `LLM_PROFILE` | `test`, `dev`, `prod`: каталог `infra/llm/<профиль>/` с конфигом LiteLLM и ценами. |
+| Модель платформы | `ModelId` | Имя модели в плане и запросе (`chat-small`, `chat-large`), одинаковое во всех профилях; провайдерскую модель за ним выбирает профиль. |
+| Каталог моделей | `ModelCatalog`, `CatalogModel` | Модели профиля с ценами платформы, `models.json`. |
+| Цены модели | `ModelPrices` | USD за 1 млн токенов: вход, вход из кэша, выход — десятичные строки. |
+| Использование токенов | `LlmUsage` | `promptTokens`, `cachedPromptTokens`, `completionTokens` из `usage` ответа. |
+| Вызов модели | `llm.call`, `LlmCallData`, `callId` | Событие на каждый запрос, ушедший к LiteLLM: модель, `usage`, `costMicroUsd`, задержка, статус `ok` / `error` / `aborted`. |
+| Код ошибки gateway | `GatewayErrorCode` | `unauthorized`, `invalid_caller`, `invalid_request`, `model_not_found`, `upstream_bad_request`, `rate_limited`, `upstream_error`, `upstream_timeout`. |
+| Вызывающий gateway | `LlmCaller` | `swarmId` и `agentId` из заголовков `x-swag-swarm-id`, `x-swag-agent-id`; до спеки 004 (Q-3 спеки 002). |
+| Фейковый провайдер | `llm-fake`, `startFakeProvider` | OpenAI-совместимый сервер для тестов и профиля `test`, `infra/llm/fake-provider`. |
 | Ledger | `Ledger`, `LedgerEntry` | Журнал денежных операций пользователя: пополнения и траты (LLM, compute), деньги — целые микро-единицы USD (`amountMicroUsd`). |
 | Пользователь | `User`, `userId` | Тот, кто работает с платформой через личный кабинет: свой баланс, свои рои. |
 | Организация | `Organization`, `orgId` | Команда клиента на платформе: пользователи, их рои и расходы. Модель (баланс, вхождение пользователя) — D-10. |
