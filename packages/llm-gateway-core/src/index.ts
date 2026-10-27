@@ -222,16 +222,65 @@ function refusal(status: number, code: GatewayErrorCode, message: string): Compl
   return { kind: 'error', status, error: { message, code } };
 }
 
-// Спека 002, 4.10. Поля лога — из данных события; null-значения не пишутся.
-function callLogFields(data: LlmCallData, caller: LlmCaller): LogContext {
+// Спека 002, 4.6. Отказ апстрима → статус, код и message клиенту; статус апстрима сюда не попадает (только в лог).
+function upstreamReply(failure: UpstreamFailure): {
+  status: number;
+  code: GatewayErrorCode;
+  message: string;
+} {
+  if (failure.kind === 'timeout') {
+    return { status: 504, code: 'upstream_timeout', message: 'Upstream timeout' };
+  }
+  if (failure.kind === 'http') {
+    if (failure.status === 400 || failure.status === 422) {
+      return { status: 400, code: 'upstream_bad_request', message: failure.message };
+    }
+    if (failure.status === 429) {
+      return { status: 429, code: 'rate_limited', message: 'Provider rate limit' };
+    }
+  }
+  return { status: 502, code: 'upstream_error', message: 'Upstream error' };
+}
+
+// Спека 002, 4.10. Поля лога — из данных события и upstreamStatus; null/undefined не пишутся.
+function callLogFields(data: LlmCallData, caller: LlmCaller, upstreamStatus?: number): LogContext {
   const { usage, ...rest } = data;
-  const fields = { swarmId: caller.swarmId, agentId: caller.agentId, ...rest, ...usage };
+  const fields = {
+    swarmId: caller.swarmId,
+    agentId: caller.agentId,
+    ...rest,
+    ...usage,
+    upstreamStatus,
+  };
   return Object.fromEntries(Object.entries(fields).filter(([, value]) => value != null));
 }
 
-// Спека 002, 4.4. Фабрика ядра; complete — проверки 2–4 из 4.2 и успешный путь без потока (шаги 2–7); ошибки и поток — T-16…T-18.
+// Спека 002, 4.4. Фабрика ядра; complete — проверки 2–4 из 4.2, вызов без потока (шаги 2–7); поток — T-17, T-18.
 export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
   const { catalog, upstream, events, clock, ids, trace, log, version } = deps;
+
+  // Событие llm.call и лог `llm call` для обычного вызова: общие для успеха и отказа.
+  async function publishCall(data: LlmCallData, caller: LlmCaller, upstreamStatus?: number) {
+    const event: PlatformEventInput = {
+      id: ids.uuid(),
+      swarmId: caller.swarmId,
+      agentId: caller.agentId,
+      ts: clock.now().toISOString(),
+      source: 'llm-gateway',
+      traceId: trace.currentTraceId(),
+      type: 'llm.call',
+      data,
+    };
+    try {
+      await events.publishEvent(event);
+    } catch (err) {
+      log.error('event_publish_failed', { callId: data.callId, err });
+    }
+    const fields = callLogFields(data, caller, upstreamStatus);
+    if (data.status === 'ok') log.info('llm call', fields);
+    else log.warn('llm call', fields);
+  }
+
   return {
     info: () => ({ service: 'llm-gateway', version }),
 
@@ -274,38 +323,48 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
       const callId = ids.uuid();
       const t0 = clock.monotonicMs();
       const response = await upstream.complete(body, signal);
-      if (!response.ok) throw new Error('not implemented');
-      const latencyMs = Math.round(clock.monotonicMs() - t0);
+      const latencyMs = Math.round(clock.monotonicMs() - t0); // D-57: до публикации события
+
+      if (!response.ok) {
+        const reply = upstreamReply(response.failure);
+        await publishCall(
+          {
+            callId,
+            model: body.model,
+            stream: false,
+            status: 'error',
+            usage: null,
+            costMicroUsd: null,
+            providerCostMicroUsd: null,
+            latencyMs,
+            errorCode: reply.code,
+          },
+          caller.data,
+          response.failure.kind === 'http' ? response.failure.status : undefined,
+        );
+        return {
+          kind: 'error',
+          status: reply.status,
+          error: { message: reply.message, code: reply.code },
+        };
+      }
 
       const rawUsage = isRecord(response.body) ? response.body.usage : undefined;
       const usage = parseUsage(rawUsage);
       if (!usage) log.warn('usage_missing', { callId });
-      const data: LlmCallData = {
-        callId,
-        model: body.model,
-        stream: false,
-        status: 'ok',
-        usage,
-        costMicroUsd: usage ? costMicroUsd(usage, entry.prices) : null,
-        providerCostMicroUsd: usage ? parseProviderCost(rawUsage) : null,
-        latencyMs,
-      };
-      const event: PlatformEventInput = {
-        id: ids.uuid(),
-        swarmId: caller.data.swarmId,
-        agentId: caller.data.agentId,
-        ts: clock.now().toISOString(),
-        source: 'llm-gateway',
-        traceId: trace.currentTraceId(),
-        type: 'llm.call',
-        data,
-      };
-      try {
-        await events.publishEvent(event);
-      } catch (err) {
-        log.error('event_publish_failed', { callId, err });
-      }
-      log.info('llm call', callLogFields(data, caller.data));
+      await publishCall(
+        {
+          callId,
+          model: body.model,
+          stream: false,
+          status: 'ok',
+          usage,
+          costMicroUsd: usage ? costMicroUsd(usage, entry.prices) : null,
+          providerCostMicroUsd: usage ? parseProviderCost(rawUsage) : null,
+          latencyMs,
+        },
+        caller.data,
+      );
       return { kind: 'json', body: response.body };
     },
   };
