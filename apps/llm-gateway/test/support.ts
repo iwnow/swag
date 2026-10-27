@@ -35,24 +35,39 @@ export function recordingLog(): { log: Logger; entries: LogEntry[] } {
 
 // Ядро шлюза над настоящим адаптером LiteLLM, направленным на фейк, и каталогом из фикстуры.
 // events по умолчанию не пишет; тест передаёт свой, чтобы проверить отсутствие или наличие событий.
+// traceId — трейс, который ядро берёт для события (в оболочке его задаёт T-24); idleTimeoutMs — 5 с по умолчанию.
 export function makeCore(
   upstreamUrl: string,
   log: Logger,
   events: EventPublisher = { publishEvent: async () => undefined },
+  options: { idleTimeoutMs?: number; traceId?: string | null } = {},
 ): LlmGatewayCore {
   return createLlmGatewayCore({
     catalog: readCatalog(catalogPath),
     upstream: createLiteLlmUpstream({
       baseUrl: upstreamUrl,
       masterKey: MASTER_KEY,
-      idleTimeoutMs: 5_000,
+      idleTimeoutMs: options.idleTimeoutMs ?? 5_000,
       secrets: [MASTER_KEY],
     }),
     events,
     clock: { now: () => new Date(), monotonicMs: () => performance.now() },
     ids: { uuid: () => randomUUID() },
-    trace: { currentTraceId: () => null },
+    trace: { currentTraceId: () => options.traceId ?? null },
     log,
     version: 'test',
   });
+}
+
+// Шина в памяти с подпиской по subject, как в apps/api/test/e2e.test.ts: публикация синхронная.
+export function createMemoryBus<T = unknown>() {
+  const handlers = new Map<string, ((value: T) => void)[]>();
+  return {
+    subscribe(subject: string, handler: (value: T) => void): void {
+      handlers.set(subject, [...(handlers.get(subject) ?? []), handler]);
+    },
+    publish(subject: string, value: T): void {
+      for (const handler of handlers.get(subject) ?? []) handler(value);
+    },
+  };
 }
