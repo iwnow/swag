@@ -72,6 +72,19 @@
 - Конфигурация: `@swag/config`. Контракт каталога и событий: `@swag/contracts`.
 - Фреймворк: `fastify` 5.12.7 (как в `apps/api`).
 
+## Стек-тесты
+
+`apps/llm-gateway/test/stack.test.ts` — AC-002-20 и AC-002-21 против поднятого стека. Без `LLM_GATEWAY_URL` тесты пропускаются.
+
+```bash
+npm run up                                   # профиль LLM_PROFILE=test из .env
+LLM_GATEWAY_URL=http://127.0.0.1:3002 node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run apps/llm-gateway/test/stack.test.ts
+npm run down
+```
+
+- `LLM_GATEWAY_TOKEN` — из `.env`; адрес `api` — `STACK_API_URL` (по умолчанию `http://127.0.0.1:3000`).
+- Секреты, которых не должно быть в env `api`, `orchestrator`, `ui`, читаются из локального `.env.llm`; трактовка `*_API_KEY` — D-73.
+
 ## Ключевые решения
 
 - Телеметрия как в `apps/api` (4.10): `startTelemetry` с сервисом `llm-gateway`; логгер ядра (`telemetry.logger`) и логгер Fastify (`loggerInstance: telemetry.logger.pino`) — один pino, одна схема `LogRecord`. Ошибка потока после старта по-прежнему пишется `request.log.error` (T-23) — это тот же логгер, отдельного не заводим.
