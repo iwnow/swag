@@ -270,7 +270,7 @@ function chunkUsage(payload: string): { usage: LlmUsage; providerCost: number | 
   return usage ? { usage, providerCost: parseProviderCost(raw) } : null;
 }
 
-// Спека 002, 4.4. Фабрика ядра; complete — проверки 2–4 из 4.2, вызов (шаги 2–7 без потока, поток — шаги 1–4); обрывы потока — T-18.
+// Спека 002, 4.4. Фабрика ядра; complete — проверки 2–4 из 4.2, вызов (шаги 2–7 без потока, поток — шаги 1–5).
 export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
   const { catalog, upstream, events, clock, ids, trace, log, version } = deps;
 
@@ -349,6 +349,8 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
       let usage: LlmUsage | null = null;
       let providerCost: number | null = null;
       let done = false;
+      let reply: ReturnType<typeof upstreamReply> | null = null;
+      let upstreamStatus: number | undefined;
       try {
         for await (const payload of payloads) {
           if (payload === DONE) {
@@ -363,6 +365,14 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
           }
           yield payload;
         }
+      } catch (err) {
+        // Спека 002, 4.4 (шаг 5): обрыв апстрима после старта отдаём клиенту последним payload; клиент ушёл — исключение дальше.
+        if (!(err instanceof UpstreamStreamError) || err.failure.kind === 'aborted') throw err;
+        reply = upstreamReply(err.failure);
+        upstreamStatus = err.failure.kind === 'http' ? err.failure.status : undefined;
+        yield JSON.stringify({
+          error: { message: reply.message, type: 'swag_gateway_error', code: reply.code },
+        });
       } finally {
         // D-59: latencyMs замеряется в finally, то есть по концу потока.
         const latencyMs = Math.round(clock.monotonicMs() - t0);
@@ -376,8 +386,10 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
             costMicroUsd: usage ? costMicroUsd(usage, prices) : null,
             providerCostMicroUsd: providerCost,
             latencyMs,
+            ...(reply ? { errorCode: reply.code } : {}),
           },
           caller,
+          upstreamStatus,
         );
       }
     }
