@@ -9,17 +9,18 @@
   - Модели каталога не хватает → `error` `upstream_models_mismatch` с `missing`, выход с кодом 1.
   - Апстрим не ответил → `error` `upstream_unavailable` с `reason`, выход с кодом 1 (D-64).
 - `GET /health` → `200 { status: 'ok', service: 'llm-gateway', version }`.
-- Образ: `apps/llm-gateway/Dockerfile`, сборка из корня репозитория (контекст — корень, как у `apps/api`):
+- Образ: `apps/llm-gateway/Dockerfile`, сборка и запуск:
 
   ```bash
   docker build -f apps/llm-gateway/Dockerfile -t swag-llm-gateway:t25 .
   docker run --rm swag-llm-gateway:t25        # без переменных: код 1, `Ошибка конфигурации` с LLM_GATEWAY_TOKEN
   ```
 
-  Полный запуск нужны переменные из 4.9 (`NATS_URL`, `LLM_GATEWAY_TOKEN`, `LLM_CATALOG_PATH`, `LITELLM_URL`, `LITELLM_MASTER_KEY`, `LLM_GATEWAY_PORT`) и доступные NATS и LiteLLM; проверка на живом стеке — T-27.
+  Для полного запуска нужны переменные из 4.9 (`NATS_URL`, `LLM_GATEWAY_TOKEN`, `LLM_CATALOG_PATH`, `LITELLM_URL`, `LITELLM_MASTER_KEY`, `LLM_GATEWAY_PORT`) и доступные NATS и LiteLLM; проверка на живом стеке — T-27.
 
 ## Что внутри сейчас
 
+- `Dockerfile` — образ как у `apps/api`: `node:24.22.1-alpine3.23`, `npm ci --omit=dev`, запуск `src/main.ts` из исходников. Каталог моделей в образ не входит, его монтируют (`LLM_CATALOG_PATH`).
 - `src/main.ts` — телеметрия (`startTelemetry`, сервис `llm-gateway`), конфигурация, каталог, NATS, адаптер, ядро (`trace: telemetry.trace`), приложение с опциями `telemetryAppOptions(telemetry)`, запуск, остановка по `SIGINT`/`SIGTERM` со сбросом телеметрии. Слушает `0.0.0.0` внутри контейнера.
 - `src/start.ts` — `startGateway` (сверка, затем `listen`, либо выход 1), `waitForUpstream` (повтор раз в 1 с до таймаута), `upstreamSecrets`.
 - `src/catalog.ts` — `readCatalog`: читает файл и проверяет его схемой `ModelCatalog`.
@@ -70,4 +71,4 @@
 
 ## Спеки
 
-- 002 — 4.2 (`/health`, `/v1/models`, `/v1/chat/completions`, тело ошибки), 4.6, 4.9, 4.10, 4.14; REQ-002-3, REQ-002-11 (оболочка), REQ-002-13, REQ-002-14; AC-002-1, -2, -3, -4, -5, -6, -9, -10, -11, -12, -13, -14, -15, -16, -17, -18, -23, -28; задачи T-20, T-21, T-22, T-23, T-24.
+- 002 — 4.2 (`/health`, `/v1/models`, `/v1/chat/completions`, тело ошибки), 4.6, 4.9, 4.10, 4.14; REQ-002-3, REQ-002-11 (оболочка), REQ-002-13, REQ-002-14; AC-002-1, -2, -3, -4, -5, -6, -9, -10, -11, -12, -13, -14, -15, -16, -17, -18, -23, -28; задачи T-20, T-21, T-22, T-23, T-24, T-25.
