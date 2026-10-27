@@ -131,6 +131,7 @@
 | Шина NATS | `NatsBus` | Адаптер шины `adapter-nats`: JSON-публикация и подписка по subjects. |
 | Конфигурация агента | `AgentConfig` | Env агента (4.7.1) в `@swag/config`; без `DATABASE_URL`. |
 | Конфигурация UI | `UiConfig` | Порт `UI_PORT` для проверки инфраструктуры в `@swag/config`. |
+| Команда пинга шлюза | `llm:ping`, `scripts/llm-ping.ts` | Ручная проверка с хоста: один вызов `POST /v1/chat/completions` через gateway, печатает ответ, `usage`, задержку (спека 002, 4.13, REQ-002-17). |
 | Конфигурация шлюза | `LlmGatewayConfig` | Env `llm-gateway` (002, 4.9) в `@swag/config`: телеметрия, ключи из `.env.llm`; без `DATABASE_URL`. |
 | Старт шлюза | `startGateway`, `waitForUpstream` | Старт оболочки `apps/llm-gateway`: сверка каталога с апстримом с повтором раз в 1 с до `LLM_GATEWAY_STARTUP_TIMEOUT_MS`; порт слушается только после успеха, иначе выход с кодом 1 (002, REQ-002-13). |
 | Ошибка старта: апстрим недоступен | `upstream_unavailable` | Лог `error` при старте шлюза, когда апстрим не ответил до дедлайна; поле `reason` = `failure.kind` (002, D-64). |
