@@ -1,9 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import {
   AgentConfig,
   ApiConfig,
   BaseConfig,
   ConfigError,
+  LlmGatewayConfig,
   ObservabilityConfig,
   OrchestratorConfig,
   loadConfig,
@@ -117,5 +120,26 @@ describe('loadConfig', () => {
     expect(() =>
       loadConfig(OrchestratorConfig, { ...orchestratorEnv, DOCKER_AGENT_OTLP_ENDPOINT: 'нет' }),
     ).toThrow(/DOCKER_AGENT_OTLP_ENDPOINT/);
+  });
+
+  it('AC-002-27: LlmGatewayConfig — токен от 32 символов, LITELLM_MASTER_KEY с sk-; примеры окружения проходят', () => {
+    const examples: Record<string, string> = {
+      ...parseEnv(readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8')),
+      ...parseEnv(readFileSync(new URL('../../../.env.llm.example', import.meta.url), 'utf8')),
+      // Спека 002, 4.8: задаёт compose; в 4.9 `.env.example` его не включает (D-63).
+      LLM_CATALOG_PATH: '/etc/swag/models.json',
+    };
+    const { LLM_GATEWAY_TOKEN: _omitted, ...withoutToken } = examples;
+    const failures = (env: Record<string, string | undefined>) =>
+      LlmGatewayConfig.safeParse(env).error?.issues.map((issue) => issue.path.join('.')) ?? [];
+
+    expect(failures(withoutToken)).toEqual(['LLM_GATEWAY_TOKEN']);
+    expect(failures({ ...examples, LLM_GATEWAY_TOKEN: 'x'.repeat(31) })).toEqual([
+      'LLM_GATEWAY_TOKEN',
+    ]);
+    expect(failures({ ...examples, LITELLM_MASTER_KEY: 'key-swag-local-not-secret' })).toEqual([
+      'LITELLM_MASTER_KEY',
+    ]);
+    expect(LlmGatewayConfig.safeParse(examples).success).toBe(true);
   });
 });

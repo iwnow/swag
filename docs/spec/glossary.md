@@ -129,3 +129,4 @@
 | Шина NATS | `NatsBus` | Адаптер шины `adapter-nats`: JSON-публикация и подписка по subjects. |
 | Конфигурация агента | `AgentConfig` | Env агента (4.7.1) в `@swag/config`; без `DATABASE_URL`. |
 | Конфигурация UI | `UiConfig` | Порт `UI_PORT` для проверки инфраструктуры в `@swag/config`. |
+| Конфигурация шлюза | `LlmGatewayConfig` | Env `llm-gateway` (002, 4.9) в `@swag/config`: телеметрия, ключи из `.env.llm`; без `DATABASE_URL`. |

@@ -86,6 +86,7 @@ try {
   if (checkout) {
     if (linkNodeModules(checkout.main, checkout.worktree)) linked.push('node_modules');
     if (linkFile(checkout.main, checkout.worktree, '.env')) linked.push('.env');
+    if (linkFile(checkout.main, checkout.worktree, '.env.llm')) linked.push('.env.llm');
   }
 } catch (error) {
   console.log(`worktree-links: ${error instanceof Error ? error.message : String(error)}`);

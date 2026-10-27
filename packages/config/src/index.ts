@@ -71,6 +71,23 @@ export const AgentConfig = z.object({
 });
 export type AgentConfig = z.infer<typeof AgentConfig>;
 
+// Спека 002, 4.9. Без BaseConfig: gateway не нужна DATABASE_URL. Ключи провайдеров — только в .env.llm (4.8).
+export const LlmGatewayConfig = z.object({
+  NATS_URL: z.string().url(),
+  OTEL_EXPORTER_OTLP_ENDPOINT: OptionalUrl,
+  LOG_LEVEL: LogLevel.default('info'),
+  TELEMETRY_FLUSH_TIMEOUT_MS: FlushTimeoutMs,
+  LLM_GATEWAY_PORT: Port,
+  LLM_GATEWAY_TOKEN: z.string().min(32),
+  LLM_CATALOG_PATH: z.string().min(1),
+  LITELLM_URL: z.string().url(),
+  LITELLM_MASTER_KEY: z.string().startsWith('sk-').min(16),
+  LLM_GATEWAY_UPSTREAM_TIMEOUT_MS: z.coerce.number().int().min(1).default(120000),
+  LLM_GATEWAY_STARTUP_TIMEOUT_MS: z.coerce.number().int().min(1).default(60000),
+  LLM_GATEWAY_BODY_LIMIT_BYTES: z.coerce.number().int().min(1024).default(8388608),
+});
+export type LlmGatewayConfig = z.infer<typeof LlmGatewayConfig>;
+
 export interface ConfigIssue {
   variable: string;
   message: string;
