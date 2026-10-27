@@ -9,6 +9,14 @@
   - Модели каталога не хватает → `error` `upstream_models_mismatch` с `missing`, выход с кодом 1.
   - Апстрим не ответил → `error` `upstream_unavailable` с `reason`, выход с кодом 1 (D-64).
 - `GET /health` → `200 { status: 'ok', service: 'llm-gateway', version }`.
+- Образ: `apps/llm-gateway/Dockerfile`, сборка из корня репозитория (контекст — корень, как у `apps/api`):
+
+  ```bash
+  docker build -f apps/llm-gateway/Dockerfile -t swag-llm-gateway:t25 .
+  docker run --rm swag-llm-gateway:t25        # без переменных: код 1, `Ошибка конфигурации` с LLM_GATEWAY_TOKEN
+  ```
+
+  Полный запуск нужны переменные из 4.9 (`NATS_URL`, `LLM_GATEWAY_TOKEN`, `LLM_CATALOG_PATH`, `LITELLM_URL`, `LITELLM_MASTER_KEY`, `LLM_GATEWAY_PORT`) и доступные NATS и LiteLLM; проверка на живом стеке — T-27.
 
 ## Что внутри сейчас
 
@@ -29,7 +37,6 @@
 ## Ограничения
 
 - Поток SSE пишется без ожидания `drain`: медленный клиент копит фрагменты в памяти процесса (D-68).
-- Dockerfile — T-25.
 - Каталог читается один раз при старте; смена каталога требует перезапуска.
 - Полный запуск (`main.ts`) требует NATS и LiteLLM; в тестах не запускается, проверяется `startGateway` с фейком.
 
