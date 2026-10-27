@@ -1,39 +1,90 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { caller, closeAll, listenUrl, openGateway } from './support.ts';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { FastifyInstance } from 'fastify';
+import { startTelemetry, type Telemetry } from '@swag/adapter-telemetry';
+import type { PlatformEventInput } from '@swag/contracts';
+import { startFakeProvider, type FakeProvider } from '../../../infra/llm/fake-provider/server.ts';
+import { buildApp, telemetryAppOptions } from '../src/app.ts';
+import { caller, createMemoryBus, gatewayOptions, listenUrl, makeCore } from './support.ts';
 
-// Спека 002, NFR-002-1 (раздел 6): задержка шлюза поверх апстрима на вызовах без потока.
-// Это замер, а не проверка: порога нет, результат печатается и переносится в журнал спеки.
-// Запуск: LLM_GATEWAY_BENCH=1 npx vitest run apps/llm-gateway/test/nfr-latency.test.ts (см. README пакета).
+// p95 — метод ближайшего ранга: из 200 значений это 190-е по возрастанию.
 
 const ROUNDS = 200;
 const WARMUP = 20;
 const body = JSON.stringify({ model: 'chat-small', messages: [{ role: 'user', content: 'ping' }] });
+const plainHeaders = { 'content-type': 'application/json' };
+const gatewayHeaders = { ...plainHeaders, ...caller };
 
-afterEach(closeAll);
-
-// Ранг по методу «ближайший»: p95 из 200 значений — 190-е по возрастанию.
 function percentile(sorted: number[], p: number): number {
   return sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)] ?? NaN;
 }
 
 const round = (ms: number) => Math.round(ms * 100) / 100;
 
+async function timed(url: string, headers: Record<string, string>): Promise<number> {
+  const started = performance.now();
+  const response = await fetch(url, { method: 'POST', headers, body });
+  await response.arrayBuffer();
+  const elapsed = performance.now() - started;
+  if (response.status !== 200) throw new Error(`замер: статус ${response.status} на ${url}`);
+  return elapsed;
+}
+
 describe.skipIf(!process.env.LLM_GATEWAY_BENCH)('llm-gateway [bench]', () => {
+  let fake: FakeProvider;
+  let telemetry: Telemetry;
+  let app: FastifyInstance;
+  let gatewayUrl: string;
+
+  beforeAll(async () => {
+    fake = await startFakeProvider({ port: 0 });
+    // Прод-путь оболочки (main.ts): телеметрия без OTLP, логи в null-поток, серверный спан через tracedHttpServer.
+    telemetry = startTelemetry({
+      service: 'llm-gateway',
+      version: 'bench',
+      otlpEndpoint: null,
+      logLevel: 'info',
+      flushTimeoutMs: 500,
+      stdout: () => undefined,
+    });
+    const bus = createMemoryBus();
+    const core = makeCore(
+      fake.url,
+      telemetry.logger,
+      {
+        publishEvent: async (event: PlatformEventInput) =>
+          bus.publish(`swarm.${event.swarmId}.events`, event),
+      },
+      { trace: telemetry.trace },
+    );
+    app = await buildApp(core, gatewayOptions, telemetryAppOptions(telemetry));
+    gatewayUrl = await listenUrl(app);
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await telemetry.shutdown();
+    await fake.close();
+  });
+
   it('NFR-002-1: задержка шлюза поверх апстрима, вызовы без потока, p95 — разница с прямым вызовом', async () => {
-    const gateway = await openGateway();
-    const gatewayUrl = await listenUrl(gateway.app);
-    const direct = `${gateway.fake.url}/v1/chat/completions`;
+    const direct = `${fake.url}/v1/chat/completions`;
     const viaGateway = `${gatewayUrl}/v1/chat/completions`;
 
-    // Прямой и через шлюз вызовы чередуются, чтобы дрейф машины попадал в обе выборки поровну.
     const directMs: number[] = [];
     const gatewayMs: number[] = [];
     for (let i = 0; i < WARMUP + ROUNDS; i++) {
-      const directOne = await timed(direct, { 'content-type': 'application/json' });
-      const via = await timed(viaGateway, { 'content-type': 'application/json', ...caller });
+      let directOne: number;
+      let gatewayOne: number;
+      if (i % 2 === 0) {
+        directOne = await timed(direct, plainHeaders);
+        gatewayOne = await timed(viaGateway, gatewayHeaders);
+      } else {
+        gatewayOne = await timed(viaGateway, gatewayHeaders);
+        directOne = await timed(direct, plainHeaders);
+      }
       if (i < WARMUP) continue;
       directMs.push(directOne);
-      gatewayMs.push(via);
+      gatewayMs.push(gatewayOne);
     }
 
     const sortedDirect = [...directMs].sort((a, b) => a - b);
@@ -53,13 +104,3 @@ describe.skipIf(!process.env.LLM_GATEWAY_BENCH)('llm-gateway [bench]', () => {
     expect(gatewayMs).toHaveLength(ROUNDS);
   }, 120_000);
 });
-
-// Один вызов: время от отправки до конца тела ответа; статус должен быть 200, иначе замер не имеет смысла.
-async function timed(url: string, headers: Record<string, string>): Promise<number> {
-  const started = performance.now();
-  const response = await fetch(url, { method: 'POST', headers, body });
-  await response.arrayBuffer();
-  const elapsed = performance.now() - started;
-  if (response.status !== 200) throw new Error(`замер: статус ${response.status} на ${url}`);
-  return elapsed;
-}
