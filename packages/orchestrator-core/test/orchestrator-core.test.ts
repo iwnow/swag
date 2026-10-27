@@ -362,7 +362,7 @@ describe('orchestrator-core', () => {
     expect([...fake.sandboxes.keys()]).toEqual(['foreign']);
   });
 
-  it('AC-002-22: env песочниц роя из 001 не содержит ключей /API_KEY|LITELLM/, даже если они есть в process.env', async () => {
+  it('AC-002-22: env песочниц роя не содержит ключей провайдеров и LiteLLM', async () => {
     const secrets = {
       OPENROUTER_API_KEY: 'sk-or-fake-test-value',
       LITELLM_MASTER_KEY: 'sk-litellm-fake-test-value',
