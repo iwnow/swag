@@ -1,7 +1,7 @@
 ---
 id: "002"
 title: LLM Gateway
-status: ready
+status: in-progress
 roadmap_stage: 2
 depends_on: ["001", "016"]
 superseded_by: null
