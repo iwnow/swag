@@ -131,5 +131,7 @@
 | Конфигурация UI | `UiConfig` | Порт `UI_PORT` для проверки инфраструктуры в `@swag/config`. |
 | Конфигурация шлюза | `LlmGatewayConfig` | Env `llm-gateway` (002, 4.9) в `@swag/config`: телеметрия, ключи из `.env.llm`; без `DATABASE_URL`. |
 | Старт шлюза | `startGateway`, `waitForUpstream` | Старт оболочки `apps/llm-gateway`: сверка каталога с апстримом с повтором раз в 1 с до `LLM_GATEWAY_STARTUP_TIMEOUT_MS`; порт слушается только после успеха, иначе выход с кодом 1 (002, REQ-002-13). |
+| Ошибка старта: апстрим недоступен | `upstream_unavailable` | Лог `error` при старте шлюза, когда апстрим не ответил до дедлайна; поле `reason` = `failure.kind` (002, D-64). |
+| Ошибка старта: нет моделей | `upstream_models_mismatch` | Лог `error` при старте шлюза, когда в апстриме нет моделей каталога; поле `missing` — их id (002, REQ-002-13, AC-002-18). |
 | Секреты апстрима | `upstreamSecrets` | Значения, которые адаптер LiteLLM заменяет на `***`: мастер-ключ и непустые `*_API_KEY` из env (002, 4.9). |
 | Каталог моделей (файл) | `readCatalog` | Чтение `infra/llm/<профиль>/models.json` по `LLM_CATALOG_PATH` и проверка схемой `ModelCatalog` в оболочке шлюза (002, 4.7). |

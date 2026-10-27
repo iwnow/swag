@@ -16,7 +16,7 @@
 - `src/start.ts` — `startGateway` (сверка, затем `listen`, либо выход 1), `waitForUpstream` (повтор раз в 1 с до таймаута), `upstreamSecrets`.
 - `src/catalog.ts` — `readCatalog`: читает файл и проверяет его схемой `ModelCatalog`.
 - `src/app.ts` — `buildApp`: Fastify с `GET /health`.
-- `test/start.test.ts` — AC-002-18 (в апстриме нет `chat-large`: порт не слушает, `upstream_models_mismatch` с `missing`, выход 1; полный список: `/health` → `200`), повтор сверки, `upstreamSecrets`, `readCatalog`. Апстрим — фейк `infra/llm/fake-provider/server.ts`, каталог — `test/fixtures/catalog.json`.
+- `test/start.test.ts` — AC-002-18 (в апстриме нет `chat-large`: порт не слушает, `upstream_models_mismatch` с `missing`, выход 1; полный список: `/health` → `200`), D-64 (апстрим недоступен: `upstream_unavailable`), REQ-002-13 (висящая сверка прерывается по дедлайну; первая сверка `missing`, вторая ок: порт до второй попытки не слушает), повтор сверки, `upstreamSecrets`, `readCatalog` (битый JSON и нарушение схемы: путь файла в сообщении, причина в `cause`). Апстрим — фейк `infra/llm/fake-provider/server.ts`, каталог — `test/fixtures/catalog.json`, битые каталоги — `catalog-broken.json`, `catalog-invalid.json`.
 
 ## Ограничения
 
@@ -34,7 +34,8 @@
 ## Ключевые решения
 
 - Порт слушается только после успешной сверки (REQ-002-13): `startGateway` вызывает `listen` последним.
-- Каждый вызов сверки ограничивается таймаутом простоя адаптера (`LLM_GATEWAY_UPSTREAM_TIMEOUT_MS`), а не остатком срока старта: иначе последняя попытка обрывалась бы через миллисекунды и давала ложный `network` вместо результата сверки.
+- Каждая попытка сверки получает `AbortSignal.timeout` с остатком срока старта (`LLM_GATEWAY_STARTUP_TIMEOUT_MS`, округлённым вверх до миллисекунд): висящий апстрим не продлевает старт. Попытка, оборванная дедлайном, даёт `network`/`timeout` и `upstream_unavailable` (D-64).
+- Исключение из «последний результат»: если попытка, оборванная дедлайном, пришла после ответа «нет моделей», возвращается этот ответ (`upstream_models_mismatch`). Иначе последняя попытка после `delay` до дедлайна получала бы бюджет около 1 мс и всегда давала бы ложную недоступность (трактовка T-20, см. журнал спеки).
 - Выход процесса внедряется в `startGateway` (`exit`): тесты не вызывают `process.exit`.
 - Телеметрия поднимается первой, как в `apps/api`: ошибка конфигурации и каталога уходит логом `error` до выхода.
 - Событие `llm.call` публикуется в `swarm.<swarmId>.events` через `connectNatsBus.publishJson`.

@@ -66,7 +66,7 @@ npm run infra:check
 Логика пишется только в ядрах `packages/<имя>-core` — чистый TypeScript без фреймворков, Node API и env; всё внешнее приходит через порты, которые объявляет ядро. Оболочки `apps/<имя>` только читают конфигурацию, собирают адаптеры, вызывают фабрику `create<Имя>Core(deps)` и переводят вход и выход. Проверяемые правила — [спека 000, раздел 4.2](docs/spec/000-foundation.md#42-правила-ядра-и-оболочки); нарушения ловят `npm run arch:check` и `typecheck`.
 
 ```
-apps/        оболочки: api, orchestrator (Fastify), agent (процесс в песочнице)
+apps/        оболочки: api, orchestrator (Fastify), agent (процесс в песочнице), llm-gateway (Fastify)
 apps/ui/     фронтенды (npm workspaces apps/ui/*): cabinet — личный кабинет на Angular
 packages/    ядра *-core (api, orchestrator, agent, ui, llm-gateway); contracts и api-integration (общие схемы и проекция роя);
              adapter-* (Docker, NATS, память, HTTP-оркестратор); config (env, только для оболочек)

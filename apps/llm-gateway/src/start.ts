@@ -24,13 +24,17 @@ export async function waitForUpstream(
 ): Promise<CheckUpstreamResult> {
   const retryMs = options.retryMs ?? RETRY_MS;
   const deadline = performance.now() + options.timeoutMs;
+  let lastMissing: CheckUpstreamResult | undefined;
   for (;;) {
-    // Ожидание ответа ограничивает таймаут простоя адаптера, а не срок старта: последняя попытка не обрывается.
-    const result = await core.checkUpstream(new AbortController().signal);
-    if (result.ok) return result;
+    // Каждая попытка ограничена остатком срока старта: висящий апстрим не продлевает старт.
     const left = deadline - performance.now();
-    if (left <= 0) return result;
-    await delay(Math.min(retryMs, left));
+    const result = await core.checkUpstream(AbortSignal.timeout(Math.ceil(Math.max(left, 1))));
+    if (result.ok) return result;
+    if ('missing' in result) lastMissing = result;
+    const rest = deadline - performance.now();
+    // Попытка, оборванная дедлайном, не отменяет ответа апстрима «нет моделей», полученного раньше.
+    if (rest <= 0) return lastMissing ?? result;
+    await delay(Math.min(retryMs, rest));
   }
 }
 
