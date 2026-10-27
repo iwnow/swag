@@ -320,6 +320,47 @@ describe('api-core', () => {
     });
   });
 
+  it('AC-002-26: llm.call от llm-gateway известного роя сохраняется с очередным seq, неизвестного роя — отбрасывается с unknown_swarm', async () => {
+    const { core, entries } = setup();
+    const created = await core.createSwarm(body(1));
+    if (!created.ok) throw new Error('не создан');
+    const id = created.value.id;
+    const llmCall = {
+      type: 'llm.call' as const,
+      source: 'llm-gateway' as const,
+      agentId: null,
+      data: {
+        callId: uuid(5001),
+        model: 'chat-small',
+        stream: false,
+        status: 'ok' as const,
+        usage: { promptTokens: 1000, cachedPromptTokens: 200, completionTokens: 500 },
+        costMicroUsd: 9960,
+        providerCostMicroUsd: null,
+        latencyMs: 812,
+      },
+    };
+
+    core.ingestEvent(sys(id, 20, llmCall));
+    const events = core.getEvents(id, 0);
+    expect(events.ok && events.value.map((e) => [e.type, e.source, e.seq])).toEqual([
+      ['swarm.created', 'api', 1],
+      ['llm.call', 'llm-gateway', 2],
+    ]);
+
+    core.ingestEvent(sys(uuid(7777), 21, llmCall));
+    expect(entries).toContainEqual({
+      level: 'warn',
+      msg: 'event dropped',
+      ctx: expect.objectContaining({
+        swarmId: uuid(7777),
+        type: 'llm.call',
+        reason: 'unknown_swarm',
+      }),
+    });
+    expect(core.getEvents(uuid(7777), 0).ok).toBe(false);
+  });
+
   it('subscribe отдаёт хвост после after, затем новые события по возрастанию seq', async () => {
     const { core } = setup();
     const created = await core.createSwarm(body(1));
