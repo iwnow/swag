@@ -35,10 +35,32 @@
 - `test/stream.test.ts` — поток по сети (`listen` на `127.0.0.1`, `fetch`, не `inject`): AC-002-10 (заголовки SSE, фрагменты, `usage`, `[DONE]`, событие `ok`), AC-002-11 (первый фрагмент раньше 300 мс, поток не раньше 500 мс), AC-002-12 (обрыв апстрима: `{"error":...}` последним, без `[DONE]`, событие `aborted` с `errorCode`), AC-002-13 (клиент рвёт соединение после первого фрагмента: фейк видит `closedByClient` за 1 с, событие `aborted` без `errorCode`, следующий вызов — `200`), AC-002-15 потоком (отказ до первого фрагмента — обычный JSON с кодом по 4.6).
 - `test/start.test.ts` — AC-002-18 (в апстриме нет `chat-large`: порт не слушает, `upstream_models_mismatch` с `missing`, выход 1; полный список: `/health` → `200`), D-64 (апстрим недоступен: `upstream_unavailable`), REQ-002-13 (висящая сверка прерывается по дедлайну; первая сверка `missing`, вторая ок: порт до второй попытки не слушает), повтор сверки, `upstreamSecrets`, `readCatalog` (битый JSON и нарушение схемы: путь файла в сообщении, причина в `cause`). Апстрим — фейк `infra/llm/fake-provider/server.ts`, каталог — `test/fixtures/catalog.json`, битые каталоги — `catalog-broken.json`, `catalog-invalid.json`.
 
+## Профили моделей (`infra/llm/`)
+
+Профиль выбирается `LLM_PROFILE` (`test`, `dev`, `prod`); каталог — `infra/llm/<профиль>/models.json` (путь в `LLM_CATALOG_PATH`), конфиг LiteLLM — `infra/llm/<профиль>/litellm.yaml`. Модели платформы одинаковые во всех профилях: `chat-small` и `chat-large` (Q-4). Наборы `id` трёх профилей совпадают (REQ-002-12). Ключи — только ссылки `os.environ/…`, значений в git нет.
+
+- `test` — фейковый провайдер `llm-fake` (`openai/fake-small`, `openai/fake-large`); цены по 4.7: `chat-small` `3.00 / 0.30 / 15.00`, `chat-large` `0 / 0 / 0`.
+- `dev` — OpenRouter, бесплатные модели `:free` (Q-2), цены `0`. Ключ — `OPENROUTER_API_KEY`.
+- `prod` — OpenRouter, платные модели (Q-2), цены OpenRouter. Ключ — `OPENROUTER_API_KEY`.
+
+Проверено 2026-10-27 по `https://openrouter.ai/api/v1/models` (поле `pricing` в USD за токен, в таблице пересчитано в USD за 1 млн токенов; `supported_parameters` — поддержка `tools`) и по `https://openrouter.ai/models`. Поток: `stream: true` поддерживается для любой модели (`https://openrouter.ai/docs/api/reference/streaming`). `usage` в потоке приходит в последнем SSE-сообщении без параметров запроса, `stream_options.include_usage` объявлен устаревшим и не действует (`https://openrouter.ai/docs/use-cases/usage-accounting`). Стоимость провайдера — `usage.cost`.
+
+| Профиль | Имя          | Модель OpenRouter                        | `tools` | Вход / кэш / выход, USD за 1 млн | Дата создания в API |
+| ------- | ------------ | ---------------------------------------- | ------- | -------------------------------- | ------------------- |
+| dev     | `chat-small` | `google/gemma-4-26b-a4b-it:free`         | да      | 0 / 0 / 0                        | 2026-04-03          |
+| dev     | `chat-large` | `nvidia/nemotron-3-ultra-550b-a55b:free` | да      | 0 / 0 / 0                        | 2026-06-04          |
+| prod    | `chat-small` | `anthropic/claude-haiku-5.5`             | да      | 0.10 / 0.01 / 0.50               | 2026-10-07          |
+| prod    | `chat-large` | `anthropic/claude-sonnet-5.5`            | да      | 2.00 / 0.10 / 10.00              | 2026-09-28          |
+
+Выбор моделей внутри класса и `:free`-суффикс — D-69 в `docs/spec/questions.md`. Бесплатные модели имеют суточные лимиты OpenRouter (Q-2). Цены и поддержка меняются у провайдера: при смене профиля сверять заново.
+
+Тесты профилей: `scripts/repo.test.ts` (AC-002-8, вторая часть; AC-002-19).
+
 ## Ограничения
 
 - Поток SSE пишется без ожидания `drain`: медленный клиент копит фрагменты в памяти процесса (D-68).
 - Каталог читается один раз при старте; смена каталога требует перезапуска.
+- Каталог хранит одну цену на модель. У `prod` `chat-small` (`anthropic/claude-haiku-5.5`) OpenRouter задаёт вторую ценовую ступень от 100 000 входных токенов (вход 0.50, кэш 0.05, выход 2.50 USD за 1 млн, в 5 раз дороже): для длинных запросов `costMicroUsd` занижен (D-70).
 - Полный запуск (`main.ts`) требует NATS и LiteLLM; в тестах не запускается, проверяется `startGateway` с фейком.
 
 ## Связи
@@ -71,4 +93,4 @@
 
 ## Спеки
 
-- 002 — 4.2 (`/health`, `/v1/models`, `/v1/chat/completions`, тело ошибки), 4.6, 4.9, 4.10, 4.14; REQ-002-3, REQ-002-11 (оболочка), REQ-002-13, REQ-002-14; AC-002-1, -2, -3, -4, -5, -6, -9, -10, -11, -12, -13, -14, -15, -16, -17, -18, -23, -28; задачи T-20, T-21, T-22, T-23, T-24, T-25.
+- 002 — 4.2 (`/health`, `/v1/models`, `/v1/chat/completions`, тело ошибки), 4.6, 4.9, 4.10, 4.14; REQ-002-3, REQ-002-11 (оболочка), REQ-002-13, REQ-002-14; AC-002-1, -2, -3, -4, -5, -6, -9, -10, -11, -12, -13, -14, -15, -16, -17, -18, -23, -28; REQ-002-12; AC-002-8 (вторая часть), AC-002-19; задачи T-20, T-21, T-22, T-23, T-24, T-25, T-26.
