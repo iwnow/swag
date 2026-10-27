@@ -10,11 +10,13 @@
 - `openSwarm(id)` — страница роя: `view` строится через `applyEvent` из `@swag/api-integration`, `feed` — список принятых событий; при обрыве потока переподключение с `after = lastSeq` через паузу (1 с по умолчанию); повторные события не попадают в ленту.
 - `SwarmPage.stop()` — остановка через `SwarmsApi.stop`; `close()` — закрыть поток и отменить переподключение.
 - `traceUrl(traceId)` — адрес трейса события в Grafana по шаблону из зависимостей; без `traceId` — `null` (спека 016, 4.10).
+- `formatLlmCall(data)` — строка события `llm.call` для ленты роя: модель, токены с кэшем, стоимость в долларах (6 знаков), статус `прерван` или `ошибка <код>` (спека 002, 4.11). Чистая функция вне `createUiCore`: фронтенд вызывает её напрямую.
 
 ## Что внутри сейчас
 
-- `src/index.ts` — `createUiCore`, порты `SwarmsApi`, `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`.
+- `src/index.ts` — `createUiCore`, порты `SwarmsApi`, `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функция `formatLlmCall`.
 - `test/ui-core.test.ts` — AC-001-23, AC-016-14.
+- `test/format-llm-call.test.ts` — AC-002-24.
 
 ## Ключевые решения
 
@@ -37,3 +39,4 @@
 - 001 — 4.8, REQ-001-13.
 - 016 — 4.10, REQ-016-13, AC-016-14.
 - 014 — деление `ui-core` по фронтендам (D-11).
+- 002 — 4.11, REQ-002-15, AC-002-24.
