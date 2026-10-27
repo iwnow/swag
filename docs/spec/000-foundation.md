@@ -180,7 +180,7 @@ export function loadConfig<T extends z.ZodTypeAny>(schema: T, env = process.env)
 ### 4.6. `npm run spec:check`
 
 1. Читает все `docs/spec/[0-9][0-9][0-9]-*.md`, из YAML frontmatter берёт `id` и `status`.
-2. Для спек со статусом `in-progress`, `review` или `done` собирает id критериев из строк вида `- **AC-NNN-n**`. Критерии с `` `[manual]` `` сразу после id пропускает.
+2. Для спек со статусом `review` или `done` собирает id критериев из строк вида `- **AC-NNN-n**`. Критерии с `` `[manual]` `` сразу после id пропускает.
 3. Ищет каждый id как подстроку в файлах `**/*.test.ts` и `**/*.spec.ts` (без `node_modules`, `dist` и скрытых каталогов — `.git`, `.claude` с чужими worktree).
 4. Выход 0 — все найдены. Выход 1 — список `spec NNN: AC-NNN-n — нет теста`.
 5. Спеки с другими статусами не проверяет.
