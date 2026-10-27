@@ -28,6 +28,7 @@
 ## Ключевые решения
 
 - Fastify 5.12.7, `@fastify/websocket` 11.3.4 (точные версии); WebSocket на `ws` внутри плагина.
+- Сверка с документацией (T-33 спеки 002, 2026-10-28). 5.12.7 — актуальная версия ветки v5 (https://fastify.dev/docs/latest/Reference/Server/): `listen({ host, port })`, `setErrorHandler`, `logLevel` маршрута — без изменений. `@fastify/websocket` 11.3.4 (https://github.com/fastify/fastify-websocket): регистрация до маршрутов, `{ websocket: true }`, обработчик `(socket, request)`, где `socket` — сам WebSocket (`send`, `on('close')`, `close(4404, …)`); пир-зависимость — Fastify 5.
 - Ошибки ядра → HTTP: `validation_error` 400, `not_found` 404, `too_many_active_swarms` и `swarm_finished` 409 (`STATUS` в `app.ts`); ошибки формата тела Fastify приводятся к формату 4.5.3.
 - Закрытие WebSocket с кодом `4404` для неизвестного роя (4.5.2).
 - Адрес оркестратора — `ORCHESTRATOR_URL`; порт API публикуется только на `127.0.0.1` (compose).
