@@ -724,7 +724,7 @@ export const LlmGatewayConfig = z.object({
 
 **Ядро `packages/llm-gateway-core`: функции**
 
-- [ ] **T-5.** Каркас пакета по образцу `packages/api-core`: `package.json` (`@swag/llm-gateway-core`), `tsconfig`, индекс, README по схеме CLAUDE.md. Внутри — `costMicroUsd` и `parseUsage` по 4.3. Читать: 4.3, 4.14. Плюс `parseProviderCost` по 4.3. Закрывает: REQ-002-6, AC-002-7, AC-002-29 (тест `parseProviderCost`). Готово, когда: тесты AC-002-7, `parseProviderCost` и `parseUsage` (поле есть, поля нет, `cached_tokens` нет) зелёные, `arch:check` зелёный.
+- [x] **T-5.** Каркас пакета по образцу `packages/api-core`: `package.json` (`@swag/llm-gateway-core`), `tsconfig`, индекс, README по схеме CLAUDE.md. Внутри — `costMicroUsd` и `parseUsage` по 4.3. Читать: 4.3, 4.14. Плюс `parseProviderCost` по 4.3. Закрывает: REQ-002-6, AC-002-7, AC-002-29 (тест `parseProviderCost`). Готово, когда: тесты AC-002-7, `parseProviderCost` и `parseUsage` (поле есть, поля нет, `cached_tokens` нет) зелёные, `arch:check` зелёный.
 - [ ] **T-6.** В ядре — схема `ChatRequest` и `CLIENT_CREDENTIAL_FIELDS` по 4.2, функция проверки тела: результат — разобранное тело или `message` по таблице 4.6 (первые 3 ошибки Zod `path: message` через `; `; для поля из `CLIENT_CREDENTIAL_FIELDS` — `Client-side provider credentials are not allowed: <поле>`). Читать: 4.2, 4.6. Закрывает: REQ-002-18 (схема). Готово, когда: юнит-тесты на тело без `messages`, `messages: []`, тело-массив, каждое поле из `CLIENT_CREDENTIAL_FIELDS` и тело с лишним полем `temperature` (проходит) зелёные.
 
 **Фейковый провайдер**
@@ -810,3 +810,4 @@ export const LlmGatewayConfig = z.object({
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+| 2026-10-27 | `spec/002-t5-llm-gateway-core-cost` / `1dbfc2e` | T-5: каркас `llm-gateway-core`, `costMicroUsd` / `parseUsage` / `parseProviderCost`. Новые имена в глоссарии: `costMicroUsd`, `parseUsage`, `@swag/llm-gateway-core`. | `export type ModelPrices` добавлен в `packages/contracts/src/llm.ts`: в блоке 4.1 его нет, нужен как тип параметра `costMicroUsd` из 4.3. |
