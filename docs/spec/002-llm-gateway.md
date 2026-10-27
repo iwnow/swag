@@ -28,7 +28,7 @@ updated: 2026-10-27
 > - **Доступ к моделям.** В 002 — только общий доступ по ключам платформы. Свой ключ организации, за который платформа не берёт плату, — D-35. Gateway уже сейчас не пропускает ключ и адрес провайдера из тела запроса (REQ-002-18): потом ключ организации подставляет сам gateway.
 > - **Из бэклога:**
 >   - D-21 разложен на Q-1;
->   - N-4, N-5 и N-7 стали задачами T-14, T-2 и T-1.
+>   - N-4, N-5 и N-7 стали задачами T-33, T-2 и T-1.
 > - **Что нужно от человека:**
 >   - вопросы Q-1…Q-4 решены 2026-10-27: ключи платформы в `.env.llm`, OpenRouter в `dev` и `prod`, общий токен с заголовками до 004, модели `chat-small` и `chat-large`; статус `ready` ставит человек;
 >   - для ручной проверки AC-002-25 — ключ провайдера dev в `.env.llm`.
@@ -569,7 +569,7 @@ export const LlmGatewayConfig = z.object({
 
 `GET /v1/models` → `{ object: 'list', data: [{ id }] }` по `opts.models`, по умолчанию `['chat-small', 'chat-large']`. В стеке этот ответ не используется: `GET /v1/models` LiteLLM отдаёт `model_name` из своего конфига. В тестах в процессе фейк стоит на месте LiteLLM.
 
-Пакет LiteLLM снимает префикс `openai/` перед запросом к провайдеру — это стоит проверить при реализации T-10. В тестах без LiteLLM адаптер ходит в фейк напрямую. Модели фейк не проверяет.
+Пакет LiteLLM снимает префикс `openai/` перед запросом к провайдеру — это стоит проверить при реализации T-27. В тестах без LiteLLM адаптер ходит в фейк напрямую. Модели фейк не проверяет.
 
 ### 4.13. Команда `npm run llm:ping`
 
@@ -683,9 +683,11 @@ export const LlmGatewayConfig = z.object({
 
 ## 8. Задачи для агента
 
-Выполняются по порядку. После каждой задачи — коммит.
+Выполняются по порядку. Одна задача — один субагент и один коммит. В каждой задаче указано, какие разделы спеки прочитать: субагенту достаточно их, раздела 3 и критериев из строки «Закрывает».
 
-Для каждой задачи: README затронутых пакетов обновляется в том же коммите, новые имена — в глоссарии.
+Для каждой задачи: README затронутых пакетов обновляется в том же коммите, новые имена — в глоссарии. Тест критерия называется с его id: `it('AC-002-n: ...')`. Если критерий проверяется на нескольких уровнях (ядро и оболочка), у каждого уровня свой тест с тем же id.
+
+**Подготовка**
 
 - [ ] **T-1.** Node 24.20.0 → 24.22.1 (из N-7). Что меняется:
   - `.nvmrc`;
@@ -696,50 +698,70 @@ export const LlmGatewayConfig = z.object({
 
   Готово, когда: нигде в репозитории нет `24.20.0`, `npm run check` зелёный.
 - [ ] **T-2.** В `vitest.config.ts` добавить `'.claude/**'` в `exclude` (из N-5). Готово, когда: `npm test` не находит тесты в `.claude/worktrees`.
-- [ ] **T-3.** Контракты 4.1:
-  - `llm.ts`, `llm.call` в `PlatformEventInput`, `'llm-gateway'` в `source`, `ServiceName`, `ServiceInfo`;
-  - тесты контрактов для `ModelCatalog`;
-  - если UI или ядра перестали компилироваться из-за нового варианта события — минимальная правка, чтобы `typecheck` был зелёным: в `detail` — `default`.
 
-  Закрывает: AC-002-8 (часть схемы), AC-002-26 (тест `api-core`). Готово, когда: `npm run typecheck` и тесты `contracts`, `api-core` зелёные.
-- [ ] **T-4.** Пакет `packages/llm-gateway-core`: каркас по образцу `api-core`, README. Внутри — `costMicroUsd`, `parseUsage`, `ChatRequest`, `CLIENT_CREDENTIAL_FIELDS`. Закрывает: REQ-002-6, AC-002-7, AC-002-8. Готово, когда: тесты AC-002-7 и AC-002-8 зелёные, `arch:check` зелёный.
-- [ ] **T-5.** Фейковый провайдер `infra/llm/fake-provider/server.ts` по 4.12, с тестом на каждый сценарий таблицы через `fetch`. Готово, когда: тесты фейка зелёные. Тесты лежат в `packages/adapter-litellm/test/fake-provider.test.ts`, пакет создаётся в T-6 — допустимо создать его каркас здесь.
-- [ ] **T-6.** Пакет `packages/adapter-litellm` по 4.5: `complete`, `stream` с разбором SSE, таймаут простоя, `redact`, `listModels`, спан `litellm.chat`, README. Тесты — против фейка. Закрывает: REQ-002-10, REQ-002-11. Готово, когда: тесты адаптера на обычный ответ, поток, обрыв, таймаут, `redact` и HTTP-ошибки зелёные.
-- [ ] **T-7.** Ядро: `createLlmGatewayCore` — `info`, `listModels`, `checkUpstream`, `complete` без потока по 4.4, событие и лог. Тесты — с фейковыми портами в памяти. Закрывает: REQ-002-1, -4, -7, -9 (без потока), -18. Готово, когда: ядро проходит сценарии AC-002-1, -3, -4, -5, -9, -28, -14, -15 (без потока), -16 на уровне ядра.
-- [ ] **T-8.** Ядро: поток по 4.4 — обёртка-генератор, `include_usage`, `usage` из фрагментов, `done`, ошибка после первого фрагмента. Закрывает: REQ-002-8. Готово, когда: на уровне ядра проходят сценарии AC-002-10, -12, -13 и потоковая часть -15.
-- [ ] **T-9.** `LlmGatewayConfig` в `packages/config` и оболочка `apps/llm-gateway`:
-  - Fastify, `bodyLimit`, проверка токена, разбор заголовков;
-  - запись JSON и SSE;
-  - `AbortController` на `request.raw` `close`;
-  - чтение каталога из `LLM_CATALOG_PATH`;
-  - сверка со `checkUpstream` с повтором раз в 1 с до `LLM_GATEWAY_STARTUP_TIMEOUT_MS`;
-  - телеметрия по 4.10;
-  - `secrets` по 4.9;
-  - Dockerfile, README.
+**Контракты**
 
-  Тесты в процессе против фейка. Закрывает: REQ-002-2, -3, -13, -14. Готово, когда: зелёные тесты AC-002-1…AC-002-18, AC-002-23, AC-002-27.
-- [ ] **T-10.** Инфраструктура:
-  - `infra/llm/{test,dev,prod}/` по 4.7 и ответам на Q-2 и Q-4;
-  - в compose — сервисы `litellm`, `llm-fake`, `llm-gateway` и сеть `llm` по 4.8;
-  - `.env.example`, `.env.llm.example`, `.gitignore`, `scripts/worktree-links.ts`, `infra:check`;
-  - репозиторный тест AC-002-19 и проверка портов из раздела 7;
-  - тесты `[stack]` AC-002-20, AC-002-21.
+- [ ] **T-3.** `packages/contracts/src/llm.ts` по 4.1: `ModelId`, `PricePerMTok`, `ModelPrices`, `CatalogModel`, `ModelCatalog`, `LlmUsage`, `GatewayErrorCode`, `LlmCallStatus`, `LlmCallData`, `LlmCaller`, `SWARM_ID_HEADER`, `AGENT_ID_HEADER`; экспорт из индекса пакета. Событие `llm.call` здесь ещё не добавляется. Читать: 4.1. Закрывает: AC-002-8 (часть схемы: пять неверных каталогов). Готово, когда: тест AC-002-8 в `contracts` зелёный, `npm run typecheck` зелёный.
+- [ ] **T-4.** Событие `llm.call` по 4.1: вариант в `PlatformEventInput`, `'llm-gateway'` в `source`, `ServiceName`, `ServiceInfo`. Если UI или ядра перестали компилироваться из-за нового варианта — минимальная правка: в `detail` — `default`. Тест в `api-core`: событие `llm.call` известного роя сохраняется с очередным `seq`, неизвестного — отбрасывается с `unknown_swarm`. Читать: 4.1. Закрывает: REQ-002-15 (часть `api`), AC-002-26. Готово, когда: `npm run typecheck`, тесты `contracts` и `api-core` зелёные.
 
-  Здесь же проверить, что LiteLLM снимает префикс `openai/` (4.12), и записать версию образа LiteLLM. Закрывает: REQ-002-5, -12, -16. Готово, когда: `npm run up` на `test` поднимает всё healthy, тесты `[stack]` зелёные, прогон в журнале.
-- [ ] **T-11.** Тест AC-002-22 в `orchestrator-core`. Готово, когда: тест зелёный.
-- [ ] **T-12.** UI: `formatLlmCall` в `ui-core` с тестом AC-002-24, `case 'llm.call'` в `swarm.page.ts`. Закрывает: REQ-002-15. Готово, когда: тест зелёный, в ленте роя из AC-002-20 видны строки вызовов. Скриншот — в журнал.
-- [ ] **T-13.** `scripts/llm-ping.ts` и скрипт `llm:ping` по 4.13. Ручная проверка AC-002-25 на профиле `dev`. Готово, когда: вывод в журнале. Если ключа dev нет — пометить AC-002-25 «ждёт ключа» в журнале и сообщить человеку, это не `blocked` для остальных задач.
-- [ ] **T-14.** Сверить решения 001 с актуальной документацией через context7 (из N-4). Что проверить:
+**Ядро `packages/llm-gateway-core`: функции**
+
+- [ ] **T-5.** Каркас пакета по образцу `packages/api-core`: `package.json` (`@swag/llm-gateway-core`), `tsconfig`, индекс, README по схеме CLAUDE.md. Внутри — `costMicroUsd` и `parseUsage` по 4.3. Читать: 4.3, 4.14. Закрывает: REQ-002-6, AC-002-7. Готово, когда: тест AC-002-7 и тесты `parseUsage` (поле есть, поля нет, `cached_tokens` нет) зелёные, `arch:check` зелёный.
+- [ ] **T-6.** В ядре — схема `ChatRequest` и `CLIENT_CREDENTIAL_FIELDS` по 4.2, функция проверки тела: результат — разобранное тело или `message` по таблице 4.6 (первые 3 ошибки Zod `path: message` через `; `; для поля из `CLIENT_CREDENTIAL_FIELDS` — `Client-side provider credentials are not allowed: <поле>`). Читать: 4.2, 4.6. Закрывает: REQ-002-18 (схема). Готово, когда: юнит-тесты на тело без `messages`, `messages: []`, тело-массив, каждое поле из `CLIENT_CREDENTIAL_FIELDS` и тело с лишним полем `temperature` (проходит) зелёные.
+
+**Фейковый провайдер**
+
+- [ ] **T-7.** `infra/llm/fake-provider/server.ts` по 4.12, часть без потока: `startFakeProvider`, `FakeRequest`, запуск как скрипт на `FAKE_PROVIDER_PORT`, `GET /v1/models`, ответ по умолчанию (с `tools` — `tool_calls`), `__no_usage__`, `__fail_500__`, `__fail_429__`, `__fail_400__`. Здесь же каркас пакета `packages/adapter-litellm` (`package.json`, `tsconfig`, пустой индекс, README-заготовка): тесты фейка лежат в `packages/adapter-litellm/test/fake-provider.test.ts`. Читать: 4.12. Готово, когда: тест на каждый перечисленный сценарий через `fetch` зелёный, `node infra/llm/fake-provider/server.ts` стартует.
+- [ ] **T-8.** Фейк, потоковая часть: фрагменты `'fake'` и `' reply'` с паузой `FAKE_CHUNK_DELAY_MS`, фрагмент `usage` при `stream_options.include_usage`, `[DONE]`; `__slow_chunks__`, `__cut__`, `__hang__`; `closedByClient` при закрытии соединения клиентом. Читать: 4.12. Готово, когда: тест на каждый сценарий через `fetch` зелёный, включая `closedByClient: true` после `AbortController.abort()`.
+
+**Адаптер `packages/adapter-litellm`**
+
+- [ ] **T-9.** `redact` и `complete` по 4.5 без таймаута: `POST {baseUrl}/v1/chat/completions` с `Authorization: Bearer <masterKey>`, `traceparent` через propagator `adapter-telemetry`, разбор `2xx`, не-`2xx` (`message` из `error.message` или `HTTP <status>`, обрезка до 1000 символов, затем `redact`), сеть недоступна → `network`. Тесты против фейка. Читать: 4.4 (порт `LlmUpstream`, `UpstreamFailure`), 4.5. Закрывает: REQ-002-11 (адаптер), AC-002-17 (часть `redact`: пустой секрет не меняет текст; `message` по `__fail_400__` без ключа фейка и мастер-ключа). Готово, когда: тесты на обычный ответ, три сценария `__fail_*__`, недоступный порт и `redact` зелёные.
+- [ ] **T-10.** Таймаут простоя для `complete` и `listModels` по 4.5: свой `AbortController` через `AbortSignal.any` с внешним `signal`, таймер `idleTimeoutMs` перезапускается на каждом куске тела, срабатывание → `timeout`, внешний abort → `network`. `listModels` — `GET {baseUrl}/v1/models` → `ids`. Читать: 4.5. Закрывает: REQ-002-10 (без потока). Готово, когда: тесты `__hang__` с `idleTimeoutMs: 200` (результат `timeout` за 200–1000 мс), внешний abort и `listModels` зелёные.
+- [ ] **T-11.** `stream` по 4.5: тот же запрос, не-`2xx` — неудача как у `complete`; при `2xx` — асинхронный генератор payload'ов SSE (склейка строк `data:`, удаление ведущего пробела, пропуск комментариев и других полей); тело без `[DONE]` → `UpstreamStreamError({ kind: 'network' })`; таймаут простоя → `UpstreamStreamError({ kind: 'timeout' })`; внешний abort → `UpstreamStreamError({ kind: 'aborted' })`. Читать: 4.4, 4.5. Закрывает: REQ-002-10 (поток). Готово, когда: тесты против фейка на поток по умолчанию, `__cut__`, `__slow_chunks__` с `idleTimeoutMs: 200`, внешний abort и юнит-тест разбора SSE (многострочный `data:`, комментарий `:`) зелёные.
+- [ ] **T-12.** Спан `litellm.chat` по 4.5: вид `client`, атрибуты `gen_ai.request.model`, `swag.llm.stream`, `http.response.status_code`, `gen_ai.usage.*` при наличии `usage`; тел запроса и ответа в атрибутах нет. README пакета — по факту кода. Читать: 4.5. Готово, когда: тест с in-memory экспортёром спанов (как в тестах `adapter-telemetry`) проверяет атрибуты и отсутствие текста сообщения.
+
+**Ядро: `createLlmGatewayCore`**
+
+- [ ] **T-13.** Фабрика и порты по 4.4: интерфейсы `LlmUpstream`, `EventPublisher`, `Clock`, `Ids`, `TraceContext`, `Logger`, `LlmGatewayDeps`, `CompleteResult`, класс `UpstreamStreamError`. Методы `info`, `listModels`, `checkUpstream`; `complete` пока бросает `not implemented`. В `test/` ядра — фейковые порты в памяти (upstream со сценариями, публикатор, часы, логгер), их используют T-14…T-18. Читать: 4.4. Закрывает: REQ-002-2 (ядро), AC-002-6 и AC-002-18 на уровне ядра (`checkUpstream` → `missing: ['chat-large']`). Готово, когда: тесты `listModels`, `checkUpstream` (все есть, не хватает, ошибка апстрима) зелёные.
+- [ ] **T-14.** `complete`, проверки 2–4 из 4.2: `LlmCaller` → `invalid_caller`, проверка тела из T-6 → `invalid_request`, модель в каталоге → `model_not_found` (имя обрезается до 100 символов). При отказе upstream не вызывается, событие не публикуется. Успешный путь пока не делается. Читать: 4.2, 4.4, 4.6. Закрывает: REQ-002-4, REQ-002-18, AC-002-3, -4, -5, -28 на уровне ядра. Готово, когда: эти тесты зелёные.
+- [ ] **T-15.** `complete` без потока, успешный путь по шагам 2–7 из 4.4: `callId`, `latencyMs`, `parseUsage`, `costMicroUsd`, событие `llm.call` `status: 'ok'` с `traceId`, лог `llm call` по 4.10; без `usage` — `warn` `usage_missing` с `callId`; ошибка публикации — `error` `event_publish_failed`, ответ не меняется. Читать: 4.4, 4.10. Закрывает: REQ-002-1, REQ-002-7, AC-002-1, -9, -14 на уровне ядра. Готово, когда: эти тесты и тест на сбой публикации зелёные.
+- [ ] **T-16.** `complete` без потока, ошибки апстрима по таблице 4.6: `http` 400/422 → `upstream_bad_request`, 429 → `rate_limited`, другой статус и `network` → `upstream_error`, `timeout` → `upstream_timeout`; событие `status: 'error'`, `usage: null`; `upstreamStatus` — только в лог. Читать: 4.4, 4.6, 4.10. Закрывает: REQ-002-9, AC-002-15 (без потока) и AC-002-16 на уровне ядра. Готово, когда: тест на каждую строку 4.6 про апстрим зелёный.
+- [ ] **T-17.** Поток, успешный путь, шаги 1–4 из 4.4: копия тела с `stream_options.include_usage = true`, обёртка-генератор отдаёт payload'ы без изменений, запоминает последнее не-null `usage`, на `[DONE]` — `done`; в `finally` — событие `status: 'ok'`, `stream: true` и лог. Неудача до первого фрагмента — как в T-16. Читать: 4.4. Закрывает: REQ-002-8, AC-002-10 на уровне ядра. Готово, когда: тесты на поток по умолчанию (порядок payload'ов, `include_usage` у upstream, событие с `costMicroUsd: 9960`) и неудачу до первого фрагмента зелёные.
+- [ ] **T-18.** Поток, обрывы, шаг 5 из 4.4: `UpstreamStreamError` не `aborted` → последний payload `{"error":{...}}` и завершение без исключения, событие `status: 'aborted'` с `errorCode`; `aborted` (клиент ушёл) → событие `status: 'aborted'` без `errorCode`. Читать: 4.4, 4.6. Закрывает: AC-002-12, -13 и потоковая часть AC-002-15 на уровне ядра. Готово, когда: эти тесты зелёные.
+
+**Конфиг и оболочка `apps/llm-gateway`**
+
+- [ ] **T-19.** Файлы окружения и конфиг: блок спеки 002 в `.env.example` по 4.9, `.env.llm.example` по 4.8, исключение `!.env.llm.example` в `.gitignore`, hardlink `.env.llm` в `scripts/worktree-links.ts`, `LlmGatewayConfig` в `packages/config`. Читать: 4.8 (файлы окружения), 4.9. Закрывает: AC-002-27. Готово, когда: тест AC-002-27 зелёный, `git check-ignore .env.llm` находит файл, а `.env.llm.example` — нет.
+- [ ] **T-20.** Каркас оболочки: пакет `apps/llm-gateway` по образцу `apps/api`, чтение и разбор каталога из `LLM_CATALOG_PATH`, сборка `secrets` по 4.9, сборка адаптера LiteLLM и `adapter-nats`, вызов фабрики ядра, `GET /health`. Старт: `checkUpstream` с повтором раз в 1 с до `LLM_GATEWAY_STARTUP_TIMEOUT_MS`, до успеха порт не слушается, иначе лог `error` `upstream_models_mismatch` с `missing` и выход с кодом 1. README пакета. Читать: 4.2 (`/health`), 4.9, 4.14. Закрывает: REQ-002-13, AC-002-18. Готово, когда: тест AC-002-18 зелёный — оболочка против фейка с `models: ['chat-small']`; с полным списком `/health` → `200`.
+- [ ] **T-21.** Оболочка: проверка токена через `crypto.timingSafeEqual` (разная длина — сразу `401`), разбор `x-swag-swarm-id` и `x-swag-agent-id`, `GET /v1/models`, `bodyLimit` из `LLM_GATEWAY_BODY_LIMIT_BYTES`, тело ошибки по 4.2. `POST /v1/chat/completions` передаёт в ядро заголовки и тело; запись ответа — только для `kind: 'error'`. Читать: 4.2, 4.6. Закрывает: REQ-002-3, AC-002-2, AC-002-6, а также AC-002-3, -4, -5, -28 через HTTP. Готово, когда: эти тесты в процессе против фейка зелёные, тело больше лимита → `413`.
+- [ ] **T-22.** Оболочка: запись `kind: 'json'`, `AbortController` по событию `close` у `request.raw`, передача `signal` в ядро. Читать: 4.2. Закрывает: AC-002-1, -9, -14, -16 и AC-002-15 без потока через HTTP. Готово, когда: эти тесты в процессе зелёные, событие читается из шины в памяти.
+- [ ] **T-23.** Оболочка: запись SSE — `content-type: text/event-stream`, `cache-control: no-cache`, каждый payload как `data: <payload>\n\n` сразу после получения, без буферизации Fastify (`reply.hijack()` или `reply.raw`). Читать: 4.2 (SSE клиенту). Закрывает: AC-002-10, -11, -12, -13 и потоковая часть AC-002-15 через HTTP, NFR-002-2. Готово, когда: эти тесты в процессе зелёные.
+- [ ] **T-24.** Телеметрия оболочки по 4.10: `startTelemetry` с сервисом `llm-gateway`, хуки Fastify, логгер pino, `TraceContext` из `adapter-telemetry`, как в `apps/api`. Читать: 4.10. Закрывает: REQ-002-14, REQ-002-11 (оболочка), AC-002-17, AC-002-23. Готово, когда: тесты AC-002-17 и AC-002-23 в процессе, с перехватом вывода логгера и in-memory экспортёром спанов, зелёные.
+- [ ] **T-25.** `apps/llm-gateway/Dockerfile` по образцу `apps/api`. Готово, когда: `docker build` проходит, контейнер стартует и без `LLM_GATEWAY_TOKEN` завершается с ошибкой конфига.
+
+**Инфраструктура**
+
+- [ ] **T-26.** Профили `infra/llm/{test,dev,prod}/` по 4.7 и ответам на Q-2 и Q-4: `litellm.yaml` и `models.json`. Модели и цены `dev` и `prod` — с каталога и страницы цен OpenRouter, с датой и ссылкой в README `apps/llm-gateway`. Репозиторный тест AC-002-19 и вторая часть AC-002-8 (каталоги `infra/llm/*/models.json` проходят). Читать: 4.7, Q-2, Q-4. Закрывает: REQ-002-12, AC-002-8, AC-002-19. Готово, когда: эти тесты зелёные.
+- [ ] **T-27.** Compose по 4.8: сервисы `litellm`, `llm-fake`, `llm-gateway`, сеть `llm`; проверка `GET /health` gateway в `infra:check` (4.9); в `scripts/repo.test.ts` — порты из раздела 7. Проверить, что LiteLLM снимает префикс `openai/` (4.12), записать версию образа LiteLLM в README `apps/llm-gateway` и журнал. Читать: 4.8, 4.9, 4.12, раздел 7. Закрывает: REQ-002-5 (compose), REQ-002-16. Готово, когда: `npm run up` на `test` поднимает всё healthy, `npm run infra:check` зелёный, вывод — в журнал.
+- [ ] **T-28.** Тесты `[stack]` AC-002-20 и AC-002-21, пропуск без `LLM_GATEWAY_URL` по образцу `adapter-nats`. Закрывает: REQ-002-5. Готово, когда: оба теста зелёные против поднятого стека, прогон — в журнал.
+- [ ] **T-29.** Тест AC-002-22 в `orchestrator-core`. Готово, когда: тест зелёный.
+
+**UI, команды, сдача**
+
+- [ ] **T-30.** UI: `formatLlmCall` в `ui-core` по 4.11 с тестом AC-002-24, `case 'llm.call'` в `swarm.page.ts`. Закрывает: REQ-002-15. Готово, когда: тест зелёный, в ленте роя из AC-002-20 видны строки вызовов. Скриншот — в журнал.
+- [ ] **T-31.** `scripts/llm-ping.ts` и скрипт `llm:ping` по 4.13. Ручная проверка AC-002-25 на профиле `dev`. Закрывает: REQ-002-17, AC-002-25. Готово, когда: вывод в журнале. Если ключа dev нет — пометить AC-002-25 «ждёт ключа» в журнале и сообщить человеку, это не `blocked` для остальных задач.
+- [ ] **T-32.** Замер NFR-002-1: скрипт-замер по разделу 6, 200 вызовов через оболочку в процессе и 200 напрямую к фейку, разница p95. Готово, когда: результат — в журнале.
+- [ ] **T-33.** Сверить решения 001 с актуальной документацией через context7 (из N-4). Что проверить:
   - Angular: standalone, signals, `ng serve` с прокси WebSocket;
   - dockerode, `@nats-io/transport-node`, Fastify с WebSocket, Docker Compose;
   - заодно Fastify-оболочку `llm-gateway`.
 
   Устаревшее исправить, решения записать в README пакетов. Если context7 недоступен — сверить по официальной документации библиотек и указать источник в журнале. Готово, когда: в журнале список проверенного, найденного и исправленного.
-- [ ] **T-15.** Документация и сдача:
+- [ ] **T-34.** Документация и сдача:
   - корневой README: сервисы, `.env.llm`, профили, `llm:ping`;
   - `docs/architecture.md` по 4.14;
-  - замер NFR-002-1 в журнал;
-  - `npm run check`, сверка README с кодом.
+  - `npm run check`, сверка README всех затронутых пакетов с кодом.
 
   Готово, когда: всё зелёное, статус `review`.
 
@@ -758,7 +780,7 @@ export const LlmGatewayConfig = z.object({
   **Решение человека (2026-10-27): OpenRouter в обоих профилях** — общий роутер платформы, один ключ `OPENROUTER_API_KEY` в `.env.llm`, модели разных провайдеров через него.
   - `dev` — бесплатные модели OpenRouter `:free` с поддержкой `tools` и потока, цены в `models.json` — `0`. Суточные лимиты бесплатных моделей допустимы для разработки.
   - `prod` — платные модели OpenRouter: `chat-small` — модель класса Haiku, `chat-large` — класса Sonnet. Цены в `models.json` — цены OpenRouter.
-  - Конкретные модели, их поддержку `tools`, потока и `usage` в потоке агент проверяет по документации и каталогу OpenRouter при T-10 и записывает с датой в README `apps/llm-gateway`. Если для `chat-small` или `chat-large` в `dev` нет бесплатной модели с `tools` — `blocked`, вопрос человеку.
+  - Конкретные модели, их поддержку `tools`, потока и `usage` в потоке агент проверяет по документации и каталогу OpenRouter при T-26 и записывает с датой в README `apps/llm-gateway`. Если для `chat-small` или `chat-large` в `dev` нет бесплатной модели с `tools` — `blocked`, вопрос человеку.
 - [x] **Q-3. Кто вызывает gateway до спеки 004.** *(Claude, 2026-10-27)*
   **Решение человека (2026-10-27): вариант «а».** Общий внутренний токен `LLM_GATEWAY_TOKEN` (Bearer), рой и агента вызывающий называет заголовками `x-swag-swarm-id` и `x-swag-agent-id`. В 004 токен заменится ключом агента.
 - [x] **Q-4. Имена моделей платформы.** *(Claude, 2026-10-27)*
