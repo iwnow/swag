@@ -1,0 +1,19 @@
+{
+  "name": "@swag/llm-gateway",
+  "version": "0.0.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "dependencies": {
+    "@swag/adapter-litellm": "0.0.0",
+    "@swag/adapter-nats": "0.0.0",
+    "@swag/adapter-telemetry": "0.0.0",
+    "@swag/config": "0.0.0",
+    "@swag/contracts": "0.0.0",
+    "@swag/llm-gateway-core": "0.0.0",
+    "fastify": "5.12.7"
+  },
+  "scripts": {
+    "start": "node src/main.ts"
+  }
+}

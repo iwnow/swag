@@ -18,6 +18,7 @@
     { "path": "packages/adapter-orchestrator-http" },
     { "path": "packages/adapter-docker" },
     { "path": "apps/api" },
+    { "path": "apps/llm-gateway" },
     { "path": "apps/orchestrator" },
     { "path": "apps/agent" }
   ]

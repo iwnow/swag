@@ -7,3 +7,4 @@ docs/
 AI_PLATFORM_ROADMAP.md
 COMPLETE_CHAT_HISTORY.md
 LICENSE
+apps/llm-gateway/test/fixtures/catalog-broken.json
