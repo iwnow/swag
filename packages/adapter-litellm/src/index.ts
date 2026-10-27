@@ -342,7 +342,14 @@ export function createLiteLlmUpstream(options: LiteLlmOptions): LlmUpstream {
     },
     async stream(body: ChatRequest, signal: AbortSignal): Promise<UpstreamStream> {
       const span = startChatSpan(body, true);
-      const result = await inSpanContext(span, () => openStream(options, body, signal, span));
+      let result: UpstreamStream;
+      try {
+        result = await inSpanContext(span, () => openStream(options, body, signal, span));
+      } catch (error) {
+        failSpan(span);
+        span.end();
+        throw error;
+      }
       if (!result.ok) {
         failSpan(span);
         span.end();

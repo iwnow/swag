@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SpanKind, SpanStatusCode } from '@opentelemetry/api';
 import { createMemoryExporters, startTelemetry } from '@swag/adapter-telemetry';
-import type { UpstreamStream } from '@swag/llm-gateway-core';
+import { UpstreamStreamError, type UpstreamStream } from '@swag/llm-gateway-core';
 import { chatRequest, signal, upstreamFor, useFake } from './helpers.ts';
 
 // Спека 002, 4.5: спан litellm.chat. Тесты без AC-id: спан не закрывает AC, он нужен для REQ-002-14 на уровне адаптера.
@@ -14,7 +14,7 @@ const streamBody = (content: string) => ({
   stream_options: { include_usage: true },
 });
 
-// Спаны litellm.chat, записанные за время run; после shutdown память сохраняет записи.
+// Спаны, записанные за время run: chat — только litellm.chat, all — все; после shutdown память сохраняет записи.
 async function chatSpans(run: () => Promise<unknown>) {
   const memory = createMemoryExporters();
   const telemetry = startTelemetry({
@@ -31,19 +31,27 @@ async function chatSpans(run: () => Promise<unknown>) {
   } finally {
     await telemetry.shutdown();
   }
-  return memory.finishedSpans.filter((span) => span.name === 'litellm.chat');
+  return {
+    chat: memory.finishedSpans.filter((span) => span.name === 'litellm.chat'),
+    all: memory.finishedSpans,
+  };
 }
 
-// Текст сообщений запроса и ответа не попадает ни в один атрибут.
-function expectNoText(attributes: Record<string, unknown>) {
-  const dump = JSON.stringify(attributes);
+type Recorded = { name: string; attributes: unknown; events: unknown; status: unknown };
+
+// Текст сообщений запроса и ответа не попадает ни в один спан: проверяются все спаны теста, не только litellm.chat.
+function expectNoText(all: Recorded[]) {
+  const dump = JSON.stringify(
+    all.map(({ name, attributes, events, status }) => ({ name, attributes, events, status })),
+  );
   expect(dump).not.toContain('привет');
-  expect(dump).not.toContain('reply');
+  expect(dump).not.toContain(' reply');
+  expect(dump).not.toContain('fake reply');
 }
 
 describe('спан litellm.chat (спека 002, 4.5)', () => {
   it('complete: клиентский спан с моделью, потоком, статусом и usage, без текста', async () => {
-    const spans = await chatSpans(() =>
+    const { chat: spans, all } = await chatSpans(() =>
       upstreamFor(fake.current.url).complete(chatRequest('привет'), signal()),
     );
 
@@ -58,11 +66,11 @@ describe('спан litellm.chat (спека 002, 4.5)', () => {
       'gen_ai.usage.input_tokens': 1000,
       'gen_ai.usage.output_tokens': 500,
     });
-    expectNoText(span?.attributes ?? {});
+    expectNoText(all);
   });
 
   it('complete без usage в ответе: атрибутов gen_ai.usage.* нет', async () => {
-    const spans = await chatSpans(() =>
+    const { chat: spans } = await chatSpans(() =>
       upstreamFor(fake.current.url).complete(chatRequest('__no_usage__'), signal()),
     );
 
@@ -74,7 +82,7 @@ describe('спан litellm.chat (спека 002, 4.5)', () => {
   });
 
   it('stream: спан заканчивается по концу потока, usage берётся из фрагмента usage, текст не попадает', async () => {
-    const spans = await chatSpans(async () => {
+    const { chat: spans, all } = await chatSpans(async () => {
       const result: UpstreamStream = await upstreamFor(fake.current.url).stream(
         streamBody('привет'),
         signal(),
@@ -94,11 +102,11 @@ describe('спан litellm.chat (спека 002, 4.5)', () => {
       'gen_ai.usage.input_tokens': 1000,
       'gen_ai.usage.output_tokens': 500,
     });
-    expectNoText(span?.attributes ?? {});
+    expectNoText(all);
   });
 
   it('stream: раннее закрытие потребителем тоже заканчивает спан', async () => {
-    const spans = await chatSpans(async () => {
+    const { chat: spans } = await chatSpans(async () => {
       const result: UpstreamStream = await upstreamFor(fake.current.url).stream(
         streamBody('привет'),
         signal(),
@@ -112,8 +120,31 @@ describe('спан litellm.chat (спека 002, 4.5)', () => {
     expect(spans[0]?.attributes).not.toHaveProperty('gen_ai.usage.input_tokens');
   });
 
+  it('stream: обрыв после старта без [DONE] — спан закрыт, статус ERROR, usage нет', async () => {
+    const { chat: spans, all } = await chatSpans(async () => {
+      const result: UpstreamStream = await upstreamFor(fake.current.url).stream(
+        streamBody('привет __cut__'),
+        signal(),
+      );
+      if (!result.ok) throw new Error(JSON.stringify(result.failure));
+      const reading = (async () => {
+        for await (const _payload of result.chunks);
+      })();
+      await expect(reading).rejects.toBeInstanceOf(UpstreamStreamError);
+    });
+
+    expect(spans).toHaveLength(1);
+    expect(spans[0]?.status.code).toBe(SpanStatusCode.ERROR);
+    expect(spans[0]?.attributes).toEqual({
+      'gen_ai.request.model': 'fake-small',
+      'swag.llm.stream': true,
+      'http.response.status_code': 200,
+    });
+    expectNoText(all);
+  });
+
   it('статус ответа 500 — http.response.status_code и статус ошибки спана', async () => {
-    const spans = await chatSpans(() =>
+    const { chat: spans } = await chatSpans(() =>
       upstreamFor(fake.current.url).complete(chatRequest('__fail_500__'), signal()),
     );
 
@@ -126,7 +157,7 @@ describe('спан litellm.chat (спека 002, 4.5)', () => {
   });
 
   it('сеть недоступна — нет http.response.status_code, статус ошибки спана', async () => {
-    const spans = await chatSpans(() =>
+    const { chat: spans } = await chatSpans(() =>
       upstreamFor(fake.current.url, {
         fetch: (async () => {
           throw new TypeError('fetch failed');
@@ -143,7 +174,7 @@ describe('спан litellm.chat (спека 002, 4.5)', () => {
   });
 
   it('stream с не-2xx до потока — спан закрыт сразу и помечен ошибкой', async () => {
-    const spans = await chatSpans(() =>
+    const { chat: spans } = await chatSpans(() =>
       upstreamFor(fake.current.url).stream(streamBody('__fail_500__'), signal()),
     );
 
