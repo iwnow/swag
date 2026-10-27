@@ -31,7 +31,8 @@
 
 ## Ключевые решения
 
-- Angular 22.2.3 (`@angular/*`, `@angular/build`, `@angular/cli`), zoneless (`provideZonelessChangeDetection`), состояние — signals. Версии точные (`save-exact`).
+- Angular 22.2.3 (`@angular/*`, `@angular/build`, `@angular/cli`), состояние — signals. Версии точные (`save-exact`). Zoneless — по умолчанию с Angular 21 (angular.dev/guide/zoneless), отдельного провайдера нет: вызов `provideZonelessChangeDetection()` убран при сверке T-33 спеки 002 (без изменения поведения).
+- Сверка с документацией (T-33 спеки 002, 2026-10-28). `proxy.conf.json` подключён через `angular.json` → `serve.options.proxyConfig`. `ws: true` передаётся в прокси Vite (`server.proxy`, опция `ws` в типах Vite), `pathRewrite` — `@angular/build` переводит в `rewrite` (`utils/load-proxy-config.js`). angular.dev (https://angular.dev/tools/cli/serve) описывает только `target` и `secure`, поведение `ws`/`pathRewrite` — по исходникам установленного `@angular/build` 22.2.3. `provideBrowserGlobalErrorListeners` есть в типах `@angular/core` (https://angular.dev/guide/zoneless не упоминает его).
 - Граф — собственный SVG-компонент без библиотеки (Q-4).
 - Логика вне компонентов: `createUiCore` из `@swag/ui-core` подключается через токен `UI`.
 - Dev-сервер и прокси `/api` → `api:3000` (Q-4). Отклонение: в CI сборка `ng build` не запускается (спека требует `npm run check` без UI-шага).

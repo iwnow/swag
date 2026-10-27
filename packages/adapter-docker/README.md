@@ -36,6 +36,7 @@
 - Спаны `sandbox.create` и `sandbox.remove` — `kind: client`, атрибуты `swarm.id`, `agent.id` (из метаданных `swag.swarm`, `swag.agent`) и `sandbox.id` после создания. Для `remove` id роя и агента адаптер помнит с `create`; у сирот прошлого запуска их нет.
 - Удаление: сначала `stop` с грейсом 5 с (SIGTERM — агент закрывает NATS и сбрасывает телеметрию, REQ-016-8), затем `remove` с `force: true`. Без остановки force-удаление шлёт SIGKILL, и последние спаны и логи агента терялись (найдено ревью 016). `404` — не ошибка (порт требует идемпотентности), `304` при остановке — контейнер уже остановлен. Цена — уборка роя дольше на время остановки агентов.
 - Проверено на Docker Desktop 29.x: AC-001-22 и AC-016-10 проходят на `alpine:3.22`, сеть `bridge`.
+- Сверка с документацией (T-33 спеки 002, 2026-10-28). Вызовы проверены по Docker Engine API v1.52 (https://docs.docker.com/reference/api/engine/version/v1.52.yaml): `/containers/create` (`Env`, `Labels`, `HostConfig.NetworkMode`/`Privileged`/`Binds`/`PortBindings`), `/containers/{id}/stop` (query `t`), `/containers/{id}` DELETE (query `force`), `/containers/json` (`all`, `filters` — JSON `map[string][]string`, метка `label=key` или `label=key=value`). `docker-modem` 5.0.7 кодирует объектный `filters` в JSON. README `dockerode` 5.0.1 (https://github.com/apocas/dockerode) этих параметров не описывает; опора — Docker API. Типов для dockerode 5 отдельных нет (в пакете нет `types`); `@types/dockerode` 4.0.2 — последняя версия на npm, оставлена.
 
 ## Спеки
 
