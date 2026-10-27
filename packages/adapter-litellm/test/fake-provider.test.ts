@@ -9,7 +9,42 @@ const chatBody = (content: unknown, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-describe('фейковый провайдер, часть без потока (спека 002, 4.12)', () => {
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Опрос с ограничением по времени: без бесконечного цикла.
+async function waitFor(check: () => boolean, timeoutMs = 1000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error(`условие не выполнилось за ${String(timeoutMs)} мс`);
+    await sleep(10);
+  }
+}
+
+// Полезные нагрузки SSE-кадров без `data: ` и разделителей; [DONE] остаётся строкой.
+const sseFrames = (text: string): string[] =>
+  text
+    .split('\n\n')
+    .filter((frame) => frame !== '')
+    .map((frame) => frame.replace(/^data: /, ''));
+
+// Читает поток до конца или до обрыва; обрыв не бросает, а возвращается в error.
+async function readText(res: Response): Promise<{ text: string; error?: unknown }> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+    }
+    return { text };
+  } catch (error: unknown) {
+    return { text, error };
+  }
+}
+
+describe('фейковый провайдер, без потока (спека 002, 4.12)', () => {
   let fake: Fake;
 
   beforeEach(async () => {
@@ -145,11 +180,6 @@ describe('фейковый провайдер, часть без потока (�
     });
   });
 
-  it('stream: true пока не реализован — 501 (поток — T-8)', async () => {
-    const res = await post(chatBody('привет', { stream: true }));
-    expect(res.status).toBe(501);
-  });
-
   it('GET /v1/models по умолчанию отдаёт chat-small и chat-large', async () => {
     const res = await fetch(`${fake.url}/v1/models`);
     expect(res.status).toBe(200);
@@ -182,5 +212,170 @@ describe('фейковый провайдер, часть без потока (�
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: { message: 'not found' } });
     expect(fake.requests).toHaveLength(0);
+  });
+});
+
+describe('фейковый провайдер, поток (спека 002, 4.12)', () => {
+  let fake: Fake;
+
+  beforeEach(async () => {
+    fake = await startFakeProvider({ port: 0 });
+  });
+
+  afterEach(async () => {
+    await fake.close();
+  });
+
+  const post = (body: unknown) =>
+    fetch(`${fake.url}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  const streamBody = (content: unknown, extra: Record<string, unknown> = {}) =>
+    chatBody(content, { stream: true, ...extra });
+
+  const chunksOf = (text: string) =>
+    sseFrames(text)
+      .filter((frame) => frame !== '[DONE]')
+      .map((frame) => JSON.parse(frame) as Record<string, unknown>);
+
+  it('поток по умолчанию: два текстовых фрагмента, без usage, затем [DONE]', async () => {
+    const res = await post(streamBody('привет'));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('text/event-stream');
+    const text = await res.text();
+    expect(sseFrames(text).at(-1)).toBe('[DONE]');
+
+    const chunks = chunksOf(text);
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0]).toMatchObject({
+      id: 'chatcmpl-fake',
+      object: 'chat.completion.chunk',
+      model: 'fake-small',
+      choices: [{ index: 0, delta: { role: 'assistant', content: 'fake' }, finish_reason: null }],
+    });
+    expect(chunks[1]).toMatchObject({
+      choices: [{ index: 0, delta: { content: ' reply' }, finish_reason: 'stop' }],
+    });
+    expect(chunks.some((chunk) => 'usage' in chunk)).toBe(false);
+    expect(fake.requests[0]?.closedByClient).toBe(false);
+  });
+
+  it('stream_options.include_usage: после текста фрагмент с choices [] и usage, затем [DONE]', async () => {
+    const res = await post(streamBody('привет', { stream_options: { include_usage: true } }));
+
+    const text = await res.text();
+    expect(sseFrames(text).at(-1)).toBe('[DONE]');
+    const chunks = chunksOf(text);
+    expect(chunks).toHaveLength(3);
+    expect(chunks[2]).toMatchObject({
+      object: 'chat.completion.chunk',
+      choices: [],
+      usage: {
+        prompt_tokens: 1000,
+        completion_tokens: 500,
+        total_tokens: 1500,
+        prompt_tokens_details: { cached_tokens: 200 },
+        cost: 0.0085,
+      },
+    });
+  });
+
+  it('include_usage с __no_usage__ — фрагмента usage нет; с __no_cost__ — usage без cost', async () => {
+    const noUsage = await post(
+      streamBody('__no_usage__', { stream_options: { include_usage: true } }),
+    );
+    expect(chunksOf(await noUsage.text())).toHaveLength(2);
+
+    const noCost = await post(
+      streamBody('__no_cost__', { stream_options: { include_usage: true } }),
+    );
+    const usageChunk = chunksOf(await noCost.text())[2] as { usage: Record<string, unknown> };
+    expect(usageChunk.usage).not.toHaveProperty('cost');
+  });
+
+  it('FAKE_CHUNK_DELAY_MS задаёт паузу между фрагментами потока', async () => {
+    process.env.FAKE_CHUNK_DELAY_MS = '50';
+    try {
+      const started = Date.now();
+      const res = await post(streamBody('привет'));
+      await res.text();
+      // Три события (два фрагмента и [DONE]) — две паузы по 50 мс.
+      expect(Date.now() - started).toBeGreaterThanOrEqual(90);
+    } finally {
+      delete process.env.FAKE_CHUNK_DELAY_MS;
+    }
+  });
+
+  it('__slow_chunks__: первый фрагмент приходит сразу, весь поток — не раньше 500 мс', async () => {
+    const started = Date.now();
+    const res = await post(streamBody('__slow_chunks__'));
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    let firstAt: number | undefined;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+      if (firstAt === undefined && text.includes('"content":"fake"'))
+        firstAt = Date.now() - started;
+    }
+
+    expect(firstAt).toBeLessThan(300);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(500);
+    expect(sseFrames(text).at(-1)).toBe('[DONE]');
+  });
+
+  it('__cut__: первый фрагмент, затем обрыв без [DONE]', async () => {
+    const res = await post(streamBody('__cut__'));
+    const { text, error } = await readText(res);
+
+    expect(text).toContain('"content":"fake"');
+    expect(text).not.toContain('reply');
+    expect(text).not.toContain('[DONE]');
+    expect(error).toBeDefined();
+    // Обрыв сделал фейк, клиент не закрывал соединение.
+    expect(fake.requests[0]?.closedByClient).toBe(false);
+  });
+
+  it('__hang__: заголовки не приходят, пока клиент не закроет соединение', async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 200);
+    const error: unknown = await fetch(`${fake.url}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(chatBody('__hang__')),
+      signal: controller.signal,
+    }).catch((reason: unknown) => reason);
+    clearTimeout(timer);
+
+    expect((error as Error).name).toBe('AbortError');
+    await waitFor(() => fake.requests[0]?.closedByClient === true);
+  });
+
+  it('closedByClient: клиент рвёт поток после первого фрагмента — фейк видит закрытие', async () => {
+    const controller = new AbortController();
+    const res = await fetch(`${fake.url}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(streamBody('__slow_chunks__')),
+      signal: controller.signal,
+    });
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    while (!text.includes('"content":"fake"')) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+    }
+    expect(text).toContain('"content":"fake"');
+
+    controller.abort();
+    await waitFor(() => fake.requests[0]?.closedByClient === true);
   });
 });

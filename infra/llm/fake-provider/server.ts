@@ -1,5 +1,4 @@
 // Спека 002, 4.12: фейковый провайдер в формате OpenAI. Только node:http, без зависимостей.
-// Потоковая часть (stream: true, __slow_chunks__, __cut__, __hang__) — T-8; сейчас stream: true отвечает 501.
 import {
   createServer,
   type IncomingHttpHeaders,
@@ -23,6 +22,7 @@ export interface FakeProvider {
 }
 
 const DEFAULT_MODELS = ['chat-small', 'chat-large'];
+const SLOW_CHUNK_DELAY_MS = 500;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -83,6 +83,78 @@ async function readRaw(req: AsyncIterable<unknown>): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+// Пауза между фрагментами читается на каждом запросе: тесты меняют env на время теста.
+function chunkDelayMs(): number {
+  const value = Number(process.env.FAKE_CHUNK_DELAY_MS ?? 0);
+  return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const writeFrame = (res: ServerResponse, data: string) =>
+  new Promise<void>((resolve) => res.write(`data: ${data}\n\n`, () => resolve()));
+
+// closedByClient — соединение закрыто клиентом, а не фейком (обрыв `__cut__`) и не ответом.
+function watchClientClose(
+  res: ServerResponse,
+  record: FakeRequest,
+  serverClosed: { value: boolean },
+) {
+  res.on('close', () => {
+    if (!res.writableFinished && !serverClosed.value) record.closedByClient = true;
+  });
+}
+
+function streamEvents(body: unknown, text: string): unknown[] {
+  const base = {
+    id: 'chatcmpl-fake',
+    object: 'chat.completion.chunk',
+    created: Math.floor(Date.now() / 1000),
+    model: isRecord(body) ? body.model : undefined,
+  };
+  const events: unknown[] = [
+    {
+      ...base,
+      choices: [{ index: 0, delta: { role: 'assistant', content: 'fake' }, finish_reason: null }],
+    },
+    { ...base, choices: [{ index: 0, delta: { content: ' reply' }, finish_reason: 'stop' }] },
+  ];
+  const includeUsage =
+    isRecord(body) && isRecord(body.stream_options) && body.stream_options.include_usage === true;
+  if (includeUsage && !text.includes('__no_usage__')) {
+    events.push({ ...base, choices: [], usage: usage(!text.includes('__no_cost__')) });
+  }
+  return events;
+}
+
+// Поток SSE: пауза между всеми кадрами, включая usage и [DONE]. __cut__ — первый кадр, затем обрыв сокета.
+async function streamResponse(
+  req: IncomingMessage,
+  res: ServerResponse,
+  record: FakeRequest,
+  body: unknown,
+  text: string,
+): Promise<void> {
+  const serverClosed = { value: false };
+  watchClientClose(res, record, serverClosed);
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+
+  const frames = [...streamEvents(body, text).map((event) => JSON.stringify(event)), '[DONE]'];
+  const delay = text.includes('__slow_chunks__') ? SLOW_CHUNK_DELAY_MS : chunkDelayMs();
+  const cut = text.includes('__cut__');
+  for (const [index, data] of frames.entries()) {
+    if (index > 0) await sleep(delay);
+    if (res.destroyed) return;
+    await writeFrame(res, data);
+    if (cut) {
+      serverClosed.value = true;
+      req.socket.destroy();
+      return;
+    }
+  }
+  res.end();
+}
+
 async function handle(
   req: IncomingMessage,
   res: ServerResponse,
@@ -103,7 +175,8 @@ async function handle(
 
   const body = parseBody(raw);
   const headers = flattenHeaders(req.headers);
-  requests.push({ path, headers, body, closedByClient: false });
+  const record: FakeRequest = { path, headers, body, closedByClient: false };
+  requests.push(record);
 
   const text = lastMessageText(body);
   if (text.includes('__fail_500__')) return sendJson(res, 500, { error: { message: 'boom' } });
@@ -112,8 +185,13 @@ async function handle(
     const auth = headers.authorization ?? '';
     return sendJson(res, 400, { error: { message: `bad request, auth was: ${auth}` } });
   }
+  if (text.includes('__hang__')) {
+    // Ответа нет никогда: соединение закроет клиент (closedByClient) или closeServer().
+    watchClientClose(res, record, { value: false });
+    return;
+  }
   if (isRecord(body) && body.stream === true) {
-    return sendJson(res, 501, { error: { message: 'stream is not implemented (T-8)' } });
+    return streamResponse(req, res, record, body, text);
   }
 
   const toolName = firstToolName(body);
