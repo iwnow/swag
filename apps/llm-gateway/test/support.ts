@@ -1,11 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createLiteLlmUpstream } from '@swag/adapter-litellm';
-import { createLlmGatewayCore, type Logger, type LlmGatewayCore } from '@swag/llm-gateway-core';
+import {
+  createLlmGatewayCore,
+  type EventPublisher,
+  type Logger,
+  type LlmGatewayCore,
+} from '@swag/llm-gateway-core';
 import { readCatalog } from '../src/catalog.ts';
 
-// Значения из 4.9 спеки: мастер-ключ LiteLLM — явно фейковый.
+// Значения из 4.9 спеки: мастер-ключ LiteLLM и токен шлюза — явно фейковые.
 export const MASTER_KEY = 'sk-swag-local-not-secret';
+export const GATEWAY_TOKEN = 'llm-gateway-test-token-not-secret-0123456789';
+export const gatewayOptions = { token: GATEWAY_TOKEN, bodyLimitBytes: 8_388_608 };
 export const catalogPath = fileURLToPath(new URL('./fixtures/catalog.json', import.meta.url));
 
 export interface LogEntry {
@@ -27,7 +34,12 @@ export function recordingLog(): { log: Logger; entries: LogEntry[] } {
 }
 
 // Ядро шлюза над настоящим адаптером LiteLLM, направленным на фейк, и каталогом из фикстуры.
-export function makeCore(upstreamUrl: string, log: Logger): LlmGatewayCore {
+// events по умолчанию не пишет; тест передаёт свой, чтобы проверить отсутствие или наличие событий.
+export function makeCore(
+  upstreamUrl: string,
+  log: Logger,
+  events: EventPublisher = { publishEvent: async () => undefined },
+): LlmGatewayCore {
   return createLlmGatewayCore({
     catalog: readCatalog(catalogPath),
     upstream: createLiteLlmUpstream({
@@ -36,7 +48,7 @@ export function makeCore(upstreamUrl: string, log: Logger): LlmGatewayCore {
       idleTimeoutMs: 5_000,
       secrets: [MASTER_KEY],
     }),
-    events: { publishEvent: async () => undefined },
+    events,
     clock: { now: () => new Date(), monotonicMs: () => performance.now() },
     ids: { uuid: () => randomUUID() },
     trace: { currentTraceId: () => null },

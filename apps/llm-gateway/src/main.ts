@@ -75,7 +75,10 @@ const core = createLlmGatewayCore({
   version,
 });
 
-const app = await buildApp(core);
+const app = await buildApp(core, {
+  token: config.LLM_GATEWAY_TOKEN,
+  bodyLimitBytes: config.LLM_GATEWAY_BODY_LIMIT_BYTES,
+});
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(

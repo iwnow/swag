@@ -6,7 +6,7 @@ import { buildApp } from '../src/app.ts';
 import { readCatalog } from '../src/catalog.ts';
 import { startGateway, upstreamSecrets, waitForUpstream } from '../src/start.ts';
 import { startFakeProvider } from '../../../infra/llm/fake-provider/server.ts';
-import { MASTER_KEY, catalogPath, makeCore, recordingLog } from './support.ts';
+import { MASTER_KEY, catalogPath, gatewayOptions, makeCore, recordingLog } from './support.ts';
 
 // Спека 002, 4.2 (/health), 4.9, REQ-002-13: старт со сверкой каталога с апстримом.
 
@@ -27,7 +27,7 @@ describe('старт шлюза против фейка (спека 002, REQ-002
     const { log, entries } = recordingLog();
     const exits: number[] = [];
     const core = makeCore(fake.url, log);
-    const app = await buildApp(core);
+    const app = await buildApp(core, gatewayOptions);
 
     const started = performance.now();
     const listening = await startGateway({
@@ -60,7 +60,7 @@ describe('старт шлюза против фейка (спека 002, REQ-002
     const { log, entries } = recordingLog();
     const exits: number[] = [];
     const core = makeCore(fake.url, log);
-    const app = await buildApp(core);
+    const app = await buildApp(core, gatewayOptions);
 
     const listening = await startGateway({
       core,
@@ -92,7 +92,7 @@ describe('старт шлюза против фейка (спека 002, REQ-002
     const { log, entries } = recordingLog();
     const exits: number[] = [];
     const core = makeCore('http://127.0.0.1:1', log);
-    const app = await buildApp(core);
+    const app = await buildApp(core, gatewayOptions);
 
     const listening = await startGateway({
       core,
@@ -122,7 +122,7 @@ describe('старт шлюза против фейка (спека 002, REQ-002
     const { log, entries } = recordingLog();
     const exits: number[] = [];
     const core = makeCore(`http://127.0.0.1:${port}`, log);
-    const app = await buildApp(core);
+    const app = await buildApp(core, gatewayOptions);
 
     const started = performance.now();
     const listening = await startGateway({
@@ -176,7 +176,7 @@ describe('повтор сверки (спека 002, REQ-002-13)', () => {
     const { log } = recordingLog();
     const exits: number[] = [];
     const core = makeCore(fake.url, log);
-    const app = await buildApp(core);
+    const app = await buildApp(core, gatewayOptions);
     let calls = 0;
     let listeningBeforeRetry: boolean | undefined;
     const flaky = {
