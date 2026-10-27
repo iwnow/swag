@@ -18,6 +18,7 @@ updated: 2026-10-27
 > - **Деньги.**
 >   - Стоимость вызова считает gateway: по `usage` ответа и ценам платформы из каталога моделей. Считает в целых микродолларах, округляет вверх.
 >   - После каждого вызова gateway публикует событие `llm.call` в поток событий роя: модель, токены, кэш, стоимость, задержка, статус.
+>   - В том же событии — фактическая стоимость вызова у провайдера, если он её прислал (`usage.cost` у OpenRouter). Она только для учёта платформы (D-38), списание считается по тарифу.
 >   - Ledger, ключи агентов и бюджеты сюда не входят — это спека 004.
 > - **Ключи.**
 >   - Ключи провайдеров и мастер-ключ LiteLLM лежат в отдельном файле `.env.llm`. Его читают только контейнеры `litellm` и `llm-gateway`.
@@ -88,7 +89,7 @@ updated: 2026-10-27
 | REQ-002-3 | Каждый запрос к `/v1/*` MUST нести `Authorization: Bearer <LLM_GATEWAY_TOKEN>`, иначе ответ `401`. Запрос к `chat/completions` MUST нести заголовки `x-swag-swarm-id` и `x-swag-agent-id`, иначе ответ `400`. | MUST |
 | REQ-002-4 | Если модели нет в каталоге или тело запроса не проходит схему, gateway MUST ответить `400` и MUST NOT обращаться к LiteLLM. | MUST |
 | REQ-002-5 | Ключи провайдеров и `LITELLM_MASTER_KEY` MUST быть только в окружении контейнеров `litellm` и `llm-gateway`. В `api`, `orchestrator`, `ui` и песочницах агентов их MUST NOT быть. LiteLLM MUST NOT быть доступен из сети compose `default`. | MUST |
-| REQ-002-6 | Стоимость вызова MUST считать gateway по формуле 4.3: из `usage` ответа и цен каталога. Поля стоимости из ответа LiteLLM MUST NOT использоваться. | MUST |
+| REQ-002-6 | Стоимость вызова `costMicroUsd` MUST считать gateway по формуле 4.3: из `usage` ответа и цен каталога. Поля стоимости из ответа LiteLLM MUST NOT использоваться для `costMicroUsd`. | MUST |
 | REQ-002-7 | На каждый запрос, отправленный в LiteLLM, gateway MUST опубликовать ровно одно событие `llm.call` в `swarm.<swarmId>.events`, с `traceId` запроса. | MUST |
 | REQ-002-8 | При `stream: true` gateway MUST: <br>• выставить `stream_options.include_usage = true`; <br>• пересылать клиенту каждый фрагмент SSE сразу, без накопления; <br>• взять `usage` из последнего фрагмента, где оно есть. <br>Поток без `[DONE]` получает статус `aborted`. | MUST |
 | REQ-002-9 | Ошибки LiteLLM, сети и таймаута MUST переводиться в коды и статусы таблицы 4.6. Тело ошибки — в формате OpenAI. | MUST |
@@ -100,6 +101,7 @@ updated: 2026-10-27
 | REQ-002-15 | `api` MUST принимать и хранить событие `llm.call` из шины. Лента роя в UI MUST показывать его строкой по формату 4.11. | MUST |
 | REQ-002-16 | `npm run check` и CI MUST проходить без ключей реальных провайдеров: на профиле `test` и с фейковым провайдером. | MUST |
 | REQ-002-18 | Тело запроса с полями верхнего уровня `api_key`, `api_base`, `base_url`, `api_version`, `organization`, `extra_headers`, `user_config` gateway MUST отклонять с `400 invalid_request` без обращения к LiteLLM: клиент не может подменить ключ или адрес провайдера. | MUST |
+| REQ-002-19 | Если в `usage` ответа есть фактическая стоимость провайдера `usage.cost`, gateway MUST записать её в `providerCostMicroUsd` события по 4.3, иначе `null`. На `costMicroUsd` она MUST NOT влиять. | MUST |
 | REQ-002-17 | Команда `npm run llm:ping` SHOULD отправлять один вызов через gateway и печатать ответ, `usage`, стоимость и задержку. | SHOULD |
 
 ## 4. Контракты
@@ -163,6 +165,9 @@ export const LlmCallData = z.strictObject({
   status: LlmCallStatus,
   usage: LlmUsage.nullable(), // null — провайдер не прислал usage или поток оборван до него
   costMicroUsd: z.number().int().min(0).nullable(), // null тогда и только тогда, когда usage null
+  // Фактическая стоимость у провайдера по ключу платформы (usage.cost), для счёта платформы (D-38).
+  // null — провайдер или LiteLLM её не прислали. На costMicroUsd не влияет.
+  providerCostMicroUsd: z.number().int().min(0).nullable(),
   latencyMs: z.number().int().min(0), // от приёма запроса до последнего байта ответа клиенту
   errorCode: GatewayErrorCode.optional(), // есть при status 'error' и при 'aborted' из-за ошибки после первого фрагмента
 });
@@ -260,6 +265,15 @@ costMicroUsd = ceil((uncached·p_in + cached·p_cached + completionTokens·p_out
 - `completion_tokens` → `completionTokens`;
 - `prompt_tokens_details.cached_tokens` → `cachedPromptTokens`, если поля нет — 0.
 
+**Фактическая стоимость провайдера.** `parseProviderCost(rawUsage: unknown): number | null`:
+- источник — `usage.cost` ответа: так OpenRouter отдаёт списанное с аккаунта платформы, в кредитах, 1 кредит = $1; поле приходит всегда, без параметров запроса;
+- `cost` — конечное число ≥ 0 → `Math.round(cost × 10⁶)`; округление до ближайшего: это факт расхода, а не списание с клиента;
+- поля нет, `usage` нет, `cost` не число, отрицательное или не конечное → `null`;
+- `cost_details` и другие поля не используются;
+- в потоке — из того же фрагмента, откуда взят `usage`.
+
+`providerCostMicroUsd` не зависит от `costMicroUsd`: при `usage: null` он тоже `null`, при валидном `usage` без `cost` — `null`.
+
 Если `usage` отсутствует или `prompt_tokens`/`completion_tokens` — не целые ≥ 0, считается, что `usage` нет: `usage: null`, `costMicroUsd: null`, лог `warn` `usage_missing` с `callId`.
 
 ### 4.4. Ядро `packages/llm-gateway-core`
@@ -320,6 +334,7 @@ export interface LlmGatewayCore {
 export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore;
 export function costMicroUsd(usage: LlmUsage, prices: ModelPrices): number;
 export function parseUsage(raw: unknown): LlmUsage | null; // 4.3
+export function parseProviderCost(raw: unknown): number | null; // 4.3, аргумент — body.usage
 ```
 
 **Обычный вызов в ядре, по шагам:**
@@ -327,11 +342,11 @@ export function parseUsage(raw: unknown): LlmUsage | null; // 4.3
 2. `callId = ids.uuid()`, `t0 = clock.monotonicMs()`.
 3. `upstream.complete(body, signal)`.
 4. Успех:
-   - `usage = parseUsage(body.usage)`;
+   - `usage = parseUsage(body.usage)`, `providerCostMicroUsd = parseProviderCost(body.usage)`;
    - событие `status: 'ok'`;
    - результат `{ kind: 'json', body }`.
 5. Неудача:
-   - событие `status: 'error'` с `errorCode` по 4.6, `usage: null`;
+   - событие `status: 'error'` с `errorCode` по 4.6, `usage: null`, `providerCostMicroUsd: null`;
    - результат `{ kind: 'error' }`.
 6. `latencyMs = round(clock.monotonicMs() − t0)`.
 7. Запись лога `llm call` (4.10).
@@ -341,7 +356,7 @@ export function parseUsage(raw: unknown): LlmUsage | null; // 4.3
 2. Вызывает `upstream.stream`. Неудача до первого фрагмента — как шаг 5 обычного вызова.
 3. Возвращает `{ kind: 'stream', chunks }`. Это обёртка-генератор над фрагментами LiteLLM. Каждый payload она:
    - отдаёт дальше без изменений;
-   - если это не `[DONE]`, пробует `JSON.parse` и `parseUsage(obj.usage)` и запоминает последнее не-null `usage`;
+   - если это не `[DONE]`, пробует `JSON.parse` и `parseUsage(obj.usage)` и запоминает последнее не-null `usage` вместе с `parseProviderCost(obj.usage)` того же фрагмента;
    - на `[DONE]` отмечает `done = true`.
 4. В `finally` обёртки:
    - `status = done ? 'ok' : 'aborted'`;
@@ -527,7 +542,7 @@ export const LlmGatewayConfig = z.object({
 
 - Оболочка подключает `adapter-telemetry` так же, как `apps/api`: `startTelemetry` с сервисом `llm-gateway`, хуки Fastify, логгер pino, `TraceContext`.
 - Публикация события — через `adapter-nats`, спан публикации уже есть.
-- Запись `llm call`, уровень `info` при `ok`, `warn` при `error` и `aborted`. Поля: `callId`, `swarmId`, `agentId`, `model`, `stream`, `status`, `latencyMs`, `promptTokens`, `cachedPromptTokens`, `completionTokens`, `costMicroUsd`, `errorCode`, `upstreamStatus`.
+- Запись `llm call`, уровень `info` при `ok`, `warn` при `error` и `aborted`. Поля: `callId`, `swarmId`, `agentId`, `model`, `stream`, `status`, `latencyMs`, `promptTokens`, `cachedPromptTokens`, `completionTokens`, `costMicroUsd`, `providerCostMicroUsd`, `errorCode`, `upstreamStatus`.
 - Отсутствующие значения — поле не пишется.
 - Текстов сообщений и ответа модели нет ни в одном логе и спане (правило Q-4 спеки 016).
 
@@ -558,9 +573,10 @@ export const LlmGatewayConfig = z.object({
 
 | Текст содержит | Ответ |
 |---|---|
-| — (по умолчанию) | Без потока — `chat.completion`: `content: 'fake reply'`, `usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500, prompt_tokens_details: { cached_tokens: 200 } }`. Если в запросе есть `tools` — `message.tool_calls` с одним вызовом первого инструмента, аргументы `{}`, `finish_reason: 'tool_calls'`. <br>С потоком — фрагменты `'fake'` и `' reply'` с паузой `FAKE_CHUNK_DELAY_MS` (по умолчанию 0) между ними. Если `stream_options.include_usage` — затем фрагмент с `choices: []` и `usage` как выше. Затем `[DONE]`. |
+| — (по умолчанию) | Без потока — `chat.completion`: `content: 'fake reply'`, `usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500, prompt_tokens_details: { cached_tokens: 200 }, cost: 0.0085 }`. `cost` отличается от тарифа платформы (9960 micro-USD) нарочно: тест видит, что одно не подменяет другое. Если в запросе есть `tools` — `message.tool_calls` с одним вызовом первого инструмента, аргументы `{}`, `finish_reason: 'tool_calls'`. <br>С потоком — фрагменты `'fake'` и `' reply'` с паузой `FAKE_CHUNK_DELAY_MS` (по умолчанию 0) между ними. Если `stream_options.include_usage` — затем фрагмент с `choices: []` и `usage` как выше. Затем `[DONE]`. |
 | `__slow_chunks__` | поток, пауза между фрагментами 500 мс |
 | `__no_usage__` | ответ без `usage` |
+| `__no_cost__` | `usage` как по умолчанию, но без `cost` |
 | `__cut__` | поток: первый фрагмент, затем `socket.destroy()` |
 | `__hang__` | заголовки не отправляются, ответа нет, пока клиент не закроет соединение |
 | `__fail_500__` | `500 { error: { message: 'boom' } }` |
@@ -660,6 +676,7 @@ export const LlmGatewayConfig = z.object({
 - **AC-002-25** `[manual]` — *Given* `LLM_PROFILE=dev`, ключ провайдера dev в `.env.llm`, `npm run up`. *When* `npm run llm:ping` и `npm run llm:ping -- --stream`. *Then* обе команды печатают ответ модели и `usage` с ненулевыми токенами, код выхода 0. Затем `npm run llm:ping -- chat-large`. Проверка: вывод команд и строка `llm call` из `docker compose logs llm-gateway` — в журнал.
 - **AC-002-26** — *Given* рой есть в `api-core`. *When* из шины приходит `llm.call` от `llm-gateway`. *Then* событие сохранено с очередным `seq` и выдаётся подписчикам. Событие с `source: 'llm-gateway'` и неизвестным роем отбрасывается с `unknown_swarm`.
 - **AC-002-28** — *Given* тело с `api_key: 'sk-x'`, отдельно с `api_base: 'http://evil.test'` и с `extra_headers`. *When* вызов. *Then* `400 invalid_request`, в `message` имя поля, фейк не вызван, событий нет.
+- **AC-002-29** — *Given* ответ фейка по умолчанию с `usage.cost: 0.0085`, без потока и потоком. *When* вызов. *Then* событие: `providerCostMicroUsd: 8500`, `costMicroUsd: 9960`. Сценарий `__no_cost__` — `providerCostMicroUsd: null`, `costMicroUsd: 9960`. Тест `parseProviderCost`: `0.0085` → 8500, `0` → 0, `-1`, `'0.1'`, `NaN`, нет поля → `null`.
 - **AC-002-27** — *Given* env без `LLM_GATEWAY_TOKEN`, с токеном из 31 символа, с `LITELLM_MASTER_KEY` без `sk-`. *When* `LlmGatewayConfig.safeParse`. *Then* ошибка. С `.env.example` + `.env.llm.example` разбор проходит.
 
 ## 6. Нефункциональные требования
@@ -671,6 +688,7 @@ export const LlmGatewayConfig = z.object({
 
 ## 7. Безопасность: что не должно сломаться
 
+- Фактическая стоимость провайдера `providerCostMicroUsd` не показывается в ленте кабинета: `formatLlmCall` её не использует → AC-002-24. Кто её видит, когда появятся организации, — D-38.
 - Ключи провайдеров и мастер-ключ LiteLLM не попадают в `api`, оркестратор, UI и песочницы → AC-002-21, AC-002-22.
 - LiteLLM недоступен из сети роя → AC-002-21.
 - Секреты не утекают в ответы, логи и спаны через тексты ошибок провайдера → AC-002-17.
@@ -706,12 +724,12 @@ export const LlmGatewayConfig = z.object({
 
 **Ядро `packages/llm-gateway-core`: функции**
 
-- [ ] **T-5.** Каркас пакета по образцу `packages/api-core`: `package.json` (`@swag/llm-gateway-core`), `tsconfig`, индекс, README по схеме CLAUDE.md. Внутри — `costMicroUsd` и `parseUsage` по 4.3. Читать: 4.3, 4.14. Закрывает: REQ-002-6, AC-002-7. Готово, когда: тест AC-002-7 и тесты `parseUsage` (поле есть, поля нет, `cached_tokens` нет) зелёные, `arch:check` зелёный.
+- [ ] **T-5.** Каркас пакета по образцу `packages/api-core`: `package.json` (`@swag/llm-gateway-core`), `tsconfig`, индекс, README по схеме CLAUDE.md. Внутри — `costMicroUsd` и `parseUsage` по 4.3. Читать: 4.3, 4.14. Плюс `parseProviderCost` по 4.3. Закрывает: REQ-002-6, AC-002-7, AC-002-29 (тест `parseProviderCost`). Готово, когда: тесты AC-002-7, `parseProviderCost` и `parseUsage` (поле есть, поля нет, `cached_tokens` нет) зелёные, `arch:check` зелёный.
 - [ ] **T-6.** В ядре — схема `ChatRequest` и `CLIENT_CREDENTIAL_FIELDS` по 4.2, функция проверки тела: результат — разобранное тело или `message` по таблице 4.6 (первые 3 ошибки Zod `path: message` через `; `; для поля из `CLIENT_CREDENTIAL_FIELDS` — `Client-side provider credentials are not allowed: <поле>`). Читать: 4.2, 4.6. Закрывает: REQ-002-18 (схема). Готово, когда: юнит-тесты на тело без `messages`, `messages: []`, тело-массив, каждое поле из `CLIENT_CREDENTIAL_FIELDS` и тело с лишним полем `temperature` (проходит) зелёные.
 
 **Фейковый провайдер**
 
-- [ ] **T-7.** `infra/llm/fake-provider/server.ts` по 4.12, часть без потока: `startFakeProvider`, `FakeRequest`, запуск как скрипт на `FAKE_PROVIDER_PORT`, `GET /v1/models`, ответ по умолчанию (с `tools` — `tool_calls`), `__no_usage__`, `__fail_500__`, `__fail_429__`, `__fail_400__`. Здесь же каркас пакета `packages/adapter-litellm` (`package.json`, `tsconfig`, пустой индекс, README-заготовка): тесты фейка лежат в `packages/adapter-litellm/test/fake-provider.test.ts`. Читать: 4.12. Готово, когда: тест на каждый перечисленный сценарий через `fetch` зелёный, `node infra/llm/fake-provider/server.ts` стартует.
+- [ ] **T-7.** `infra/llm/fake-provider/server.ts` по 4.12, часть без потока: `startFakeProvider`, `FakeRequest`, запуск как скрипт на `FAKE_PROVIDER_PORT`, `GET /v1/models`, ответ по умолчанию (с `tools` — `tool_calls`, `usage.cost`), `__no_usage__`, `__no_cost__`, `__fail_500__`, `__fail_429__`, `__fail_400__`. Здесь же каркас пакета `packages/adapter-litellm` (`package.json`, `tsconfig`, пустой индекс, README-заготовка): тесты фейка лежат в `packages/adapter-litellm/test/fake-provider.test.ts`. Читать: 4.12. Готово, когда: тест на каждый перечисленный сценарий через `fetch` зелёный, `node infra/llm/fake-provider/server.ts` стартует.
 - [ ] **T-8.** Фейк, потоковая часть: фрагменты `'fake'` и `' reply'` с паузой `FAKE_CHUNK_DELAY_MS`, фрагмент `usage` при `stream_options.include_usage`, `[DONE]`; `__slow_chunks__`, `__cut__`, `__hang__`; `closedByClient` при закрытии соединения клиентом. Читать: 4.12. Готово, когда: тест на каждый сценарий через `fetch` зелёный, включая `closedByClient: true` после `AbortController.abort()`.
 
 **Адаптер `packages/adapter-litellm`**
@@ -725,9 +743,9 @@ export const LlmGatewayConfig = z.object({
 
 - [ ] **T-13.** Фабрика и порты по 4.4: интерфейсы `LlmUpstream`, `EventPublisher`, `Clock`, `Ids`, `TraceContext`, `Logger`, `LlmGatewayDeps`, `CompleteResult`, класс `UpstreamStreamError`. Методы `info`, `listModels`, `checkUpstream`; `complete` пока бросает `not implemented`. В `test/` ядра — фейковые порты в памяти (upstream со сценариями, публикатор, часы, логгер), их используют T-14…T-18. Читать: 4.4. Закрывает: REQ-002-2 (ядро), AC-002-6 и AC-002-18 на уровне ядра (`checkUpstream` → `missing: ['chat-large']`). Готово, когда: тесты `listModels`, `checkUpstream` (все есть, не хватает, ошибка апстрима) зелёные.
 - [ ] **T-14.** `complete`, проверки 2–4 из 4.2: `LlmCaller` → `invalid_caller`, проверка тела из T-6 → `invalid_request`, модель в каталоге → `model_not_found` (имя обрезается до 100 символов). При отказе upstream не вызывается, событие не публикуется. Успешный путь пока не делается. Читать: 4.2, 4.4, 4.6. Закрывает: REQ-002-4, REQ-002-18, AC-002-3, -4, -5, -28 на уровне ядра. Готово, когда: эти тесты зелёные.
-- [ ] **T-15.** `complete` без потока, успешный путь по шагам 2–7 из 4.4: `callId`, `latencyMs`, `parseUsage`, `costMicroUsd`, событие `llm.call` `status: 'ok'` с `traceId`, лог `llm call` по 4.10; без `usage` — `warn` `usage_missing` с `callId`; ошибка публикации — `error` `event_publish_failed`, ответ не меняется. Читать: 4.4, 4.10. Закрывает: REQ-002-1, REQ-002-7, AC-002-1, -9, -14 на уровне ядра. Готово, когда: эти тесты и тест на сбой публикации зелёные.
+- [ ] **T-15.** `complete` без потока, успешный путь по шагам 2–7 из 4.4: `callId`, `latencyMs`, `parseUsage`, `costMicroUsd`, событие `llm.call` `status: 'ok'` с `traceId`, лог `llm call` по 4.10; без `usage` — `warn` `usage_missing` с `callId`; ошибка публикации — `error` `event_publish_failed`, ответ не меняется. Читать: 4.4, 4.10. `providerCostMicroUsd` в событии и логе. Закрывает: REQ-002-1, REQ-002-7, REQ-002-19, AC-002-1, -9, -14 и AC-002-29 без потока на уровне ядра. Готово, когда: эти тесты и тест на сбой публикации зелёные.
 - [ ] **T-16.** `complete` без потока, ошибки апстрима по таблице 4.6: `http` 400/422 → `upstream_bad_request`, 429 → `rate_limited`, другой статус и `network` → `upstream_error`, `timeout` → `upstream_timeout`; событие `status: 'error'`, `usage: null`; `upstreamStatus` — только в лог. Читать: 4.4, 4.6, 4.10. Закрывает: REQ-002-9, AC-002-15 (без потока) и AC-002-16 на уровне ядра. Готово, когда: тест на каждую строку 4.6 про апстрим зелёный.
-- [ ] **T-17.** Поток, успешный путь, шаги 1–4 из 4.4: копия тела с `stream_options.include_usage = true`, обёртка-генератор отдаёт payload'ы без изменений, запоминает последнее не-null `usage`, на `[DONE]` — `done`; в `finally` — событие `status: 'ok'`, `stream: true` и лог. Неудача до первого фрагмента — как в T-16. Читать: 4.4. Закрывает: REQ-002-8, AC-002-10 на уровне ядра. Готово, когда: тесты на поток по умолчанию (порядок payload'ов, `include_usage` у upstream, событие с `costMicroUsd: 9960`) и неудачу до первого фрагмента зелёные.
+- [ ] **T-17.** Поток, успешный путь, шаги 1–4 из 4.4: копия тела с `stream_options.include_usage = true`, обёртка-генератор отдаёт payload'ы без изменений, запоминает последнее не-null `usage`, на `[DONE]` — `done`; в `finally` — событие `status: 'ok'`, `stream: true` и лог. Неудача до первого фрагмента — как в T-16. Читать: 4.4. `providerCostMicroUsd` — из фрагмента с `usage`. Закрывает: REQ-002-8, AC-002-10 и AC-002-29 потоком на уровне ядра. Готово, когда: тесты на поток по умолчанию (порядок payload'ов, `include_usage` у upstream, событие с `costMicroUsd: 9960`) и неудачу до первого фрагмента зелёные.
 - [ ] **T-18.** Поток, обрывы, шаг 5 из 4.4: `UpstreamStreamError` не `aborted` → последний payload `{"error":{...}}` и завершение без исключения, событие `status: 'aborted'` с `errorCode`; `aborted` (клиент ушёл) → событие `status: 'aborted'` без `errorCode`. Читать: 4.4, 4.6. Закрывает: AC-002-12, -13 и потоковая часть AC-002-15 на уровне ядра. Готово, когда: эти тесты зелёные.
 
 **Конфиг и оболочка `apps/llm-gateway`**
@@ -743,14 +761,14 @@ export const LlmGatewayConfig = z.object({
 **Инфраструктура**
 
 - [ ] **T-26.** Профили `infra/llm/{test,dev,prod}/` по 4.7 и ответам на Q-2 и Q-4: `litellm.yaml` и `models.json`. Модели и цены `dev` и `prod` — с каталога и страницы цен OpenRouter, с датой и ссылкой в README `apps/llm-gateway`. Репозиторный тест AC-002-19 и вторая часть AC-002-8 (каталоги `infra/llm/*/models.json` проходят). Читать: 4.7, Q-2, Q-4. Закрывает: REQ-002-12, AC-002-8, AC-002-19. Готово, когда: эти тесты зелёные.
-- [ ] **T-27.** Compose по 4.8: сервисы `litellm`, `llm-fake`, `llm-gateway`, сеть `llm`; проверка `GET /health` gateway в `infra:check` (4.9); в `scripts/repo.test.ts` — порты из раздела 7. Проверить, что LiteLLM снимает префикс `openai/` (4.12), записать версию образа LiteLLM в README `apps/llm-gateway` и журнал. Читать: 4.8, 4.9, 4.12, раздел 7. Закрывает: REQ-002-5 (compose), REQ-002-16. Готово, когда: `npm run up` на `test` поднимает всё healthy, `npm run infra:check` зелёный, вывод — в журнал.
+- [ ] **T-27.** Compose по 4.8: сервисы `litellm`, `llm-fake`, `llm-gateway`, сеть `llm`; проверка `GET /health` gateway в `infra:check` (4.9); в `scripts/repo.test.ts` — порты из раздела 7. Проверить, что LiteLLM снимает префикс `openai/` (4.12) и передаёт клиенту `usage.cost` фейка без потока и потоком; если не передаёт — строка в журнал и `D-n` в `questions.md`, `providerCostMicroUsd` остаётся `null`, это не `blocked`. Записать версию образа LiteLLM в README `apps/llm-gateway` и журнал. Читать: 4.8, 4.9, 4.12, раздел 7. Закрывает: REQ-002-5 (compose), REQ-002-16. Готово, когда: `npm run up` на `test` поднимает всё healthy, `npm run infra:check` зелёный, вывод — в журнал.
 - [ ] **T-28.** Тесты `[stack]` AC-002-20 и AC-002-21, пропуск без `LLM_GATEWAY_URL` по образцу `adapter-nats`. Закрывает: REQ-002-5. Готово, когда: оба теста зелёные против поднятого стека, прогон — в журнал.
 - [ ] **T-29.** Тест AC-002-22 в `orchestrator-core`. Готово, когда: тест зелёный.
 
 **UI, команды, сдача**
 
 - [ ] **T-30.** UI: `formatLlmCall` в `ui-core` по 4.11 с тестом AC-002-24, `case 'llm.call'` в `swarm.page.ts`. Закрывает: REQ-002-15. Готово, когда: тест зелёный, в ленте роя из AC-002-20 видны строки вызовов. Скриншот — в журнал.
-- [ ] **T-31.** `scripts/llm-ping.ts` и скрипт `llm:ping` по 4.13. Ручная проверка AC-002-25 на профиле `dev`. Закрывает: REQ-002-17, AC-002-25. Готово, когда: вывод в журнале. Если ключа dev нет — пометить AC-002-25 «ждёт ключа» в журнале и сообщить человеку, это не `blocked` для остальных задач.
+- [ ] **T-31.** `scripts/llm-ping.ts` и скрипт `llm:ping` по 4.13. Ручная проверка AC-002-25 на профиле `dev`; в журнал — также `providerCostMicroUsd` из строки `llm call` (на моделях `:free` ожидается 0). Закрывает: REQ-002-17, AC-002-25. Готово, когда: вывод в журнале. Если ключа dev нет — пометить AC-002-25 «ждёт ключа» в журнале и сообщить человеку, это не `blocked` для остальных задач.
 - [ ] **T-32.** Замер NFR-002-1: скрипт-замер по разделу 6, 200 вызовов через оболочку в процессе и 200 напрямую к фейку, разница p95. Готово, когда: результат — в журнале.
 - [ ] **T-33.** Сверить решения 001 с актуальной документацией через context7 (из N-4). Что проверить:
   - Angular: standalone, signals, `ng serve` с прокси WebSocket;
