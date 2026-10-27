@@ -25,9 +25,12 @@ const liteLlmConfig = (profile: string) => parse(liteLlmText(profile)) as LiteLl
 interface ComposeService {
   ports?: string[];
   networks?: string[];
+  env_file?: string | string[];
 }
+type ComposeServiceName =
+  'api' | 'orchestrator' | 'ui' | 'agent' | 'litellm' | 'llm-fake' | 'llm-gateway';
 interface ComposeFile {
-  services: { litellm: ComposeService; 'llm-fake': ComposeService; 'llm-gateway': ComposeService };
+  services: Record<ComposeServiceName, ComposeService>;
 }
 
 describe('политики репозитория', () => {
@@ -95,6 +98,16 @@ describe('политики репозитория', () => {
     for (const port of services['llm-gateway'].ports ?? []) {
       expect(port, 'llm-gateway').toMatch(/^127\.0\.0\.1:/);
     }
+  });
+
+  it('REQ-002-5: .env.llm с ключами провайдеров только у litellm и llm-gateway', () => {
+    const services = (parse(readFileSync(new URL('compose.yaml', root), 'utf8')) as ComposeFile)
+      .services;
+    const withKeys = Object.entries(services)
+      .filter(([, service]) => [service.env_file ?? []].flat().includes('.env.llm'))
+      .map(([name]) => name)
+      .sort();
+    expect(withKeys).toEqual(['litellm', 'llm-gateway']);
   });
 
   it('AC-002-19: database_url в litellm.yaml нет', () => {
