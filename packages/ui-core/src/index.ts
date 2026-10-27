@@ -1,4 +1,9 @@
-import { SwarmCreateRequest, type PlatformEvent, type SwarmSummary } from '@swag/contracts';
+import {
+  SwarmCreateRequest,
+  type LlmCallData,
+  type PlatformEvent,
+  type SwarmSummary,
+} from '@swag/contracts';
 import { applyEvent, type SwarmView } from '@swag/api-integration';
 
 // Спека 001, 4.8. Логика UI: валидация формы, состояние роя из событий, переподключение потока.
@@ -60,6 +65,16 @@ export interface UiCore {
 }
 
 const TRACE_ID_SLOT = '{traceId}';
+
+// Спека 002, 4.11: строка вызова модели в ленте роя. Стоимость — микродоллары / 1e6, 6 знаков.
+export function formatLlmCall(data: LlmCallData): string {
+  if (data.status === 'error') return `${data.model} · ошибка ${data.errorCode}`;
+  const aborted = data.status === 'aborted' ? ' · прерван' : '';
+  if (data.usage === null) return `${data.model} · ${aborted ? 'прерван · ' : ''}без usage`;
+  const { promptTokens, cachedPromptTokens, completionTokens } = data.usage;
+  const cost = ((data.costMicroUsd ?? 0) / 1e6).toFixed(6);
+  return `${data.model} · ${promptTokens} (кэш ${cachedPromptTokens}) → ${completionTokens} ток. · $${cost}${aborted}`;
+}
 
 export function createUiCore(deps: UiCoreDeps): UiCore {
   const reconnectMs = deps.reconnectMs ?? 1000;

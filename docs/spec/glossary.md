@@ -111,6 +111,7 @@
 | HTTP-сервер с трассировкой | `tracedHttpServer` | Фабрика `serverFactory` для Fastify из `adapter-telemetry`: каждый запрос — серверный спан, родитель — заголовок `traceparent`. |
 | Экспорт телеметрии в память | `createMemoryExporters`, `MemoryExporters` | Экспортёры спанов и логов для тестов: записи копятся в массивах и переживают `shutdown`. |
 | Ссылка на трейс | `traceUrl`, `traces.urlTemplate` | Функция `ui-core`: адрес трейса в Grafana по `traceId` из шаблона с `{traceId}`. |
+| Строка вызова модели | `formatLlmCall` | Функция `ui-core`: строка события `llm.call` в ленте роя — модель, токены с кэшем, стоимость в долларах, статус (спека 002, 4.11). |
 | Конфигурация наблюдаемости | `ObservabilityConfig` | `GRAFANA_PORT` в `@swag/config` для `infra:check`. |
 | Сборщик телеметрии | OpenTelemetry Collector | Принимает трейсы и логи по OTLP от сервисов и агентов и отправляет в Tempo и Loki. |
 | Grafana LGTM | `grafana/otel-lgtm` | Бэкенд наблюдаемости: Loki (логи), Grafana, Tempo (трейсы), позже метрики Prometheus. Локально — один контейнер. |
