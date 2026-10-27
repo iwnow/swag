@@ -77,8 +77,13 @@ async function writeStream(
   signal: AbortSignal,
 ): Promise<void> {
   reply.hijack();
-  reply.raw.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
-  reply.raw.flushHeaders();
+  try {
+    reply.raw.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+    reply.raw.flushHeaders();
+  } catch (error) {
+    // Заголовки не ушли: итерацию всё равно запускаем ниже, иначе поток ядра не дочитается и его finally не сработает (D-60).
+    request.log.error({ err: error }, 'llm stream headers failed');
+  }
   try {
     for await (const payload of chunks) {
       if (!reply.raw.destroyed) reply.raw.write(`data: ${payload}\n\n`);

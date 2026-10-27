@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
+import type { FastifyInstance } from 'fastify';
 import type { PlatformEventInput } from '@swag/contracts';
 import { createLiteLlmUpstream } from '@swag/adapter-litellm';
 import {
@@ -8,13 +10,19 @@ import {
   type Logger,
   type LlmGatewayCore,
 } from '@swag/llm-gateway-core';
+import { buildApp } from '../src/app.ts';
 import { readCatalog } from '../src/catalog.ts';
+import { startFakeProvider, type FakeProvider } from '../../../infra/llm/fake-provider/server.ts';
 
 // Значения из 4.9 спеки: мастер-ключ LiteLLM и токен шлюза — явно фейковые.
 export const MASTER_KEY = 'sk-swag-local-not-secret';
 export const GATEWAY_TOKEN = 'llm-gateway-test-token-not-secret-0123456789';
 export const gatewayOptions = { token: GATEWAY_TOKEN, bodyLimitBytes: 8_388_608 };
 export const catalogPath = fileURLToPath(new URL('./fixtures/catalog.json', import.meta.url));
+
+export const SWARM_ID = randomUUID();
+export const authorized = { authorization: `Bearer ${GATEWAY_TOKEN}` };
+export const caller = { ...authorized, 'x-swag-swarm-id': SWARM_ID, 'x-swag-agent-id': 'agent-1' };
 
 export interface LogEntry {
   level: 'debug' | 'info' | 'warn' | 'error';
@@ -71,4 +79,56 @@ export function createMemoryBus() {
       for (const handler of handlers.get(subject) ?? []) handler(value);
     },
   };
+}
+
+export interface GatewayOptions {
+  bodyLimitBytes?: number;
+  idleTimeoutMs?: number;
+  traceId?: string;
+}
+
+export interface OpenGateway {
+  app: FastifyInstance;
+  fake: FakeProvider;
+  events: PlatformEventInput[];
+  logs: LogEntry[];
+}
+
+const closers: (() => Promise<void>)[] = [];
+
+// Каждый тестовый файл вызывает closeAll в afterEach: закрывает фейки и приложения, открытые тестами.
+export async function closeAll(): Promise<void> {
+  for (const close of closers.splice(0)) await close();
+}
+
+// Шлюз над фейком. События читаются подпиской на шину в памяти, как у api (REQ-002-7). Порт не слушается — см. listenUrl.
+export async function openGateway(options: GatewayOptions = {}): Promise<OpenGateway> {
+  const fake = await startFakeProvider({ port: 0 });
+  closers.push(() => fake.close());
+  const bus = createMemoryBus();
+  const events: PlatformEventInput[] = [];
+  bus.subscribe(`swarm.${SWARM_ID}.events`, (event) => void events.push(event));
+  const { log, entries } = recordingLog();
+  const core = makeCore(
+    fake.url,
+    log,
+    { publishEvent: async (event) => bus.publish(`swarm.${event.swarmId}.events`, event) },
+    {
+      ...(options.idleTimeoutMs && { idleTimeoutMs: options.idleTimeoutMs }),
+      ...(options.traceId && { traceId: options.traceId }),
+    },
+  );
+  const app = await buildApp(core, {
+    ...gatewayOptions,
+    ...(options.bodyLimitBytes && { bodyLimitBytes: options.bodyLimitBytes }),
+  });
+  closers.push(() => app.close());
+  return { app, fake, events, logs: entries };
+}
+
+// Слушает 127.0.0.1 на свободном порту и возвращает базовый URL без пути.
+export async function listenUrl(app: FastifyInstance): Promise<string> {
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  const { port } = app.server.address() as AddressInfo;
+  return `http://127.0.0.1:${port}`;
 }
