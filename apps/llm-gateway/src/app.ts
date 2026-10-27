@@ -53,8 +53,7 @@ export async function buildApp(
       return reply.code(result.status).send(gatewayError(result.error.message, result.error.code));
     }
     if (result.kind === 'json') return reply.code(200).send(result.body);
-    // Запись kind 'stream' — T-23. До неё маршрут отвечает 501 без тела.
-    return reply.code(501).send();
+    return writeStream(request, reply, result.chunks, abort.signal);
   });
 
   // Ошибки разбора тела Fastify: 413 — лимит LLM_GATEWAY_BODY_LIMIT_BYTES, 400 — не JSON.
@@ -66,6 +65,29 @@ export async function buildApp(
   });
 
   return app;
+}
+
+// Спека 002, 4.2: поток SSE. Ответ берётся на себя (hijack), каждый фрагмент уходит клиенту сразу после получения.
+// Итерация начинается сразу и идёт до конца или до ошибки: событие и лог пишет finally генератора ядра (D-60).
+// Уход клиента: signal отменяет апстрим, ядро бросает UpstreamStreamError (D-62) — тогда писать некуда, ошибку не логируем.
+async function writeStream(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  chunks: AsyncIterable<string>,
+  signal: AbortSignal,
+): Promise<void> {
+  reply.hijack();
+  reply.raw.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+  reply.raw.flushHeaders();
+  try {
+    for await (const payload of chunks) {
+      if (!reply.raw.destroyed) reply.raw.write(`data: ${payload}\n\n`);
+    }
+  } catch (error) {
+    if (!signal.aborted) request.log.error({ err: error }, 'llm stream failed');
+  } finally {
+    reply.raw.end();
+  }
 }
 
 // Спека 002, 4.2: сравнение через timingSafeEqual; разная длина — отказ сразу, без сравнения.
