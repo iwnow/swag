@@ -5,7 +5,7 @@
 ## Задачи
 
 - Создать рой: проверить запрос (`SwarmCreateRequest`), лимит активных роёв, записать `swarm.created`, вызвать оркестратор; при отказе оркестратора — `swarm.failed` (`orchestrator_unavailable`).
-- Принять события роя (`swarm.*.events`) и сообщения агентов (`swarm.*.agent.*.inbox`): валидировать, назначить сквозной `seq`, превратить сообщение в `bus.message`.
+- Принять события роя (`swarm.*.events`) и сообщения агентов (`swarm.*.agent.*.inbox`): валидировать, назначить сквозной `seq`, превратить сообщение в `bus.message`. Событие `llm.call` от `llm-gateway` (спека 002) принимается и хранится так же, как остальные события из шины.
 - Отдать события с `seq > after` и подписать на новые (поток WebSocket).
 - Остановить рой; рой в финальном статусе — `swarm_finished`.
 
@@ -16,7 +16,7 @@
 - `createApiCore(deps)` с портами `SwarmStore`, `OrchestratorClient`, `Clock`, `IdGenerator`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`.
 - Операции: `createSwarm`, `listSwarms`, `getSwarm`, `getEvents`, `stopSwarm`, `ingestEvent`, `ingestMessage`, `subscribe`, `info`.
 - Логи по таблице 4.8 спеки 016: `info swarm created`, `error orchestrator unavailable`, `warn event dropped` / `message dropped` с `reason` (`invalid_schema`, `created_from_bus`, `unknown_swarm`, `not_applicable`).
-- Тесты: `test/api-core.test.ts` — AC-001-3…8, AC-001-10, AC-016-4, AC-016-7.
+- Тесты: `test/api-core.test.ts` — AC-001-3…8, AC-001-10, AC-002-26, AC-016-4, AC-016-7.
 
 ## Ограничения
 

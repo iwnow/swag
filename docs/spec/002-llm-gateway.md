@@ -720,7 +720,7 @@ export const LlmGatewayConfig = z.object({
 **Контракты**
 
 - [x] **T-3.** `packages/contracts/src/llm.ts` по 4.1: `ModelId`, `PricePerMTok`, `ModelPrices`, `CatalogModel`, `ModelCatalog`, `LlmUsage`, `GatewayErrorCode`, `LlmCallStatus`, `LlmCallData`, `LlmCaller`, `SWARM_ID_HEADER`, `AGENT_ID_HEADER`; экспорт из индекса пакета. Событие `llm.call` здесь ещё не добавляется. Читать: 4.1. Закрывает: AC-002-8 (часть схемы: пять неверных каталогов). Готово, когда: тест AC-002-8 в `contracts` зелёный, `npm run typecheck` зелёный.
-- [ ] **T-4.** Событие `llm.call` по 4.1: вариант в `PlatformEventInput`, `'llm-gateway'` в `source`, `ServiceName`, `ServiceInfo`. Если UI или ядра перестали компилироваться из-за нового варианта — минимальная правка: в `detail` — `default`. Тест в `api-core`: событие `llm.call` известного роя сохраняется с очередным `seq`, неизвестного — отбрасывается с `unknown_swarm`. Читать: 4.1. Закрывает: REQ-002-15 (часть `api`), AC-002-26. Готово, когда: `npm run typecheck`, тесты `contracts` и `api-core` зелёные.
+- [x] **T-4.** Событие `llm.call` по 4.1: вариант в `PlatformEventInput`, `'llm-gateway'` в `source`, `ServiceName`, `ServiceInfo`. Если UI или ядра перестали компилироваться из-за нового варианта — минимальная правка: в `detail` — `default`. Тест в `api-core`: событие `llm.call` известного роя сохраняется с очередным `seq`, неизвестного — отбрасывается с `unknown_swarm`. Читать: 4.1. Закрывает: REQ-002-15 (часть `api`), AC-002-26. Готово, когда: `npm run typecheck`, тесты `contracts` и `api-core` зелёные.
 
 **Ядро `packages/llm-gateway-core`: функции**
 

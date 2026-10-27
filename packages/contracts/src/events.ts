@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AgentId, AgentSpec, SwarmId } from './swarm.ts';
+import { LlmCallData } from './llm.ts';
 
 // Спека 016, 4.1. W3C trace-id: 32 hex в нижнем регистре, не нули.
 export const TraceId = z
@@ -13,7 +14,7 @@ const Envelope = {
   id: z.uuid(), // назначает публикующий
   swarmId: SwarmId,
   ts: z.iso.datetime(), // время публикующего
-  source: z.enum(['api', 'orchestrator', 'agent']),
+  source: z.enum(['api', 'orchestrator', 'agent', 'llm-gateway']),
   agentId: AgentId.nullable(), // null — событие роя
   traceId: TraceId.nullable(), // спека 016: null — событие построено вне трейса
 };
@@ -80,6 +81,8 @@ export const PlatformEventInput = z.discriminatedUnion('type', [
       text: z.string(),
     }),
   }),
+  // Спека 002, 4.1: вызов модели через llm-gateway.
+  z.strictObject({ ...Envelope, type: z.literal('llm.call'), data: LlmCallData }),
 ]);
 export type PlatformEventInput = z.infer<typeof PlatformEventInput>;
 
