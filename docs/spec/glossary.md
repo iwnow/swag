@@ -34,12 +34,12 @@
 | Профиль моделей | `LLM_PROFILE` | `test`, `dev`, `prod`: каталог `infra/llm/<профиль>/` с конфигом LiteLLM и ценами. |
 | Модель платформы | `ModelId` | Имя модели в плане и запросе (`chat-small`, `chat-large`), одинаковое во всех профилях; провайдерскую модель за ним выбирает профиль. |
 | Каталог моделей | `ModelCatalog`, `CatalogModel` | Модели профиля с ценами платформы, `models.json`. |
-| Цены модели | `ModelPrices` | USD за 1 млн токенов: вход, вход из кэша, выход — десятичные строки. |
+| Цены модели | `ModelPrices`, `PricePerMTok` | USD за 1 млн токенов: вход, вход из кэша, выход — десятичные строки. |
 | Использование токенов | `LlmUsage` | `promptTokens`, `cachedPromptTokens`, `completionTokens` из `usage` ответа. |
-| Вызов модели | `llm.call`, `LlmCallData`, `callId` | Событие на каждый запрос, ушедший к LiteLLM: модель, `usage`, `costMicroUsd`, `providerCostMicroUsd`, задержка, статус `ok` / `error` / `aborted`. |
+| Вызов модели | `llm.call`, `LlmCallData`, `LlmCallStatus`, `callId` | Событие на каждый запрос, ушедший к LiteLLM: модель, `usage`, `costMicroUsd`, `providerCostMicroUsd`, задержка, статус `ok` / `error` / `aborted`. |
 | Фактическая стоимость провайдера | `providerCostMicroUsd`, `parseProviderCost` | Сколько вызов стоил платформе у провайдера по её ключу, из `usage.cost` ответа (OpenRouter), в micro-USD. Только для счёта платформы (D-38); списание с организации — `costMicroUsd` по тарифу. |
 | Код ошибки gateway | `GatewayErrorCode` | `unauthorized`, `invalid_caller`, `invalid_request`, `model_not_found`, `upstream_bad_request`, `rate_limited`, `upstream_error`, `upstream_timeout`. |
-| Вызывающий gateway | `LlmCaller` | `swarmId` и `agentId` из заголовков `x-swag-swarm-id`, `x-swag-agent-id`; до спеки 004 (Q-3 спеки 002). |
+| Вызывающий gateway | `LlmCaller`, `SWARM_ID_HEADER`, `AGENT_ID_HEADER` | `swarmId` и `agentId` из заголовков `x-swag-swarm-id`, `x-swag-agent-id` (имена заголовков — константы); до спеки 004 (Q-3 спеки 002). |
 | Фейковый провайдер | `llm-fake`, `startFakeProvider` | OpenAI-совместимый сервер для тестов и профиля `test`, `infra/llm/fake-provider`. |
 | Ledger | `Ledger`, `LedgerEntry` | Журнал денежных операций пользователя: пополнения и траты (LLM, compute), деньги — целые микро-единицы USD (`amountMicroUsd`). |
 | Пользователь | `User`, `userId` | Тот, кто работает с платформой через личный кабинет: свой баланс, свои рои. |
