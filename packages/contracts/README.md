@@ -1,11 +1,12 @@
 # @swag/contracts
 
-Общие схемы Zod и типы, которыми обмениваются сервисы и ядра: запрос на рой, рой, агент, запуск роя, сообщение шины, события платформы, subjects NATS, `ServiceInfo`, `traceId` и схема структурного лога.
+Общие схемы Zod и типы, которыми обмениваются сервисы и ядра: запрос на рой, рой, агент, запуск роя, сообщение шины, события платформы, subjects NATS, `ServiceInfo`, `traceId`, схема структурного лога и контракты LLM Gateway (каталог моделей, использование токенов, ошибки, вызывающий).
 
 ## Задачи
 
 - Единые контракты из [спеки 001, раздел 4](../../docs/spec/001-walking-skeleton.md#4-контракты): `swarm.ts` (4.1), `bus.ts` (4.2), `events.ts` (4.3).
 - Контракты наблюдаемости из [спеки 016](../../docs/spec/016-observability.md#4-контракты): `traceId` в конверте события (4.1), `LogRecord` (4.2).
+- Контракты LLM Gateway из [спеки 002, раздел 4.1](../../docs/spec/002-llm-gateway.md#41-packagescontractssrcllmts-и-изменения-существующих-схем): `llm.ts`. Событие `llm.call` в `events.ts` — в T-4.
 - Типы выводятся из схем (`z.infer`), отдельно их не пишут.
 
 ## Что внутри сейчас
@@ -15,6 +16,7 @@
 - `events.ts` — `TraceId`, `PlatformEventInput` (дискриминированное объединение по `type`, в конверте `traceId: TraceId | null`), `PlatformEvent` (с `seq`).
 - `log.ts` — `LogLevel`, `ServiceName`, `LogError`, `LogRecord`.
 - `service-info.ts` — `ServiceInfo`.
+- `llm.ts` — `ModelId`, `PricePerMTok`, `ModelPrices`, `CatalogModel`, `ModelCatalog` (`models.json`), `LlmUsage`, `GatewayErrorCode`, `LlmCallStatus`, `LlmCallData`, заголовки `SWARM_ID_HEADER`, `AGENT_ID_HEADER`, `LlmCaller`.
 
 ## Ограничения
 
@@ -38,4 +40,5 @@
 
 - 000 — `ServiceInfo`.
 - 001 — разделы 4.1–4.3.
+- 002 — раздел 4.1 (`llm.ts`).
 - 016 — разделы 4.1, 4.2.
