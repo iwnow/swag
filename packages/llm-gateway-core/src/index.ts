@@ -1,4 +1,49 @@
+import { z } from 'zod';
 import type { LlmUsage, ModelPrices } from '@swag/contracts';
+
+// Спека 002, 4.2. Поля сверх перечисленных пропускаются как есть.
+export const ChatRequest = z.looseObject({
+  model: z.string(), // проверка по каталогу отдельно → model_not_found
+  messages: z.array(z.looseObject({ role: z.string() })).min(1),
+  stream: z.boolean().optional(),
+  stream_options: z.looseObject({}).optional(),
+});
+export type ChatRequest = z.infer<typeof ChatRequest>;
+
+// REQ-002-18. Ключ и адрес провайдера задаёт только платформа; ключ организации (D-35) подставит сам gateway.
+export const CLIENT_CREDENTIAL_FIELDS = [
+  'api_key',
+  'api_base',
+  'base_url',
+  'api_version',
+  'organization',
+  'extra_headers',
+  'user_config',
+] as const;
+
+export type ChatRequestParse = { ok: true; value: ChatRequest } | { ok: false; message: string };
+
+// Спека 002, 4.2 и 4.6. Сначала поля провайдера, потом схема; message — текст invalid_request.
+export function parseChatRequest(raw: unknown): ChatRequestParse {
+  const credentialField = isRecord(raw)
+    ? CLIENT_CREDENTIAL_FIELDS.find((field) => Object.hasOwn(raw, field))
+    : undefined;
+  if (credentialField) {
+    return {
+      ok: false,
+      message: `Client-side provider credentials are not allowed: ${credentialField}`,
+    };
+  }
+  const parsed = ChatRequest.safeParse(raw);
+  if (parsed.success) return { ok: true, value: parsed.data };
+  const message = parsed.error.issues
+    .slice(0, 3)
+    .map((issue) =>
+      issue.path.length > 0 ? `${issue.path.join('.')}: ${issue.message}` : issue.message,
+    )
+    .join('; ');
+  return { ok: false, message };
+}
 
 // Спека 002, 4.3. Цены — целые × 10⁴: "3.00" → 30000, "0.0001" → 1.
 const PRICE_SCALE = 10_000n;
