@@ -42,7 +42,7 @@ npm run infra:check
 | `FAKE_PROVIDER_API_KEY` | `litellm` (вызов провайдера), `llm-gateway` (только для redact ошибок апстрима) | ключ фейкового провайдера, для `test`             |
 | `OPENROUTER_API_KEY`    | `litellm` (вызов провайдера), `llm-gateway` (только для redact ошибок апстрима) | ключ OpenRouter для профилей `dev` и `prod` (Q-2) |
 
-Только контейнеры `litellm` и `llm-gateway` получают `.env.llm`. `api`, `orchestrator`, `ui` и песочницы агентов его не получают и ключей не видят (AC-002-21, AC-002-22). В `.env.llm.example` значения фейковые; `OPENROUTER_API_KEY` пуст.
+Только контейнеры `litellm` и `llm-gateway` получают `.env.llm`. `api`, `orchestrator`, `ui` и песочницы агентов его не получают и ключей не видят (AC-002-21, AC-002-22). `api` и `orchestrator` получают из `.env` только переменные, которые читает их конфиг: в `compose.yaml` — явный `environment` вместо `env_file: .env` (D-73), поэтому чужие ключи, например `CONTEXT7_API_KEY`, в них не попадают. В `.env.llm.example` значения фейковые; `OPENROUTER_API_KEY` пуст.
 
 **Профили `LLM_PROFILE`** (в `.env`, по умолчанию `test`) выбирают каталог `infra/llm/<профиль>/`: `litellm.yaml` (маршруты моделей и ключи только через `os.environ/…`) и `models.json` (каталог и цены). Имена моделей платформы одни и те же во всех профилях — `chat-small` и `chat-large` (Q-4), поэтому код при смене профиля не меняется.
 

@@ -39,7 +39,17 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    env_file: .env
+    # Спека 001, 4.9 и 016, 4.11: только переменные, которые читает конфиг api (`ApiConfig`, `BaseConfig`).
+    # Весь .env не передаётся: в нём лежат ключи dev-инструментов (D-73). Значения — из .env через интерполяцию.
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      NATS_URL: ${NATS_URL}
+      API_PORT: ${API_PORT}
+      ORCHESTRATOR_URL: ${ORCHESTRATOR_URL}
+      MAX_ACTIVE_SWARMS: ${MAX_ACTIVE_SWARMS}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TELEMETRY_FLUSH_TIMEOUT_MS: ${TELEMETRY_FLUSH_TIMEOUT_MS:-2000}
     ports:
       - 127.0.0.1:${API_PORT}:${API_PORT}
     depends_on:
@@ -62,7 +72,21 @@ services:
     build:
       context: .
       dockerfile: apps/orchestrator/Dockerfile
-    env_file: .env
+    # Спека 001, 4.9 и 016, 4.11: только переменные, которые читает конфиг оркестратора (`OrchestratorConfig`, `BaseConfig`).
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      NATS_URL: ${NATS_URL}
+      ORCHESTRATOR_PORT: ${ORCHESTRATOR_PORT}
+      AGENT_TEMPLATE: ${AGENT_TEMPLATE}
+      DOCKER_AGENT_NETWORK: ${DOCKER_AGENT_NETWORK}
+      DOCKER_AGENT_NATS_URL: ${DOCKER_AGENT_NATS_URL}
+      DOCKER_AGENT_OTLP_ENDPOINT: ${DOCKER_AGENT_OTLP_ENDPOINT:-}
+      AGENT_STEP_DELAY_MS: ${AGENT_STEP_DELAY_MS}
+      AGENT_START_TIMEOUT_MS: ${AGENT_START_TIMEOUT_MS}
+      SWARM_TIMEOUT_MS: ${SWARM_TIMEOUT_MS}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TELEMETRY_FLUSH_TIMEOUT_MS: ${TELEMETRY_FLUSH_TIMEOUT_MS:-2000}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     # Сокет на хосте принадлежит группе docker/root; пользователь node без этой группы получает EACCES.

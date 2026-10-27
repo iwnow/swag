@@ -91,7 +91,7 @@ npm run down
 ```
 
 - `LLM_GATEWAY_TOKEN` — из `.env`; адрес `api` — `STACK_API_URL` (по умолчанию `http://127.0.0.1:3000`), для него тест создаёт рой через `POST /swarms`.
-- AC-002-21: в env `api`, `orchestrator`, `ui` не должно быть `LITELLM_MASTER_KEY` и `*_API_KEY` из `.env.llm`, кроме allowlist `CONTEXT7_API_KEY` (ключ dev-инструмента, D-73); значения секретов из `.env.llm` тоже не должны встречаться. Нужен `.env.llm` — его читает compose.
+- AC-002-21: в env `api`, `orchestrator`, `ui` не должно быть `LITELLM_MASTER_KEY` и `*_API_KEY` из `.env.llm`, без исключений (D-73: `api` и `orchestrator` получают явный `environment`, не весь `.env`); значения секретов из `.env.llm` тоже не должны встречаться. Нужен `.env.llm` — его читает compose.
 - Пример вызова, который проверяет тест (ответ `fake reply`, usage 1000/200/500):
 
   ```bash
