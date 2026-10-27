@@ -24,6 +24,41 @@ npm run infra:check
 
 `npm run up` собирает образы и ждёт, пока все контейнеры станут healthy. `.env` и `.env.llm` не коммитятся: учётные данные в `.env.example` и `.env.llm.example` только для локальной разработки. Ключи провайдеров моделей лежат только в `.env.llm`, его читают `litellm` и `llm-gateway` (спека 002). Порты сервисов публикуются только на `127.0.0.1`.
 
+## LLM Gateway (спека 002)
+
+Все вызовы моделей идут через `llm-gateway`: OpenAI-совместимый API на `127.0.0.1:${LLM_GATEWAY_PORT}` (по умолчанию 3002), за ним LiteLLM. Сервисы compose:
+
+- `llm-gateway` — оболочка `apps/llm-gateway` и ядро `packages/llm-gateway-core`; в сетях `default` и `llm`; наружу — только `127.0.0.1`.
+- `litellm` — только в сети `llm`, порт не публикуется. Переводит форматы провайдеров, виртуальные ключи и БД не используются (D-21).
+- `llm-fake` — фейковый провайдер `infra/llm/fake-provider/server.ts`, в той же сети `llm`, порт не публикуется. Compose поднимает его при любом профиле (`litellm` ждёт его в `depends_on`), но модели ходят в него только в профиле `test`.
+
+Сеть `llm` не `internal`: LiteLLM нужен выход к провайдерам. Из сети `default` (роя, `api`, `orchestrator`, песочниц) до `litellm` не дойти.
+
+**`.env.llm`** — ключи провайдеров и мастер-ключ LiteLLM. Файл в `.gitignore` (`.env.*`), в git не попадает; шаблон — `.env.llm.example`.
+
+| Переменная              | Кто читает                                                                      | Что это                                           |
+| ----------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `LITELLM_MASTER_KEY`    | `litellm`, `llm-gateway`                                                        | мастер-ключ LiteLLM (`sk-…`)                      |
+| `FAKE_PROVIDER_API_KEY` | `litellm` (вызов провайдера), `llm-gateway` (только для redact ошибок апстрима) | ключ фейкового провайдера, для `test`             |
+| `OPENROUTER_API_KEY`    | `litellm` (вызов провайдера), `llm-gateway` (только для redact ошибок апстрима) | ключ OpenRouter для профилей `dev` и `prod` (Q-2) |
+
+Только контейнеры `litellm` и `llm-gateway` получают `.env.llm`. `api`, `orchestrator`, `ui` и песочницы агентов его не получают и ключей не видят (AC-002-21, AC-002-22). В `.env.llm.example` значения фейковые; `OPENROUTER_API_KEY` пуст.
+
+**Профили `LLM_PROFILE`** (в `.env`, по умолчанию `test`) выбирают каталог `infra/llm/<профиль>/`: `litellm.yaml` (маршруты моделей и ключи только через `os.environ/…`) и `models.json` (каталог и цены). Имена моделей платформы одни и те же во всех профилях — `chat-small` и `chat-large` (Q-4), поэтому код при смене профиля не меняется.
+
+- `test` — фейк из compose; цены условные (`chat-small` 3.00 / 0.30 / 15.00 USD за 1 млн токенов, нужны для проверки формулы). `npm run check` и CI работают на `test` без ключей.
+- `dev` — бесплатные модели OpenRouter с суффиксом `:free`, цены `0`. Суточные лимиты бесплатных моделей допустимы для разработки.
+- `prod` — платные модели OpenRouter, цены из `models.json`. Модели, даты и источники цен — в [README `apps/llm-gateway`](apps/llm-gateway/README.md).
+
+Профиль `dev` или `prod` требует `OPENROUTER_API_KEY` в `.env.llm`. Ключ должен быть обычным API-ключом: management-ключ OpenRouter модели не вызывает (журнал спеки 002, T-31).
+
+**Проверка.**
+
+- `npm run llm:ping [model] [-- --stream]` — один вызов через gateway с хоста: печатает ответ, `usage` и задержку.
+- `npm run infra:check` — проверяет `/health` у `llm-gateway` (`service: llm-gateway`).
+- Замер задержки NFR-002-1 (p95 поверх апстрима, порог 20 мс в спеке, в CI не проверяется): `LLM_GATEWAY_BENCH=1 npx vitest run apps/llm-gateway/test/nfr-latency.test.ts`. Без переменной тест пропускается.
+- Стек-тесты `apps/llm-gateway/test/stack.test.ts` идут против поднятого стека при `LLM_GATEWAY_URL=http://127.0.0.1:3002`; без неё пропускаются.
+
 ## Команды
 
 | Команда               | Что делает                                                                                                                                                                                                                                                     |
@@ -71,7 +106,7 @@ apps/        оболочки: api, orchestrator (Fastify), agent (процес�
 apps/ui/     фронтенды (npm workspaces apps/ui/*): cabinet — личный кабинет на Angular
 packages/    ядра *-core (api, orchestrator, agent, ui, llm-gateway); contracts и api-integration (общие схемы и проекция роя);
              adapter-* (Docker, NATS, память, HTTP-оркестратор); config (env, только для оболочек)
-scripts/     arch-check, spec-check, infra-check
+scripts/     arch-check, spec-check, infra-check, llm-ping
 ```
 
 ## Лицензия

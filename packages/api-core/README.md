@@ -16,13 +16,13 @@
 - `createApiCore(deps)` с портами `SwarmStore`, `OrchestratorClient`, `Clock`, `IdGenerator`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`.
 - Операции: `createSwarm`, `listSwarms`, `getSwarm`, `getEvents`, `stopSwarm`, `ingestEvent`, `ingestMessage`, `subscribe`, `info`.
 - Логи по таблице 4.8 спеки 016: `info swarm created`, `error orchestrator unavailable`, `warn event dropped` / `message dropped` с `reason` (`invalid_schema`, `created_from_bus`, `unknown_swarm`, `not_applicable`).
-- Тесты: `test/api-core.test.ts` — AC-001-3…8, AC-001-10, AC-002-26, AC-016-4, AC-016-7.
+- Тесты: `test/api-core.test.ts` — AC-000-16, AC-001-3…8, AC-001-10, AC-002-26, AC-016-4, AC-016-7.
 
 ## Ограничения
 
 Правила ядра ([архитектура](../../docs/architecture.md), [спека 000, 4.2](../../docs/spec/000-foundation.md#42-правила-ядра-и-оболочки)):
 
-- Зависимости — `zod`, `@swag/contracts`, `@swag/api-integration`.
+- Зависимости — `@swag/contracts`, `@swag/api-integration`.
 - Нет Node API, `process`, env, файлов, сети: `tsconfig` без `@types/node` и DOM.
 - Всё внешнее — через порты; реализации передаёт оболочка.
 
@@ -48,5 +48,6 @@
 
 - 000 — заглушка.
 - 001 — 4.5 ([REST и WebSocket](../../docs/spec/001-walking-skeleton.md#45-api)).
+- 002 — `llm.call` от `llm-gateway`: приём, `seq`, `unknown_swarm` (REQ-002-15, AC-002-26).
 - 016 — порты `Logger` и `TraceContext`, логи 4.8.
 - 003 — хранение в Postgres; 004 — расходы; 012–013 — пользователи и баланс.

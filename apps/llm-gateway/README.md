@@ -4,7 +4,7 @@
 
 ## Задачи
 
-- Старт: конфигурация `LlmGatewayConfig` (env, `@swag/config`), каталог моделей из `LLM_CATALOG_PATH` (`readCatalog`, схема `ModelCatalog`), секреты адаптера (`upstreamSecrets`), адаптер LiteLLM (`createLiteLlmUpstream`), шина NATS для события `llm.call` в `swarm.<swarmId>.events`.
+- Старт: конфигурация `LlmGatewayConfig` (env, `@swag/config`; по умолчанию `LLM_GATEWAY_UPSTREAM_TIMEOUT_MS` 120000, `LLM_GATEWAY_STARTUP_TIMEOUT_MS` 60000, `LLM_GATEWAY_BODY_LIMIT_BYTES` 8388608), каталог моделей из `LLM_CATALOG_PATH` (`readCatalog`, схема `ModelCatalog`), секреты адаптера (`upstreamSecrets`), адаптер LiteLLM (`createLiteLlmUpstream`), шина NATS для события `llm.call` в `swarm.<swarmId>.events`.
 - Сверка при старте (REQ-002-13): `checkUpstream` повторяется раз в 1 с до `LLM_GATEWAY_STARTUP_TIMEOUT_MS`. Пока сверка не прошла, порт не слушается.
   - Модели каталога не хватает → `error` `upstream_models_mismatch` с `missing`, выход с кодом 1.
   - Апстрим не ответил → `error` `upstream_unavailable` с `reason`, выход с кодом 1 (D-64).
@@ -22,7 +22,7 @@
 
 ## Что внутри сейчас
 
-- `Dockerfile` — образ как у `apps/api`: `node:24.22.1-alpine3.23`, `npm ci --omit=dev`, запуск `src/main.ts` из исходников. Каталог моделей в образ не входит, его монтируют (`LLM_CATALOG_PATH`).
+- `Dockerfile` — образ как у `apps/api`: `node:24.22.1-alpine3.23`, `npm ci --omit=dev --ignore-scripts`, запуск `src/main.ts` из исходников. Каталог моделей в образ не входит, его монтируют (`LLM_CATALOG_PATH`).
 - `src/main.ts` — телеметрия (`startTelemetry`, сервис `llm-gateway`), конфигурация, каталог, NATS, адаптер, ядро (`trace: telemetry.trace`), приложение с опциями `telemetryAppOptions(telemetry)`, запуск, остановка по `SIGINT`/`SIGTERM` со сбросом телеметрии. Слушает `0.0.0.0` внутри контейнера.
 - `src/start.ts` — `startGateway` (сверка, затем `listen`, либо выход 1), `waitForUpstream` (повтор раз в 1 с до таймаута), `upstreamSecrets`.
 - `src/catalog.ts` — `readCatalog`: читает файл и проверяет его схемой `ModelCatalog`.
