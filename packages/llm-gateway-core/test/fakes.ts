@@ -81,11 +81,13 @@ export interface FakeEvents extends EventPublisher {
   readonly published: PlatformEventInput[];
 }
 
-export function fakeEvents(): FakeEvents {
+// fail: publishEvent отклоняет промис, событие не запоминается (сбой шины).
+export function fakeEvents(options: { fail?: boolean } = {}): FakeEvents {
   const published: PlatformEventInput[] = [];
   return {
     published,
     async publishEvent(event: PlatformEventInput) {
+      if (options.fail) throw new Error('bus unavailable');
       published.push(event);
     },
   };
@@ -141,7 +143,9 @@ export function fakeLog(): FakeLog {
   };
 }
 
-export function fakeDeps(options: { upstream?: UpstreamScript; traceId?: string | null } = {}): {
+export function fakeDeps(
+  options: { upstream?: UpstreamScript; traceId?: string | null; publishFails?: boolean } = {},
+): {
   deps: LlmGatewayDeps;
   upstream: FakeUpstream;
   events: FakeEvents;
@@ -149,7 +153,7 @@ export function fakeDeps(options: { upstream?: UpstreamScript; traceId?: string 
   log: FakeLog;
 } {
   const upstream = fakeUpstream(options.upstream);
-  const events = fakeEvents();
+  const events = fakeEvents({ fail: options.publishFails ?? false });
   const clock = fakeClock();
   const log = fakeLog();
   const deps: LlmGatewayDeps = {
