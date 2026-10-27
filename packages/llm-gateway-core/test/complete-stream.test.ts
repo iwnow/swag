@@ -86,40 +86,66 @@ describe('complete с потоком: успешный путь', () => {
 
   it('AC-002-10: апстрим получает stream_options.include_usage = true, тело клиента не меняется', async () => {
     const { core, upstream } = setup();
-    const clientBody = { ...body };
+    const clientBody = structuredClone(body);
+    const expected = structuredClone(body);
     const result = await core.complete(caller, clientBody, signal);
     if (result.kind === 'stream') await collect(result.chunks);
     expect(upstream.calls).toEqual([
-      { op: 'stream', body: { ...body, stream_options: { include_usage: true } } },
+      { op: 'stream', body: { ...expected, stream_options: { include_usage: true } } },
     ]);
-    expect(clientBody).toStrictEqual(body);
+    expect(clientBody).toStrictEqual(expected);
     expect(clientBody).not.toHaveProperty('stream_options');
   });
 
-  it('AC-002-10: stream_options клиента сохраняются, include_usage выставляется в true', async () => {
+  it('AC-002-10: stream_options клиента сохраняются, include_usage выставляется в true, исходный объект не меняется', async () => {
     const { core, upstream } = setup();
-    const result = await core.complete(
-      caller,
-      { ...body, stream_options: { include_usage: false, other: 1 } },
-      signal,
-    );
+    const streamOptions = { include_usage: false, other: 1 };
+    const result = await core.complete(caller, { ...body, stream_options: streamOptions }, signal);
     if (result.kind === 'stream') await collect(result.chunks);
     expect(upstream.calls[0]?.body?.stream_options).toStrictEqual({
       include_usage: true,
       other: 1,
     });
+    expect(streamOptions).toStrictEqual({ include_usage: false, other: 1 });
   });
 
-  it('AC-002-10: usage берётся из последнего фрагмента, где оно есть', async () => {
+  it('AC-002-10: usage берётся из последнего фрагмента, где оно есть; фрагмент не по JSON отдаётся без изменений', async () => {
     const earlier = JSON.stringify({
       choices: [],
       usage: { prompt_tokens: 10, completion_tokens: 5 },
     });
-    const { core, events } = setup([chunk({ content: 'x' }), earlier, USAGE_CHUNK, '[DONE]']);
+    const payloads = [chunk({ content: 'x' }), earlier, USAGE_CHUNK, 'not json', '[DONE]'];
+    const { core, events } = setup(payloads);
+    const result = await core.complete(caller, body, signal);
+    if (result.kind !== 'stream') throw new Error('ожидался поток');
+    expect(await collect(result.chunks)).toEqual(payloads);
+    expect(events.published[0]).toMatchObject({
+      data: { usage: { promptTokens: 1000, cachedPromptTokens: 200, completionTokens: 500 } },
+    });
+  });
+
+  it('AC-002-10: поток без usage — usage и costMicroUsd null, лог usage_missing не пишется (D-61, вариант А)', async () => {
+    const { core, events, log } = setup([chunk({ content: 'fake' }), '[DONE]']);
     const result = await core.complete(caller, body, signal);
     if (result.kind === 'stream') await collect(result.chunks);
     expect(events.published[0]).toMatchObject({
-      data: { usage: { promptTokens: 1000, cachedPromptTokens: 200, completionTokens: 500 } },
+      data: { status: 'ok', usage: null, costMicroUsd: null, providerCostMicroUsd: null },
+    });
+    expect(log.entries.map((entry) => entry.msg)).not.toContain('usage_missing');
+  });
+
+  it('AC-002-10: return() после первого next() — одно событие aborted без usage, итератор апстрима закрыт', async () => {
+    const chunks = chunksThen(PAYLOADS);
+    const { deps, events } = fakeDeps({ upstream: { stream: { ok: true, chunks } } });
+    const result = await createLlmGatewayCore(deps).complete(caller, body, signal);
+    if (result.kind !== 'stream') throw new Error('ожидался поток');
+    const iterator = result.chunks[Symbol.asyncIterator]();
+    expect(await iterator.next()).toEqual({ done: false, value: PAYLOADS[0] });
+    await iterator.return?.();
+    expect(chunks.closed).toBe(true);
+    expect(events.published).toHaveLength(1);
+    expect(events.published[0]).toMatchObject({
+      data: { status: 'aborted', usage: null, costMicroUsd: null, providerCostMicroUsd: null },
     });
   });
 
