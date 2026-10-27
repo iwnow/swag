@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import type { PlatformEventInput } from '@swag/contracts';
 import { createLiteLlmUpstream } from '@swag/adapter-litellm';
 import {
   createLlmGatewayCore,
@@ -35,24 +36,39 @@ export function recordingLog(): { log: Logger; entries: LogEntry[] } {
 
 // Ядро шлюза над настоящим адаптером LiteLLM, направленным на фейк, и каталогом из фикстуры.
 // events по умолчанию не пишет; тест передаёт свой, чтобы проверить отсутствие или наличие событий.
+// traceId — трейс, который ядро берёт для события (в оболочке его задаёт T-24); idleTimeoutMs — 5 с по умолчанию.
 export function makeCore(
   upstreamUrl: string,
   log: Logger,
   events: EventPublisher = { publishEvent: async () => undefined },
+  options: { idleTimeoutMs?: number; traceId?: string } = {},
 ): LlmGatewayCore {
   return createLlmGatewayCore({
     catalog: readCatalog(catalogPath),
     upstream: createLiteLlmUpstream({
       baseUrl: upstreamUrl,
       masterKey: MASTER_KEY,
-      idleTimeoutMs: 5_000,
+      idleTimeoutMs: options.idleTimeoutMs ?? 5_000,
       secrets: [MASTER_KEY],
     }),
     events,
     clock: { now: () => new Date(), monotonicMs: () => performance.now() },
     ids: { uuid: () => randomUUID() },
-    trace: { currentTraceId: () => null },
+    trace: { currentTraceId: () => options.traceId ?? null },
     log,
     version: 'test',
   });
+}
+
+// простая шина в памяти: публикация синхронная, подписка по точному subject.
+export function createMemoryBus() {
+  const handlers = new Map<string, ((value: PlatformEventInput) => void)[]>();
+  return {
+    subscribe(subject: string, handler: (value: PlatformEventInput) => void): void {
+      handlers.set(subject, [...(handlers.get(subject) ?? []), handler]);
+    },
+    publish(subject: string, value: PlatformEventInput): void {
+      for (const handler of handlers.get(subject) ?? []) handler(value);
+    },
+  };
 }

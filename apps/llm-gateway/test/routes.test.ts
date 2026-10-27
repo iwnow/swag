@@ -1,10 +1,19 @@
 import { randomUUID } from 'node:crypto';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import type { FastifyInstance } from 'fastify';
-import type { PlatformEventInput } from '@swag/contracts';
+import { PlatformEventInput } from '@swag/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.ts';
 import { startFakeProvider, type FakeProvider } from '../../../infra/llm/fake-provider/server.ts';
-import { GATEWAY_TOKEN, gatewayOptions, makeCore, recordingLog } from './support.ts';
+import {
+  GATEWAY_TOKEN,
+  createMemoryBus,
+  gatewayOptions,
+  makeCore,
+  recordingLog,
+  type LogEntry,
+} from './support.ts';
 
 // Спека 002, 4.2 и 4.6: оболочка против фейка. Отказы до ядра и до апстрима не вызывают фейк и не публикуют событий.
 
@@ -17,6 +26,7 @@ interface Gateway {
   app: FastifyInstance;
   fake: FakeProvider;
   events: PlatformEventInput[];
+  logs: LogEntry[];
 }
 
 const closers: (() => Promise<void>)[] = [];
@@ -25,18 +35,31 @@ afterEach(async () => {
   for (const close of closers.splice(0)) await close();
 });
 
-async function openGateway(bodyLimitBytes?: number): Promise<Gateway> {
+// События уходят в шину в памяти и читаются подпиской, как у api (REQ-002-7).
+async function openGateway(
+  options: { bodyLimitBytes?: number; idleTimeoutMs?: number; traceId?: string } = {},
+): Promise<Gateway> {
   const fake = await startFakeProvider({ port: 0 });
   closers.push(() => fake.close());
+  const bus = createMemoryBus();
   const events: PlatformEventInput[] = [];
-  const { log } = recordingLog();
-  const core = makeCore(fake.url, log, { publishEvent: async (event) => void events.push(event) });
+  bus.subscribe(`swarm.${SWARM_ID}.events`, (event) => void events.push(event));
+  const { log, entries } = recordingLog();
+  const core = makeCore(
+    fake.url,
+    log,
+    { publishEvent: async (event) => bus.publish(`swarm.${event.swarmId}.events`, event) },
+    {
+      ...(options.idleTimeoutMs && { idleTimeoutMs: options.idleTimeoutMs }),
+      ...(options.traceId && { traceId: options.traceId }),
+    },
+  );
   const app = await buildApp(core, {
     ...gatewayOptions,
-    ...(bodyLimitBytes && { bodyLimitBytes }),
+    ...(options.bodyLimitBytes && { bodyLimitBytes: options.bodyLimitBytes }),
   });
   closers.push(() => app.close());
-  return { app, fake, events };
+  return { app, fake, events, logs: entries };
 }
 
 const chat = (gateway: Gateway, payload: unknown, headers: Record<string, string>) =>
@@ -160,7 +183,7 @@ describe('оболочка llm-gateway: маршруты против фейка
   });
 
   it('тело больше LLM_GATEWAY_BODY_LIMIT_BYTES — 413 с телом ошибки по 4.2, фейк не вызван', async () => {
-    const gateway = await openGateway(1024);
+    const gateway = await openGateway({ bodyLimitBytes: 1024 });
     const big = { ...validBody, messages: [{ role: 'user', content: 'x'.repeat(2000) }] };
 
     const response = await chat(gateway, big, caller);
@@ -172,7 +195,7 @@ describe('оболочка llm-gateway: маршруты против фейка
   });
 
   it('без токена тело больше лимита — 401, а не 413: токен проверяется до разбора тела', async () => {
-    const gateway = await openGateway(1024);
+    const gateway = await openGateway({ bodyLimitBytes: 1024 });
     const big = { ...validBody, messages: [{ role: 'user', content: 'x'.repeat(2000) }] };
 
     const response = await chat(gateway, big, {
@@ -194,14 +217,193 @@ describe('оболочка llm-gateway: маршруты против фейка
     expect(response.json()).toEqual(error('invalid_request'));
     expect(gateway.fake.requests).toEqual([]);
   });
+});
 
-  it('валидный вызов доходит до апстрима с телом запроса (ответ до T-22 — 501)', async () => {
+const TRACE_ID = '4bf92f3577b34da6a3ce929d0e0e4736';
+const hangBody = { ...validBody, messages: [{ role: 'user', content: '__hang__' }] };
+
+async function until(check: () => boolean, ms = 1000): Promise<void> {
+  const deadline = performance.now() + ms;
+  while (!check()) {
+    if (performance.now() > deadline) throw new Error(`условие не выполнилось за ${ms} мс`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+describe('оболочка llm-gateway: ответ JSON и отмена (спека 002, 4.2, 4.6)', () => {
+  it('AC-002-1: без потока с tools, tool_choice и temperature — 200, тело как у фейка, фейк получил тело как отправлено', async () => {
     const gateway = await openGateway();
+    const sent = {
+      model: 'chat-small',
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [
+        { type: 'function', function: { name: 'get_weather', parameters: { type: 'object' } } },
+      ],
+      tool_choice: 'auto',
+      temperature: 0.2,
+    };
+
+    const response = await chat(gateway, sent, caller);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toContain('application/json');
+    expect(response.json()).toEqual({
+      id: 'chatcmpl-fake',
+      object: 'chat.completion',
+      created: expect.any(Number),
+      model: 'chat-small',
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call_fake_1',
+                type: 'function',
+                function: { name: 'get_weather', arguments: '{}' },
+              },
+            ],
+          },
+          finish_reason: 'tool_calls',
+        },
+      ],
+      usage: {
+        prompt_tokens: 1000,
+        completion_tokens: 500,
+        total_tokens: 1500,
+        prompt_tokens_details: { cached_tokens: 200 },
+        cost: 0.0085,
+      },
+    });
+    expect(gateway.fake.requests).toHaveLength(1);
+    expect(gateway.fake.requests[0]?.body).toEqual(sent);
+  });
+
+  it('AC-002-9: успешный вызов без потока — ровно одно llm.call в шине с traceId запроса, проходит PlatformEventInput', async () => {
+    const gateway = await openGateway({ traceId: TRACE_ID });
 
     const response = await chat(gateway, validBody, caller);
 
-    expect(gateway.fake.requests).toHaveLength(1);
-    expect(gateway.fake.requests[0]?.body).toEqual(validBody);
-    expect(response.statusCode).toBe(501);
+    expect(response.statusCode).toBe(200);
+    expect(gateway.events).toHaveLength(1);
+    expect(PlatformEventInput.safeParse(gateway.events[0]).success).toBe(true);
+    expect(gateway.events[0]).toMatchObject({
+      type: 'llm.call',
+      source: 'llm-gateway',
+      agentId: 'agent-1',
+      traceId: TRACE_ID,
+      data: {
+        status: 'ok',
+        stream: false,
+        usage: { promptTokens: 1000, cachedPromptTokens: 200, completionTokens: 500 },
+        costMicroUsd: 9960,
+      },
+    });
+  });
+
+  it('AC-002-14: фейк без usage — 200, событие ok с usage null и costMicroUsd null, лог warn usage_missing с callId', async () => {
+    const gateway = await openGateway();
+    const body = { ...validBody, messages: [{ role: 'user', content: '__no_usage__' }] };
+
+    const response = await chat(gateway, body, caller);
+
+    expect(response.statusCode).toBe(200);
+    expect(gateway.events).toHaveLength(1);
+    expect(gateway.events[0]).toMatchObject({
+      data: { status: 'ok', usage: null, costMicroUsd: null },
+    });
+    expect(gateway.logs).toContainEqual({
+      level: 'warn',
+      msg: 'usage_missing',
+      ctx: { callId: expect.any(String) },
+    });
+  });
+
+  it('AC-002-15: без потока — 502 upstream_error, 429 rate_limited, 400 upstream_bad_request с bad request; событие error с тем же кодом', async () => {
+    const gateway = await openGateway();
+    const cases = [
+      { marker: '__fail_500__', status: 502, code: 'upstream_error', message: 'Upstream error' },
+      { marker: '__fail_429__', status: 429, code: 'rate_limited', message: 'Provider rate limit' },
+    ];
+
+    for (const { marker, status, code, message } of cases) {
+      const body = { ...validBody, messages: [{ role: 'user', content: marker }] };
+      const response = await chat(gateway, body, caller);
+      expect(response.statusCode).toBe(status);
+      expect(response.json()).toEqual(error(code, message));
+    }
+
+    const badBody = { ...validBody, messages: [{ role: 'user', content: '__fail_400__' }] };
+    const badRequest = await chat(gateway, badBody, caller);
+    const failure = badRequest.json() as { error: { type: string; message: string; code: string } };
+    expect(badRequest.statusCode).toBe(400);
+    expect(failure.error.type).toBe('swag_gateway_error');
+    expect(failure.error.code).toBe('upstream_bad_request');
+    expect(failure.error.message).toContain('bad request');
+
+    expect(gateway.events).toMatchObject([
+      { data: { status: 'error', stream: false, errorCode: 'upstream_error' } },
+      { data: { status: 'error', stream: false, errorCode: 'rate_limited' } },
+      { data: { status: 'error', stream: false, errorCode: 'upstream_bad_request' } },
+    ]);
+  });
+
+  it('AC-002-16: таймаут простоя 200 мс, __hang__ — через 200–1000 мс 504 upstream_timeout, событие error с upstream_timeout', async () => {
+    const gateway = await openGateway({ idleTimeoutMs: 200 });
+    const started = performance.now();
+
+    const response = await chat(gateway, hangBody, caller);
+    const elapsed = performance.now() - started;
+
+    expect(response.statusCode).toBe(504);
+    expect(response.json()).toEqual(error('upstream_timeout', 'Upstream timeout'));
+    expect(elapsed).toBeGreaterThanOrEqual(200);
+    expect(elapsed).toBeLessThan(1000);
+    expect(gateway.events).toMatchObject([
+      { data: { status: 'error', errorCode: 'upstream_timeout' } },
+    ]);
+  });
+
+  it('обычный вызов по сети (не inject) — 200: отмена не срабатывает на закрытии запроса после чтения тела (D-67, без AC-id)', async () => {
+    const gateway = await openGateway();
+    await gateway.app.listen({ port: 0, host: '127.0.0.1' });
+    const { port } = gateway.app.server.address() as AddressInfo;
+
+    const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { ...caller, 'content-type': 'application/json' },
+      body: JSON.stringify(validBody),
+    });
+
+    expect(response.status).toBe(200);
+    expect(gateway.events).toMatchObject([{ data: { status: 'ok' } }]);
+  });
+
+  it('клиент ушёл до ответа — вызов апстрима отменён: фейк видит закрытие, событие error upstream_error по D-58 (без AC-id)', async () => {
+    const gateway = await openGateway();
+    await gateway.app.listen({ port: 0, host: '127.0.0.1' });
+    const { port } = gateway.app.server.address() as AddressInfo;
+    const request = http.request({
+      host: '127.0.0.1',
+      port,
+      method: 'POST',
+      path: '/v1/chat/completions',
+      headers: { ...caller, 'content-type': 'application/json' },
+    });
+    request.on('error', () => undefined);
+    request.end(JSON.stringify(hangBody));
+    await until(() => gateway.fake.requests.length === 1);
+
+    request.destroy();
+
+    await until(
+      () => gateway.fake.requests[0]?.closedByClient === true && gateway.events.length === 1,
+      3000,
+    );
+    expect(gateway.events).toMatchObject([
+      { data: { status: 'error', errorCode: 'upstream_error' } },
+    ]);
   });
 });

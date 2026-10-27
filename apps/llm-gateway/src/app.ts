@@ -33,19 +33,27 @@ export async function buildApp(
   app.get('/v1/models', { onRequest: authorize }, async () => core.listModels());
 
   app.post('/v1/chat/completions', { onRequest: authorize }, async (request, reply) => {
-    // Ядро получает заголовки и тело как пришли. Сигнал пока не отменяется: AbortController по close — T-22.
+    // Клиент ушёл до ответа — отменяем вызов апстрима. Слушаем reply.raw, а не request.raw: на Node 24
+    // close у IncomingMessage приходит сразу после чтения тела, до ответа (D-67). Поэтому
+    // отмена только если ответ не дописан до конца.
+    const abort = new AbortController();
+    reply.raw.on('close', () => {
+      if (!reply.raw.writableFinished) abort.abort();
+    });
+    // Ядро получает заголовки и тело как пришли.
     const result: CompleteResult = await core.complete(
       {
         swarmId: single(request.headers[SWARM_ID_HEADER]),
         agentId: single(request.headers[AGENT_ID_HEADER]),
       },
       request.body,
-      new AbortController().signal,
+      abort.signal,
     );
     if (result.kind === 'error') {
       return reply.code(result.status).send(gatewayError(result.error.message, result.error.code));
     }
-    // Запись kind 'json' — T-22, kind 'stream' — T-23. До них маршрут отвечает 501 без тела.
+    if (result.kind === 'json') return reply.code(200).send(result.body);
+    // Запись kind 'stream' — T-23. До неё маршрут отвечает 501 без тела.
     return reply.code(501).send();
   });
 
