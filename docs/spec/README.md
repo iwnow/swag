@@ -67,7 +67,7 @@ docs/spec/
 
 Реализацию лучше запускать в отдельной сессии от обсуждения: в ней только спека и код, без истории споров. Push, merge request и влитие — только по команде человека.
 
-Скилл [implement-spec](../../.claude/skills/implement-spec/SKILL.md) проводит агента по шагам 3–5, [write-spec](../../.claude/skills/write-spec/SKILL.md) — по шагу 1. Правила для агента — в [CLAUDE.md](../../CLAUDE.md).
+Скилл [implement-spec](../../.claude/skills/implement-spec/SKILL.md) проводит агента по шагам 3–5, [write-spec](../../.claude/skills/write-spec/SKILL.md) — по шагу 1. Рефакторинг вне спек, без изменения поведения, — скилл [refactor](../../.claude/skills/refactor/SKILL.md). Правила для агента — в [CLAUDE.md](../../CLAUDE.md).
 
 **Особенность спеки 000.** `npm run check` и `spec:check` появляются в ней самой, поэтому до их появления агент прогоняет те команды, что уже есть. Для AC-000-15 (зелёный CI) до запуска нужен репозиторий на GitHub и push основной ветки.
 
