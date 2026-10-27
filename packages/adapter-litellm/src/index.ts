@@ -55,21 +55,22 @@ function httpFailure(status: number, text: string, secrets: string[]): UpstreamF
 // Причина срабатывания таймера: по ней отличаем таймаут от внешнего abort.
 const TIMEOUT_REASON = Symbol('idle-timeout');
 
-// Спека 002, 4.5: таймер простоя взводится до запроса и перезапускается на каждом куске тела.
-// Сигнал запроса объединяет его с внешним signal; AbortSignal.any отдаёт reason первого сработавшего источника.
+// Спека 002, 4.5: таймер простоя взводится до запроса. Сигнал запроса объединяет его с внешним signal;
+// AbortSignal.any отдаёт reason первого сработавшего источника.
+// arm взводит таймер, только если он не идёт; stop снимает его. Чтение тела взводит перед каждым ожиданием куска
+// и снимает после куска, поэтому пауза потребителя между фрагментами в простой не входит.
 function idleGuard(outer: AbortSignal, idleTimeoutMs: number) {
   const own = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const arm = () => {
+    if (timer === undefined) timer = setTimeout(() => own.abort(TIMEOUT_REASON), idleTimeoutMs);
+  };
+  const stop = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => own.abort(TIMEOUT_REASON), idleTimeoutMs);
+    timer = undefined;
   };
   arm();
-  return {
-    signal: AbortSignal.any([outer, own.signal]),
-    arm,
-    stop: () => clearTimeout(timer),
-  };
+  return { signal: AbortSignal.any([outer, own.signal]), arm, stop };
 }
 
 type IdleGuard = ReturnType<typeof idleGuard>;
@@ -78,25 +79,30 @@ type IdleGuard = ReturnType<typeof idleGuard>;
 const transportFailure = (idle: IdleGuard): UpstreamFailure =>
   idle.signal.reason === TIMEOUT_REASON ? { kind: 'timeout' } : { kind: 'network' };
 
-// Куски тела текстом; arm — на каждом куске. Раннее закрытие потребителем отменяет чтение и закрывает соединение.
-async function* textChunks(res: Response, arm: () => void): AsyncGenerator<string> {
+// Куски тела текстом. Таймер идёт только пока ждём кусок от апстрима; yield (пауза потребителя) его не касается.
+// Раннее закрытие потребителем, ошибка или конец тела снимают таймер и отменяют чтение: соединение закрывается.
+async function* textChunks(res: Response, idle: IdleGuard): AsyncGenerator<string> {
   if (!res.body) return;
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   try {
-    for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
-      arm();
+    for (;;) {
+      idle.arm();
+      const chunk = await reader.read();
+      idle.stop();
+      if (chunk.done) break;
       yield decoder.decode(chunk.value, { stream: true });
     }
     yield decoder.decode();
   } finally {
+    idle.stop();
     reader.cancel().catch(() => {});
   }
 }
 
-async function readText(res: Response, arm: () => void): Promise<string> {
+async function readText(res: Response, idle: IdleGuard): Promise<string> {
   let text = '';
-  for await (const part of textChunks(res, arm)) text += part;
+  for await (const part of textChunks(res, idle)) text += part;
   return text;
 }
 
@@ -118,7 +124,7 @@ const postJson = (options: LiteLlmOptions, body: ChatRequest): Init => ({
 type Opened =
   { ok: true; res: Response; idle: IdleGuard } | { ok: false; failure: UpstreamFailure };
 
-// Заголовки ответа. Отказ до заголовков — failure. При успехе таймер остаётся взведённым: его снимает читающий.
+// Заголовки ответа. Отказ до заголовков — failure. При успехе таймер остаётся взведённым: его снимает тот, кто читает тело.
 async function open(
   options: LiteLlmOptions,
   path: string,
@@ -144,7 +150,7 @@ async function readWhole(opened: {
   idle: IdleGuard;
 }): Promise<{ ok: true; text: string } | { ok: false; failure: UpstreamFailure }> {
   try {
-    return { ok: true, text: await readText(opened.res, opened.idle.arm) };
+    return { ok: true, text: await readText(opened.res, opened.idle) };
   } catch {
     return { ok: false, failure: transportFailure(opened.idle) };
   } finally {
@@ -199,29 +205,33 @@ function streamFailure(idle: IdleGuard, outer: AbortSignal): UpstreamFailure | {
 }
 
 // Спека 002, 4.4 и 4.5: payload'ы до [DONE] включительно. Конец тела без [DONE] — network.
+// Ошибка чтения превращается в UpstreamStreamError; yield вне try, чтобы throw() потребителя не перехватывался.
 async function* payloads(
   res: Response,
   idle: IdleGuard,
   outer: AbortSignal,
 ): AsyncGenerator<string> {
-  let done = false;
+  const parts = sseData(textChunks(res, idle));
   try {
-    for await (const data of sseData(textChunks(res, idle.arm))) {
-      yield data;
-      if (data === DONE) {
-        done = true;
-        break;
+    for (;;) {
+      let next: IteratorResult<string>;
+      try {
+        next = await parts.next();
+      } catch {
+        throw new UpstreamStreamError(streamFailure(idle, outer));
       }
+      if (next.done) break;
+      yield next.value;
+      if (next.value === DONE) return;
     }
-  } catch {
-    throw new UpstreamStreamError(streamFailure(idle, outer));
   } finally {
+    await parts.return(undefined);
     idle.stop();
   }
-  if (!done) throw new UpstreamStreamError({ kind: 'network' });
+  throw new UpstreamStreamError({ kind: 'network' });
 }
 
-// Поток: отказ до первого фрагмента — как у complete; при 2xx — генератор над телом.
+// Поток: отказ до первого фрагмента — как у complete; при 2xx таймер снимается до первого next(), генератор над телом.
 async function openStream(
   options: LiteLlmOptions,
   body: ChatRequest,
@@ -229,7 +239,10 @@ async function openStream(
 ): Promise<UpstreamStream> {
   const opened = await open(options, CHAT_PATH, postJson(options, body), signal);
   if (!opened.ok) return opened;
-  if (opened.res.ok) return { ok: true, chunks: payloads(opened.res, opened.idle, signal) };
+  if (opened.res.ok) {
+    opened.idle.stop();
+    return { ok: true, chunks: payloads(opened.res, opened.idle, signal) };
+  }
   const whole = await readWhole(opened);
   if (!whole.ok) return whole;
   return { ok: false, failure: httpFailure(opened.res.status, whole.text, options.secrets) };

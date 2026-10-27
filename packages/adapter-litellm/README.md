@@ -4,9 +4,9 @@
 
 ## Задачи
 
-- `createLiteLlmUpstream(options)` — порт `LlmUpstream` (методы `complete` и `listModels`): `Authorization: Bearer <masterKey>`, `traceparent` из активного контекста, разбор `2xx`, не-`2xx` (`message` из `error.message` или `HTTP <статус>`, обрезка до 1000 символов, затем `redact`), сеть недоступна или тело `2xx` не читается как JSON → `network`.
+- `createLiteLlmUpstream(options)` — порт `LlmUpstream` (методы `complete`, `stream`, `listModels`): `Authorization: Bearer <masterKey>`, `traceparent` из активного контекста, разбор `2xx`, не-`2xx` (`message` из `error.message` или `HTTP <статус>`, обрезка до 1000 символов, затем `redact`), сеть недоступна или тело `2xx` не читается как JSON → `network`.
 - `stream` — payload'ы SSE без префикса `data:`, включая `[DONE]` (он последний): отказ до первого фрагмента — как у `complete`; сбой после старта — `UpstreamStreamError` с `timeout`, `aborted` (внешний `signal`) или `network` (тело без `[DONE]`, обрыв сети).
-- Таймаут простоя (REQ-002-10): нет куска тела дольше `idleTimeoutMs` → `timeout`; для `complete` внешний `signal` прерван → `network`.
+- Таймаут простоя (REQ-002-10): простой — ожидание куска от апстрима дольше `idleTimeoutMs` → `timeout`; пауза потребителя между payload'ами в простой не входит. Для `complete` внешний `signal` прерван → `network`.
 - `listModels` — `{ data: [{ id }] }` → `ids`; другая форма ответа → `network` (D-50).
 - `redact(text, secrets)` — замена каждого вхождения секрета на `***`; пустые строки в `secrets` игнорируются (REQ-002-11).
 
@@ -17,7 +17,7 @@
 - `test/idle-timeout.test.ts` — `__hang__` при `idleTimeoutMs` 200 → `timeout` за 200–1000 мс; таймер перезапускается на каждом куске тела; внешний abort → `network`; `listModels` с зависшим сервером. Без AC-id (AC-002-16 про ответ шлюза).
 - `test/list-models.test.ts` — `listModels` на фейке, путь и `Authorization`, `http`, `2xx` не по форме (D-50).
 - `test/helpers.ts` — общие `MASTER_KEY`, `upstreamFor`, `chatRequest`, `stubFetch` и `useFake` (подъём и закрытие фейка) для тестов пакета; vitest его не запускает (`**/*.test.ts`), `tsconfig.dev.json` типизирует.
-- `test/stream.test.ts` — `stream` на фейке: payload'ы по умолчанию и с `include_usage`, `__cut__`, `__slow_chunks__` при `idleTimeoutMs` 200, внешний abort, ранний выход потребителя закрывает соединение, не-2xx; тело без `[DONE]` (через подставной `fetch`); юнит-тесты `sseData` (многострочный `data:`, комментарий `:`, `\r\n`). Без AC-id: AC-002-10…13 описывают ответ шлюза (T-17…T-23).
+- `test/stream.test.ts` — `stream` на фейке: payload'ы по умолчанию и с `include_usage`, `__cut__`, `__slow_chunks__` при `idleTimeoutMs` 200 (с проверкой, что фейк видит закрытие соединения клиентом), внешний abort, ранний выход потребителя закрывает соединение, пауза потребителя дольше `idleTimeoutMs` не даёт `timeout`, не-2xx; тело без `[DONE]` и символ UTF-8, разрезанный между кусками тела (через подставной `fetch`); юнит-тесты `sseData` (многострочный `data:`, комментарий `:`, `\r\n`). Без AC-id: AC-002-10…13 описывают ответ шлюза (T-17…T-23).
 - `test/fake-provider.test.ts` — тесты фейкового провайдера из `infra/llm/fake-provider/server.ts` (спека 002, 4.12): без потока и с потоком.
 
 ## Ограничения
@@ -27,7 +27,7 @@
 
 ## Связи
 
-- Порт и типы отказа: `LlmUpstream`, `UpstreamFailure`, `UpstreamModels` из `@swag/llm-gateway-core`.
+- Порт и типы: `LlmUpstream`, `UpstreamFailure`, `UpstreamModels`, `UpstreamStream` и класс `UpstreamStreamError` из `@swag/llm-gateway-core`.
 - Трассировка: глобальный пропагатор из `@swag/adapter-telemetry` (ставит `startTelemetry`); в тестах — `@swag/adapter-telemetry` как devDependency.
 - Оболочка: `apps/llm-gateway` (спека 002, T-20).
 - Фейк: `infra/llm/fake-provider/server.ts`, профиль `test` в compose.
@@ -43,10 +43,11 @@
 - Тип сигнала в порте — структурный, см. D-47.
 - Ответы не-`2xx` без JSON-тела — `message` `HTTP <статус>`.
 - Поток: `sseData` склеивает строки `data:` через `\n`, один ведущий пробел убирается, `\r\n` поддержан, одиночный `\r` — нет; незавершённое событие на конце тела отбрасывается (D-52).
-- Таймер простоя в потоке взводится до запроса, как у `complete`, и перезапускается на каждом куске тела; пауза потребителя между фрагментами тоже входит в простой (буква 4.5, счёт идёт от последнего полученного куска).
-- Раннее закрытие потребителя (`return()` генератора, `break` в `for await`) отменяет чтение тела (`reader.cancel()`) и снимает таймер через `finally`: соединение с LiteLLM закрывается.
+- Таймер простоя в потоке: до заголовков — как у `complete`; после заголовков таймер снимается до первого `next()`. Дальше он взводится перед каждым ожиданием куска от апстрима и снимается, как только кусок пришёл. Пауза потребителя между payload'ами в простой не входит: простой — ожидание куска от апстрима.
+- Раннее закрытие потребителя (`return()` генератора, `break` в `for await`) и `throw()` отменяют чтение тела (`reader.cancel()`) и снимают таймер через `finally`: соединение с LiteLLM закрывается. `throw()` потребителя не превращается в `UpstreamStreamError`: `yield` стоит вне `try`.
+- Отказ до потока при уже прерванном внешнем `signal` или abort до заголовков — `network`, как у `complete`, а не `aborted`; ядро проверяет `signal.aborted` само (D-53).
 - Тесты фейка лежат в этом пакете, потому что фейк нужен адаптеру (4.12), а `infra/llm/fake-provider` — не пакет.
 
 ## Спеки
 
-- 002 — 4.4, 4.5, 4.12, 4.14; T-7, T-8, T-9, T-10, T-11; REQ-002-10 (без потока), REQ-002-11, AC-002-17.
+- 002 — 4.4, 4.5, 4.12, 4.14; T-7, T-8, T-9, T-10, T-11; REQ-002-10, REQ-002-11, AC-002-17.

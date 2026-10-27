@@ -22,6 +22,8 @@ async function collect(chunks: AsyncIterable<string>): Promise<string[]> {
   return out;
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // Отказ до первого фрагмента — тест падает с понятным текстом, а не с TypeError.
 async function open(
   baseUrl: string,
@@ -68,6 +70,33 @@ describe('stream: поток по умолчанию (спека 002, 4.5, REQ-0
   });
 });
 
+describe('stream: многобайтный UTF-8 на границе кусков (спека 002, 4.5)', () => {
+  const bodyOf = (...parts: Uint8Array[]) =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const part of parts) controller.enqueue(part);
+          controller.close();
+        },
+      }),
+      { headers: { 'content-type': 'text/event-stream' } },
+    );
+
+  it.each(['я', '€'])(
+    'символ «%s», разрезанный между двумя кусками тела, собирается целиком',
+    async (char) => {
+      const encoder = new TextEncoder();
+      const bytes = encoder.encode(`data: {"c":"${char}"}\n\ndata: [DONE]\n\n`);
+      const cut = encoder.encode('data: {"c":"').length + 1;
+      const chunks = await open('http://stub.invalid', 'привет', {
+        fetch: stubFetch(bodyOf(bytes.slice(0, cut), bytes.slice(cut))),
+      });
+
+      expect(await collect(chunks)).toEqual([`{"c":"${char}"}`, '[DONE]']);
+    },
+  );
+});
+
 describe('stream: обрывы и таймаут (спека 002, 4.5)', () => {
   it('__cut__: фрагмент, затем обрыв без [DONE] — UpstreamStreamError network', async () => {
     const chunks = await open(fake.current.url, '__cut__');
@@ -104,6 +133,21 @@ describe('stream: обрывы и таймаут (спека 002, 4.5)', () => {
     await expect(reading).rejects.toMatchObject({ failure: { kind: 'timeout' } });
     expect(seen).toHaveLength(1);
     expect(performance.now() - started).toBeLessThan(1000);
+    await vi.waitFor(() => expect(fake.current.requests[0]?.closedByClient).toBe(true));
+  });
+
+  it('пауза потребителя дольше idleTimeoutMs не простой: все payload до [DONE] приходят', async () => {
+    const chunks = await open(fake.current.url, 'привет', { idleTimeoutMs: 100 });
+
+    const payloads: string[] = [];
+    await sleep(300);
+    for await (const chunk of chunks) {
+      payloads.push(chunk);
+      await sleep(300);
+    }
+
+    expect(payloads).toHaveLength(3);
+    expect(payloads.at(-1)).toBe('[DONE]');
   });
 
   it('внешний abort после первого фрагмента — UpstreamStreamError aborted', async () => {
