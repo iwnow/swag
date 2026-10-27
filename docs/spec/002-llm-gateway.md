@@ -707,7 +707,7 @@ export const LlmGatewayConfig = z.object({
 
 **Подготовка**
 
-- [ ] **T-1.** Node 24.20.0 → 24.22.1 (из N-7). Что меняется:
+- [x] **T-1.** Node 24.20.0 → 24.22.1 (из N-7). Что меняется:
   - `.nvmrc`;
   - `engines.node` в корневом `package.json` → `>=24.22.1 <25`;
   - `FROM node:24.22.1-alpine3.23` в Dockerfile `apps/agent`, `apps/api`, `apps/orchestrator`, `apps/ui/cabinet`.

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Образ для локального запуска: код исполняется из исходников через type stripping Node 24, без сборки.
-FROM node:24.20.0-alpine3.23
+FROM node:24.22.1-alpine3.23
 WORKDIR /repo
 COPY package.json package-lock.json .npmrc ./
 # Манифесты всех workspace-пакетов: новый пакет не требует правки этого файла (REQ-001-16).
