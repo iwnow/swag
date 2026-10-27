@@ -5,5 +5,12 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["scripts", "packages/*/test", "apps/*/test", "*.config.ts", "*.config.js"]
+  "include": [
+    "scripts",
+    "infra/llm/fake-provider",
+    "packages/*/test",
+    "apps/*/test",
+    "*.config.ts",
+    "*.config.js"
+  ]
 }
