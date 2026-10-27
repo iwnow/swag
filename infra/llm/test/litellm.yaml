@@ -1,0 +1,14 @@
+# Профиль test (спека 002, 4.7): модели платформы → фейковый провайдер llm-fake.
+model_list:
+  - model_name: chat-small
+    litellm_params:
+      model: openai/fake-small
+      api_base: http://llm-fake:4010/v1
+      api_key: os.environ/FAKE_PROVIDER_API_KEY
+  - model_name: chat-large
+    litellm_params:
+      model: openai/fake-large
+      api_base: http://llm-fake:4010/v1
+      api_key: os.environ/FAKE_PROVIDER_API_KEY
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

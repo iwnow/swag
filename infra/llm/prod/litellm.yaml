@@ -1,0 +1,12 @@
+# Профиль prod (спека 002, 4.7, Q-2, Q-4): OpenRouter, платные модели. Ключ — из окружения.
+model_list:
+  - model_name: chat-small
+    litellm_params:
+      model: openrouter/anthropic/claude-haiku-5.5
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: chat-large
+    litellm_params:
+      model: openrouter/anthropic/claude-sonnet-5.5
+      api_key: os.environ/OPENROUTER_API_KEY
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

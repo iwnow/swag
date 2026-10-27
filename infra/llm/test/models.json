@@ -1,0 +1,16 @@
+{
+  "models": [
+    {
+      "id": "chat-small",
+      "prices": {
+        "inputPerMTokUsd": "3.00",
+        "cachedInputPerMTokUsd": "0.30",
+        "outputPerMTokUsd": "15.00"
+      }
+    },
+    {
+      "id": "chat-large",
+      "prices": { "inputPerMTokUsd": "0", "cachedInputPerMTokUsd": "0", "outputPerMTokUsd": "0" }
+    }
+  ]
+}

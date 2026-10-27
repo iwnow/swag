@@ -1,0 +1,12 @@
+# Профиль dev (спека 002, 4.7, Q-2): OpenRouter, бесплатные модели :free. Ключ — из окружения.
+model_list:
+  - model_name: chat-small
+    litellm_params:
+      model: openrouter/google/gemma-4-26b-a4b-it:free
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: chat-large
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
+      api_key: os.environ/OPENROUTER_API_KEY
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

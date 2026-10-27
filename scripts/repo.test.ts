@@ -1,10 +1,26 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
+import { readCatalog } from '../apps/llm-gateway/src/catalog.ts';
 
 const root = new URL('..', import.meta.url);
 const git = (...args: string[]) =>
   execFileSync('git', args, { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+
+const profiles = ['test', 'dev', 'prod'];
+const profileFile = (profile: string, name: string) =>
+  fileURLToPath(new URL(`infra/llm/${profile}/${name}`, root));
+const catalogIds = (profile: string) =>
+  readCatalog(profileFile(profile, 'models.json')).models.map((model) => model.id);
+
+interface LiteLlmConfig {
+  model_list: { model_name: string; litellm_params: { api_key?: unknown } }[];
+  general_settings?: { master_key?: unknown };
+}
+const liteLlmText = (profile: string) => readFileSync(profileFile(profile, 'litellm.yaml'), 'utf8');
+const liteLlmConfig = (profile: string) => parse(liteLlmText(profile)) as LiteLlmConfig;
 
 describe('политики репозитория', () => {
   it('AC-000-9: у каждого package.json private: true и лицензия SEE LICENSE IN LICENSE', () => {
@@ -26,5 +42,43 @@ describe('политики репозитория', () => {
     expect(ignored).toContain('.env');
     expect(git('ls-files', '--', '.env')).toEqual([]);
     expect(git('check-ignore', '.env')).toEqual(['.env']);
+  });
+
+  it('AC-002-8: каталоги infra/llm/*/models.json проходят ту же проверку ModelCatalog, что при старте', () => {
+    for (const profile of profiles) {
+      expect(() => readCatalog(profileFile(profile, 'models.json')), profile).not.toThrow();
+    }
+  });
+
+  it('AC-002-19: каждый models.json проходит ModelCatalog, наборы id трёх профилей равны', () => {
+    const [first, ...rest] = profiles.map((profile) => [...catalogIds(profile)].sort());
+    for (const ids of rest) expect(ids).toEqual(first);
+  });
+
+  it('AC-002-19: каждый id каталога есть как model_name в litellm.yaml своего профиля', () => {
+    for (const profile of profiles) {
+      const names = liteLlmConfig(profile).model_list.map((entry) => entry.model_name);
+      expect(names, profile).toEqual(expect.arrayContaining(catalogIds(profile)));
+    }
+  });
+
+  it('AC-002-19: api_key и master_key в litellm.yaml — только ссылки os.environ/…', () => {
+    for (const profile of profiles) {
+      const config = liteLlmConfig(profile);
+      const refs = [
+        ...config.model_list.map((entry) => entry.litellm_params.api_key),
+        config.general_settings?.master_key,
+      ];
+      const literals = refs.filter(
+        (ref) => typeof ref !== 'string' || !ref.startsWith('os.environ/'),
+      );
+      expect(literals, profile).toEqual([]);
+    }
+  });
+
+  it('AC-002-19: database_url в litellm.yaml нет', () => {
+    for (const profile of profiles) {
+      expect(liteLlmText(profile), profile).not.toContain('database_url');
+    }
   });
 });
