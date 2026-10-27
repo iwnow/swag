@@ -10,13 +10,16 @@ const OptionalUrl = z
   .transform((value) => (value ? value : null));
 const FlushTimeoutMs = PositiveInt.default(2000); // TELEMETRY_FLUSH_TIMEOUT_MS
 
-export const BaseConfig = z.object({
-  DATABASE_URL: z.string().url(),
-  NATS_URL: z.string().url(),
-  // Спека 016, 4.11: телеметрия. Пустой OTEL_EXPORTER_OTLP_ENDPOINT — только логи в stdout (REQ-016-6).
+// Спека 016, 4.11: телеметрия. Пустой OTEL_EXPORTER_OTLP_ENDPOINT — только логи в stdout (REQ-016-6).
+const TelemetryConfig = z.object({
   OTEL_EXPORTER_OTLP_ENDPOINT: OptionalUrl,
   LOG_LEVEL: LogLevel.default('info'),
   TELEMETRY_FLUSH_TIMEOUT_MS: FlushTimeoutMs,
+});
+
+export const BaseConfig = TelemetryConfig.extend({
+  DATABASE_URL: z.string().url(),
+  NATS_URL: z.string().url(),
 });
 export type BaseConfig = z.infer<typeof BaseConfig>;
 
@@ -51,7 +54,7 @@ export type ObservabilityConfig = z.infer<typeof ObservabilityConfig>;
 // Агент не нуждается в DATABASE_URL, поэтому без BaseConfig (4.9).
 // Телеметрия агента (016, 4.7): контекст и адрес Collector передаёт оркестратор, пустые строки — нет значения.
 // Уровень логов агента — info, оркестратор его не передаёт.
-export const AgentConfig = z.object({
+export const AgentConfig = TelemetryConfig.extend({
   NATS_URL: z.string().url(),
   SWARM_ID: z.uuid(),
   AGENT_ID: z.string().regex(/^agent-[1-9][0-9]?$/),
@@ -66,10 +69,22 @@ export const AgentConfig = z.object({
     .string()
     .optional()
     .transform((value) => (value ? value : null)),
-  OTEL_EXPORTER_OTLP_ENDPOINT: OptionalUrl,
-  TELEMETRY_FLUSH_TIMEOUT_MS: FlushTimeoutMs,
 });
 export type AgentConfig = z.infer<typeof AgentConfig>;
+
+// Спека 002, 4.9. Без BaseConfig: gateway не нужна DATABASE_URL. Ключи провайдеров — только в .env.llm (4.8).
+export const LlmGatewayConfig = TelemetryConfig.extend({
+  NATS_URL: z.string().url(),
+  LLM_GATEWAY_PORT: Port,
+  LLM_GATEWAY_TOKEN: z.string().min(32),
+  LLM_CATALOG_PATH: z.string().min(1),
+  LITELLM_URL: z.string().url(),
+  LITELLM_MASTER_KEY: z.string().startsWith('sk-').min(16),
+  LLM_GATEWAY_UPSTREAM_TIMEOUT_MS: z.coerce.number().int().min(1).default(120000),
+  LLM_GATEWAY_STARTUP_TIMEOUT_MS: z.coerce.number().int().min(1).default(60000),
+  LLM_GATEWAY_BODY_LIMIT_BYTES: z.coerce.number().int().min(1024).default(8388608),
+});
+export type LlmGatewayConfig = z.infer<typeof LlmGatewayConfig>;
 
 export interface ConfigIssue {
   variable: string;
