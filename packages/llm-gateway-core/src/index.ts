@@ -92,7 +92,7 @@ export function parseProviderCost(raw: unknown): number | null {
   return Math.round(cost * 1_000_000);
 }
 
-// Спека 002, 4.4. Порт апстрима: сейчас обычный вызов и список моделей (stream — T-11).
+// Спека 002, 4.4. Порт апстрима: обычный вызов, поток и список моделей.
 export type UpstreamFailure =
   | { kind: 'http'; status: number; message: string } // message уже без секретов (4.5)
   | { kind: 'network' }
@@ -103,6 +103,21 @@ export type UpstreamResponse =
 
 export type UpstreamModels = { ok: true; ids: string[] } | { ok: false; failure: UpstreamFailure };
 
+// Спека 002, 4.4. Отказ до первого фрагмента — { ok: false }; дальше обрыв, таймаут или abort — исключение из итератора.
+export type UpstreamStream =
+  { ok: true; chunks: AsyncIterable<string> } | { ok: false; failure: UpstreamFailure };
+
+// Спека 002, 4.4. Причина сбоя потока после старта; kind 'aborted' — внешний signal (клиент ушёл).
+// Поле объявлено явно, а не параметром-свойством: Node запускает .ts без трансформации (strip-only).
+export class UpstreamStreamError extends Error {
+  readonly failure: UpstreamFailure | { kind: 'aborted' };
+
+  constructor(failure: UpstreamFailure | { kind: 'aborted' }) {
+    super(failure.kind);
+    this.failure = failure;
+  }
+}
+
 // Спека 002, 4.4 пишет AbortSignal. Ядро собирается без DOM и @types/node (architecture.md), поэтому тип структурный:
 // подходит любой AbortSignal; ядро только передаёт сигнал дальше.
 export interface UpstreamSignal {
@@ -112,6 +127,9 @@ export interface UpstreamSignal {
 export interface LlmUpstream {
   // Обычный вызов. Тело уже проверено ядром.
   complete(body: ChatRequest, signal: UpstreamSignal): Promise<UpstreamResponse>;
+  // Поток: payload'ы событий SSE без префикса "data: ", включая '[DONE]'.
+  // Обрыв, таймаут или abort после старта — исключение UpstreamStreamError из итератора.
+  stream(body: ChatRequest, signal: UpstreamSignal): Promise<UpstreamStream>;
   // Список моделей апстрима (GET /v1/models). Отказ — как у complete.
   listModels(signal: UpstreamSignal): Promise<UpstreamModels>;
 }
