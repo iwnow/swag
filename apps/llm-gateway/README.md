@@ -15,12 +15,13 @@
 - `src/main.ts` — телеметрия (`startTelemetry`, сервис `llm-gateway`), конфигурация, каталог, NATS, адаптер, ядро, запуск, остановка по `SIGINT`/`SIGTERM`. Слушает `0.0.0.0` внутри контейнера.
 - `src/start.ts` — `startGateway` (сверка, затем `listen`, либо выход 1), `waitForUpstream` (повтор раз в 1 с до таймаута), `upstreamSecrets`.
 - `src/catalog.ts` — `readCatalog`: читает файл и проверяет его схемой `ModelCatalog`.
-- `src/app.ts` — `buildApp`: Fastify с `GET /health`.
+- `src/app.ts` — `buildApp(core, { token, bodyLimitBytes })`: Fastify с `GET /health` (без токена), `GET /v1/models` и `POST /v1/chat/completions` за проверкой токена в `onRequest`; заголовки вызывающего и тело уходят в ядро как есть; отказ ядра — статус и тело по 4.2; `kind: 'json'` и `'stream'` пока отвечают `501` без тела (запись — T-22, T-23); ошибка разбора тела (больше `bodyLimitBytes` — `413`, не JSON — `400`) — тело по 4.2 с `code: 'invalid_request'` (D-65).
+- `test/routes.test.ts` — AC-002-2 (`401` без токена, с чужим и с токеном другой длины), AC-002-3 (`400 invalid_caller`), AC-002-4 (`model_not_found`), AC-002-5 (`invalid_request`: нет `messages`, пустой, тело-массив), AC-002-6 (`/v1/models`), AC-002-28 (поля провайдера в теле), тело больше лимита → `413`, валидный вызов доходит до фейка с телом. Во всех отказах фейк не вызван и событий нет (`app.inject`, фейк `infra/llm/fake-provider/server.ts`, событие пишет тестовый `EventPublisher`).
 - `test/start.test.ts` — AC-002-18 (в апстриме нет `chat-large`: порт не слушает, `upstream_models_mismatch` с `missing`, выход 1; полный список: `/health` → `200`), D-64 (апстрим недоступен: `upstream_unavailable`), REQ-002-13 (висящая сверка прерывается по дедлайну; первая сверка `missing`, вторая ок: порт до второй попытки не слушает), повтор сверки, `upstreamSecrets`, `readCatalog` (битый JSON и нарушение схемы: путь файла в сообщении, причина в `cause`). Апстрим — фейк `infra/llm/fake-provider/server.ts`, каталог — `test/fixtures/catalog.json`, битые каталоги — `catalog-broken.json`, `catalog-invalid.json`.
 
 ## Ограничения
 
-- Только `GET /health`. Проверки токена, `/v1/models`, `/v1/chat/completions`, `bodyLimit`, SSE — T-21…T-23.
+- Ответ `kind: 'json'` и поток SSE не записываются: `501` до T-22 и T-23. Сигнал в ядро — неотменяемый `AbortSignal` из `AbortController`, который никто не прерывает: отмена по `close` клиента — T-22.
 - Телеметрия только для логгера и `TraceContext`: хуки Fastify и `tracedHttpServer` — T-24. Dockerfile — T-25.
 - Каталог читается один раз при старте; смена каталога требует перезапуска.
 - Полный запуск (`main.ts`) требует NATS и LiteLLM; в тестах не запускается, проверяется `startGateway` с фейком.
@@ -41,7 +42,10 @@
 - Событие `llm.call` публикуется в `swarm.<swarmId>.events` через `connectNatsBus.publishJson`.
 - Секреты адаптера (4.9): мастер-ключ LiteLLM и непустые значения переменных `*_API_KEY`; они редактируются в сообщениях ошибок адаптера.
 - `version` берётся из `package.json`, как в `apps/api`.
+- Токен (`LLM_GATEWAY_TOKEN`) проверяется в `onRequest`, до разбора тела; сравнение через `crypto.timingSafeEqual`, разная длина — `401` без сравнения (4.2).
+- Лимит тела — `bodyLimit` Fastify из `LLM_GATEWAY_BODY_LIMIT_BYTES`. Тело ошибки — формат 4.2, `code: 'invalid_request'` для `413` и для тела не-JSON: 4.6 таких строк не задаёт (D-65).
+- Заголовки `x-swag-swarm-id` и `x-swag-agent-id` передаются в ядро как есть; нет заголовка или он задан дважды — пустая строка, которую `LlmCaller` отклоняет как `invalid_caller`.
 
 ## Спеки
 
-- 002 — 4.2 (`/health`), 4.9, 4.14; REQ-002-13; AC-002-18; задача T-20.
+- 002 — 4.2 (`/health`, `/v1/models`, `/v1/chat/completions`, тело ошибки), 4.6, 4.9, 4.14; REQ-002-3, REQ-002-13; AC-002-2, -3, -4, -5, -6, -18, -28; задачи T-20, T-21.
