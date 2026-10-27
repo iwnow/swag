@@ -130,3 +130,6 @@
 | Конфигурация агента | `AgentConfig` | Env агента (4.7.1) в `@swag/config`; без `DATABASE_URL`. |
 | Конфигурация UI | `UiConfig` | Порт `UI_PORT` для проверки инфраструктуры в `@swag/config`. |
 | Конфигурация шлюза | `LlmGatewayConfig` | Env `llm-gateway` (002, 4.9) в `@swag/config`: телеметрия, ключи из `.env.llm`; без `DATABASE_URL`. |
+| Старт шлюза | `startGateway`, `waitForUpstream` | Старт оболочки `apps/llm-gateway`: сверка каталога с апстримом с повтором раз в 1 с до `LLM_GATEWAY_STARTUP_TIMEOUT_MS`; порт слушается только после успеха, иначе выход с кодом 1 (002, REQ-002-13). |
+| Секреты апстрима | `upstreamSecrets` | Значения, которые адаптер LiteLLM заменяет на `***`: мастер-ключ и непустые `*_API_KEY` из env (002, 4.9). |
+| Каталог моделей (файл) | `readCatalog` | Чтение `infra/llm/<профиль>/models.json` по `LLM_CATALOG_PATH` и проверка схемой `ModelCatalog` в оболочке шлюза (002, 4.7). |
