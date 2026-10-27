@@ -143,6 +143,13 @@ describe('complete с потоком: обрыв после старта по т
       upstreamStatus: 500,
     },
     {
+      name: 'сеть → upstream_error',
+      failure: { kind: 'network' } as UpstreamFailure,
+      code: 'upstream_error',
+      message: 'Upstream error',
+      upstreamStatus: undefined,
+    },
+    {
       name: 'таймаут → upstream_timeout',
       failure: { kind: 'timeout' } as UpstreamFailure,
       code: 'upstream_timeout',
