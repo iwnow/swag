@@ -30,7 +30,7 @@
 | Account шины | `BusAccount` | Изолированный NATS account одного роя. |
 | Общее состояние роя | `SwarmState` | NATS KV роя, обновление через compare-and-set. |
 | LLM Gateway | `llm-gateway`, `LlmGatewayCore` | Единственная точка выхода к моделям: OpenAI-совместимый API, ключи провайдеров за ним, стоимость вызова по ценам платформы, событие `llm.call` (спека 002). |
-| LiteLLM | `LiteLLM`, `LlmUpstream` | Адаптер форматов провайдеров за LLM Gateway; виртуальные ключи, бюджеты и БД LiteLLM не используются (D-21, спека 002). |
+| LiteLLM | `LiteLLM`, `LlmUpstream`, `@swag/adapter-litellm` | Адаптер форматов провайдеров за LLM Gateway; виртуальные ключи, бюджеты и БД LiteLLM не используются (D-21, спека 002). |
 | Профиль моделей | `LLM_PROFILE` | `test`, `dev`, `prod`: каталог `infra/llm/<профиль>/` с конфигом LiteLLM и ценами. |
 | Модель платформы | `ModelId` | Имя модели в плане и запросе (`chat-small`, `chat-large`), одинаковое во всех профилях; провайдерскую модель за ним выбирает профиль. |
 | Каталог моделей | `ModelCatalog`, `CatalogModel` | Модели профиля с ценами платформы, `models.json`. |
@@ -45,6 +45,8 @@
 | Код ошибки gateway | `GatewayErrorCode` | `unauthorized`, `invalid_caller`, `invalid_request`, `model_not_found`, `upstream_bad_request`, `rate_limited`, `upstream_error`, `upstream_timeout`. |
 | Вызывающий gateway | `LlmCaller`, `SWARM_ID_HEADER`, `AGENT_ID_HEADER` | `swarmId` и `agentId` из заголовков `x-swag-swarm-id`, `x-swag-agent-id` (имена заголовков — константы); до спеки 004 (Q-3 спеки 002). |
 | Фейковый провайдер | `llm-fake`, `startFakeProvider` | OpenAI-совместимый сервер для тестов и профиля `test`, `infra/llm/fake-provider`. |
+| Запись запроса к фейку | `FakeRequest` | Что фейк записал о запросе: `path`, `headers`, `body`, `closedByClient`; тесты читают список `requests`. |
+| Маркер сценария фейка | `__no_usage__`, `__no_cost__`, `__fail_500__`, `__fail_429__`, `__fail_400__` | Текст в последнем сообщении `messages` выбирает ответ фейка (4.12). |
 | Ledger | `Ledger`, `LedgerEntry` | Журнал денежных операций пользователя: пополнения и траты (LLM, compute), деньги — целые микро-единицы USD (`amountMicroUsd`). |
 | Пользователь | `User`, `userId` | Тот, кто работает с платформой через личный кабинет: свой баланс, свои рои. |
 | Организация | `Organization`, `orgId` | Команда клиента на платформе: пользователи, их рои и расходы. Модель (баланс, вхождение пользователя) — D-10. |
