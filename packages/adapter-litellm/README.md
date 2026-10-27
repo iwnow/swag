@@ -10,7 +10,7 @@
 ## Что внутри сейчас
 
 - `src/index.ts` — `LiteLlmOptions`, `redact`, `createLiteLlmUpstream`.
-- `test/complete.test.ts` — обычный ответ и заголовок `Authorization`, `__fail_400__` / `__fail_500__` / `__fail_429__`, недоступный порт, `traceparent` в спане `startTelemetry`, `redact` (AC-002-17).
+- `test/complete.test.ts` — обычный ответ и заголовок `Authorization`, `__fail_400__` / `__fail_500__` / `__fail_429__`, недоступный порт, `traceparent` в спане `startTelemetry`, `redact` (AC-002-17); через подставной `fetch`: `2xx` с не-JSON телом → `network` (D-49), не-`2xx` без JSON → `HTTP <статус>`, обрезка `message` до 1000 и `redact` (D-48).
 - `test/fake-provider.test.ts` — тесты фейкового провайдера из `infra/llm/fake-provider/server.ts` (спека 002, 4.12): без потока и с потоком.
 
 ## Ограничения
@@ -31,7 +31,7 @@
 
 - Трассировка — через `propagation.inject` из `@opentelemetry/api`, как в `adapter-nats`: без зарегистрированного SDK заголовка нет, код не зависит от `adapter-telemetry`. `adapter-telemetry` — devDependency (нужен тестам). Отклонение от 4.14, где он указан как зависимость.
 - `redact` вызывается после обрезки до 1000 символов, как в 4.5. Риск частичного секрета на границе обрезки — D-48 в `docs/spec/questions.md`.
-- Тело `2xx`, которое не читается как JSON, — `network` (4.5 этого случая не описывает; `UpstreamFailure` не знает «плохой ответ»). Ядро переведёт в `upstream_error` (502).
+- Тело `2xx`, которое не читается как JSON, — `network` (4.5 этого случая не описывает; `UpstreamFailure` не знает «плохой ответ»; D-49). Ядро переведёт в `upstream_error` (502).
 - Тип сигнала в порте — структурный, см. D-47.
 - Ответы не-`2xx` без JSON-тела — `message` `HTTP <статус>`.
 - Тесты фейка лежат в этом пакете, потому что фейк нужен адаптеру (4.12), а `infra/llm/fake-provider` — не пакет.

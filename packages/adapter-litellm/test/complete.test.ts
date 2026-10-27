@@ -134,3 +134,54 @@ describe('complete (спека 002, 4.5, без таймаута)', () => {
     }
   });
 });
+
+describe('complete: ответы, которые фейк не даёт (D-49, D-48)', () => {
+  const replying = (res: Response) =>
+    createLiteLlmUpstream({
+      baseUrl: 'http://stub.invalid',
+      masterKey: MASTER_KEY,
+      idleTimeoutMs: 120_000,
+      secrets: [MASTER_KEY, FAKE_KEY],
+      fetch: async () => res,
+    });
+
+  it('D-49: 2xx с телом, которое не читается как JSON — network', async () => {
+    const result = await replying(new Response('не json', { status: 200 })).complete(
+      request('привет'),
+      signal(),
+    );
+
+    expect(result).toEqual({ ok: false, failure: { kind: 'network' } });
+  });
+
+  it('не-2xx без JSON-тела или без error.message — http с HTTP <status>', async () => {
+    const bodies = ['<html>Bad Gateway</html>', '{"error":{}}'];
+
+    for (const text of bodies) {
+      const result = await replying(new Response(text, { status: 502 })).complete(
+        request('привет'),
+        signal(),
+      );
+
+      expect(result).toEqual({
+        ok: false,
+        failure: { kind: 'http', status: 502, message: 'HTTP 502' },
+      });
+    }
+  });
+
+  it('D-48: message обрезается до 1000 символов, затем redact — секрет в начале заменён на ***', async () => {
+    const long = `${MASTER_KEY}${'x'.repeat(2000)}`;
+    const result = await replying(
+      new Response(JSON.stringify({ error: { message: long } }), { status: 400 }),
+    ).complete(request('привет'), signal());
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure).toEqual({
+      kind: 'http',
+      status: 400,
+      message: `***${'x'.repeat(1000 - MASTER_KEY.length)}`,
+    });
+  });
+});
