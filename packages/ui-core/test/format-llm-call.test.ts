@@ -13,26 +13,43 @@ const base: LlmCallData = {
   latencyMs: 120,
 };
 
+const withUsage = 'chat-small · 1000 (кэш 200) → 500 ток.';
+
 describe('formatLlmCall', () => {
-  it('AC-002-24: строки ровно как в таблице 4.11', () => {
-    expect(formatLlmCall(base)).toBe('chat-small · 1000 (кэш 200) → 500 ток. · $0.009960');
-    expect(formatLlmCall({ ...base, status: 'aborted' })).toBe(
-      'chat-small · 1000 (кэш 200) → 500 ток. · $0.009960 · прерван',
-    );
-    expect(formatLlmCall({ ...base, usage: null, costMicroUsd: null })).toBe(
+  it.each<[string, LlmCallData, string]>([
+    ['AC-002-24: usage есть, ok', base, `${withUsage} · $0.009960`],
+    [
+      'AC-002-24: usage есть, aborted',
+      { ...base, status: 'aborted' },
+      `${withUsage} · $0.009960 · прерван`,
+    ],
+    [
+      'AC-002-24: usage есть, aborted с errorCode — код не показывается',
+      { ...base, status: 'aborted', errorCode: 'upstream_error' },
+      `${withUsage} · $0.009960 · прерван`,
+    ],
+    [
+      'AC-002-24: usage null, ok',
+      { ...base, usage: null, costMicroUsd: null },
       'chat-small · без usage',
-    );
-    expect(formatLlmCall({ ...base, status: 'aborted', usage: null, costMicroUsd: null })).toBe(
+    ],
+    [
+      'AC-002-24: usage null, aborted',
+      { ...base, status: 'aborted', usage: null, costMicroUsd: null },
       'chat-small · прерван · без usage',
-    );
-    expect(
-      formatLlmCall({
-        ...base,
-        status: 'error',
-        usage: null,
-        costMicroUsd: null,
-        errorCode: 'upstream_timeout',
-      }),
-    ).toBe('chat-small · ошибка upstream_timeout');
+    ],
+    [
+      'AC-002-24: status error',
+      { ...base, status: 'error', usage: null, costMicroUsd: null, errorCode: 'upstream_timeout' },
+      'chat-small · ошибка upstream_timeout',
+    ],
+    ['AC-002-24: стоимость 0 → 6 знаков', { ...base, costMicroUsd: 0 }, `${withUsage} · $0.000000`],
+    [
+      'AC-002-24: стоимость 1 микродоллар → 6 знаков',
+      { ...base, costMicroUsd: 1 },
+      `${withUsage} · $0.000001`,
+    ],
+  ])('%s', (_name, data, expected) => {
+    expect(formatLlmCall(data)).toBe(expected);
   });
 });

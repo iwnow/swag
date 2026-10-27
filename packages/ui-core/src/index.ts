@@ -69,11 +69,12 @@ const TRACE_ID_SLOT = '{traceId}';
 // Спека 002, 4.11: строка вызова модели в ленте роя. Стоимость — микродоллары / 1e6, 6 знаков.
 export function formatLlmCall(data: LlmCallData): string {
   if (data.status === 'error') return `${data.model} · ошибка ${data.errorCode}`;
-  const aborted = data.status === 'aborted' ? ' · прерван' : '';
+  const aborted = data.status === 'aborted';
   if (data.usage === null) return `${data.model} · ${aborted ? 'прерван · ' : ''}без usage`;
   const { promptTokens, cachedPromptTokens, completionTokens } = data.usage;
   const cost = ((data.costMicroUsd ?? 0) / 1e6).toFixed(6);
-  return `${data.model} · ${promptTokens} (кэш ${cachedPromptTokens}) → ${completionTokens} ток. · $${cost}${aborted}`;
+  const abortedMark = aborted ? ' · прерван' : '';
+  return `${data.model} · ${promptTokens} (кэш ${cachedPromptTokens}) → ${completionTokens} ток. · $${cost}${abortedMark}`;
 }
 
 export function createUiCore(deps: UiCoreDeps): UiCore {
