@@ -2,11 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createLiteLlmUpstream } from '@swag/adapter-litellm';
 import { connectNatsBus } from '@swag/adapter-nats';
-import { startTelemetry, tracedHttpServer, type Telemetry } from '@swag/adapter-telemetry';
+import { startTelemetry, type Telemetry } from '@swag/adapter-telemetry';
 import { BaseConfig, LlmGatewayConfig, loadConfig } from '@swag/config';
 import { eventsSubject, type ModelCatalog } from '@swag/contracts';
 import { createLlmGatewayCore } from '@swag/llm-gateway-core';
-import { buildApp } from './app.ts';
+import { buildApp, telemetryAppOptions } from './app.ts';
 import { readCatalog } from './catalog.ts';
 import { startGateway, upstreamSecrets } from './start.ts';
 
@@ -82,10 +82,7 @@ const app = await buildApp(
     token: config.LLM_GATEWAY_TOKEN,
     bodyLimitBytes: config.LLM_GATEWAY_BODY_LIMIT_BYTES,
   },
-  {
-    loggerInstance: telemetry.logger.pino,
-    serverFactory: tracedHttpServer(telemetry, { ignorePaths: ['/health'] }),
-  },
+  telemetryAppOptions(telemetry),
 );
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

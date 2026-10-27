@@ -47,6 +47,7 @@ export function recordingLog(): { log: Logger; entries: LogEntry[] } {
 // events по умолчанию не пишет; тест передаёт свой, чтобы проверить отсутствие или наличие событий.
 // traceId — трейс стаба, если trace не передан; trace — порт телеметрии (T-24); idleTimeoutMs — 5 с по умолчанию.
 // secrets — по умолчанию только мастер-ключ; тест телеметрии передаёт и ключ фейка (4.9).
+// masterKey — ключ, который уходит апстриму в Authorization; по умолчанию MASTER_KEY (тест AC-002-17 берёт и ключ фейка).
 export function makeCore(
   upstreamUrl: string,
   log: Logger,
@@ -56,13 +57,14 @@ export function makeCore(
     traceId?: string;
     trace?: TraceContext;
     secrets?: string[];
+    masterKey?: string;
   } = {},
 ): LlmGatewayCore {
   return createLlmGatewayCore({
     catalog: readCatalog(catalogPath),
     upstream: createLiteLlmUpstream({
       baseUrl: upstreamUrl,
-      masterKey: MASTER_KEY,
+      masterKey: options.masterKey ?? MASTER_KEY,
       idleTimeoutMs: options.idleTimeoutMs ?? 5_000,
       secrets: options.secrets ?? [MASTER_KEY],
     }),

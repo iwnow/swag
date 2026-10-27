@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
+import { tracedHttpServer, type Telemetry } from '@swag/adapter-telemetry';
 import { AGENT_ID_HEADER, SWARM_ID_HEADER, type GatewayErrorCode } from '@swag/contracts';
 import type { CompleteResult, LlmGatewayCore } from '@swag/llm-gateway-core';
 import Fastify, {
@@ -8,6 +9,15 @@ import Fastify, {
   type FastifyRequest,
   type FastifyServerOptions,
 } from 'fastify';
+
+// Опции Fastify телеметрии (4.10, REQ-002-14): логгер телеметрии и серверный спан на каждый запрос, кроме /health.
+// Общие для main.ts и тестов телеметрии, чтобы тесты проверяли то же подключение, что процесс.
+export function telemetryAppOptions(telemetry: Telemetry): FastifyServerOptions {
+  return {
+    loggerInstance: telemetry.logger.pino,
+    serverFactory: tracedHttpServer(telemetry, { ignorePaths: ['/health'] }),
+  };
+}
 
 // Оболочка llm-gateway (спека 002, 4.2): токен, вход в ядро и выход ядра. Решений здесь нет — только вход и выход ядра.
 // gateway.token — LLM_GATEWAY_TOKEN, gateway.bodyLimitBytes — LLM_GATEWAY_BODY_LIMIT_BYTES (REQ-002-3).
