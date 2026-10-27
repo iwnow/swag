@@ -1,39 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createMemoryExporters, startTelemetry } from '@swag/adapter-telemetry';
-import type { ChatRequest } from '@swag/llm-gateway-core';
 import { startFakeProvider } from '../../../infra/llm/fake-provider/server.ts';
-import { createLiteLlmUpstream, redact } from '../src/index.ts';
+import { redact } from '../src/index.ts';
+import {
+  MASTER_KEY,
+  FAKE_KEY,
+  STUB_URL,
+  chatRequest,
+  signal,
+  stubFetch,
+  upstreamFor,
+  useFake,
+} from './helpers.ts';
 
-// Значения из 4.9 спеки: мастер-ключ LiteLLM и ключ фейка (`*_API_KEY`).
-const MASTER_KEY = 'sk-swag-local-not-secret';
-const FAKE_KEY = 'fake-provider-key-not-secret';
-
-type Fake = Awaited<ReturnType<typeof startFakeProvider>>;
-
-let fake: Fake;
-
-beforeEach(async () => {
-  fake = await startFakeProvider({ port: 0 });
-});
-
-afterEach(async () => {
-  await fake.close();
-});
-
-const request = (content: string): ChatRequest => ({
-  model: 'fake-small',
-  messages: [{ role: 'user', content }],
-});
-
-const upstreamFor = (url: string) =>
-  createLiteLlmUpstream({
-    baseUrl: url,
-    masterKey: MASTER_KEY,
-    idleTimeoutMs: 120_000,
-    secrets: [MASTER_KEY, FAKE_KEY],
-  });
-
-const signal = () => new AbortController().signal;
+const fake = useFake();
 
 describe('redact (спека 002, 4.5)', () => {
   it('AC-002-17: пустой секрет не меняет текст', () => {
@@ -48,8 +28,8 @@ describe('redact (спека 002, 4.5)', () => {
 
 describe('complete (спека 002, 4.5, без таймаута)', () => {
   it('обычный ответ 2xx — body как пришёл, запрос с Authorization мастер-ключа', async () => {
-    const upstream = upstreamFor(fake.url);
-    const body = request('привет');
+    const upstream = upstreamFor(fake.current.url);
+    const body = chatRequest('привет');
 
     const result = await upstream.complete(body, signal());
 
@@ -59,7 +39,7 @@ describe('complete (спека 002, 4.5, без таймаута)', () => {
       object: 'chat.completion',
       choices: [{ message: { content: 'fake reply' } }],
     });
-    const sent = fake.requests[0];
+    const sent = fake.current.requests[0];
     expect(sent?.path).toBe('/v1/chat/completions');
     expect(sent?.headers['authorization']).toBe(`Bearer ${MASTER_KEY}`);
     expect(sent?.headers['content-type']).toBe('application/json');
@@ -67,9 +47,9 @@ describe('complete (спека 002, 4.5, без таймаута)', () => {
   });
 
   it('AC-002-17: __fail_400__ — message без ключа фейка и мастер-ключа, с ***', async () => {
-    const upstream = upstreamFor(fake.url);
+    const upstream = upstreamFor(fake.current.url);
 
-    const result = await upstream.complete(request('__fail_400__'), signal());
+    const result = await upstream.complete(chatRequest('__fail_400__'), signal());
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -83,13 +63,19 @@ describe('complete (спека 002, 4.5, без таймаута)', () => {
   });
 
   it('__fail_500__ — message из error.message', async () => {
-    const result = await upstreamFor(fake.url).complete(request('__fail_500__'), signal());
+    const result = await upstreamFor(fake.current.url).complete(
+      chatRequest('__fail_500__'),
+      signal(),
+    );
 
     expect(result).toEqual({ ok: false, failure: { kind: 'http', status: 500, message: 'boom' } });
   });
 
   it('__fail_429__ — message из error.message', async () => {
-    const result = await upstreamFor(fake.url).complete(request('__fail_429__'), signal());
+    const result = await upstreamFor(fake.current.url).complete(
+      chatRequest('__fail_429__'),
+      signal(),
+    );
 
     expect(result).toEqual({
       ok: false,
@@ -102,7 +88,7 @@ describe('complete (спека 002, 4.5, без таймаута)', () => {
     const url = closed.url;
     await closed.close();
 
-    const result = await upstreamFor(url).complete(request('привет'), signal());
+    const result = await upstreamFor(url).complete(chatRequest('привет'), signal());
 
     expect(result).toEqual({ ok: false, failure: { kind: 'network' } });
   });
@@ -119,16 +105,16 @@ describe('complete (спека 002, 4.5, без таймаута)', () => {
       exporters: { spans: memory.spans },
     });
     try {
-      const upstream = upstreamFor(fake.url);
+      const upstream = upstreamFor(fake.current.url);
       let expected: string | null = null;
 
       await telemetry.inSpan('test.complete', { kind: 'client' }, () => {
         expected = telemetry.currentTraceparent();
-        return upstream.complete(request('привет'), signal());
+        return upstream.complete(chatRequest('привет'), signal());
       });
 
       expect(expected).not.toBeNull();
-      expect(fake.requests[0]?.headers['traceparent']).toBe(expected);
+      expect(fake.current.requests[0]?.headers['traceparent']).toBe(expected);
     } finally {
       await telemetry.shutdown();
     }
@@ -136,20 +122,10 @@ describe('complete (спека 002, 4.5, без таймаута)', () => {
 });
 
 describe('complete: ответы, которые фейк не даёт (D-49, D-48)', () => {
-  const replying = (res: Response) =>
-    createLiteLlmUpstream({
-      baseUrl: 'http://stub.invalid',
-      masterKey: MASTER_KEY,
-      idleTimeoutMs: 120_000,
-      secrets: [MASTER_KEY, FAKE_KEY],
-      fetch: async () => res,
-    });
-
   it('D-49: 2xx с телом, которое не читается как JSON — network', async () => {
-    const result = await replying(new Response('не json', { status: 200 })).complete(
-      request('привет'),
-      signal(),
-    );
+    const result = await upstreamFor(STUB_URL, {
+      fetch: stubFetch(new Response('не json', { status: 200 })),
+    }).complete(chatRequest('привет'), signal());
 
     expect(result).toEqual({ ok: false, failure: { kind: 'network' } });
   });
@@ -158,10 +134,9 @@ describe('complete: ответы, которые фейк не даёт (D-49, D
     const bodies = ['<html>Bad Gateway</html>', '{"error":{}}'];
 
     for (const text of bodies) {
-      const result = await replying(new Response(text, { status: 502 })).complete(
-        request('привет'),
-        signal(),
-      );
+      const result = await upstreamFor(STUB_URL, {
+        fetch: stubFetch(new Response(text, { status: 502 })),
+      }).complete(chatRequest('привет'), signal());
 
       expect(result).toEqual({
         ok: false,
@@ -172,9 +147,9 @@ describe('complete: ответы, которые фейк не даёт (D-49, D
 
   it('D-48: message обрезается до 1000 символов, затем redact — секрет в начале заменён на ***', async () => {
     const long = `${MASTER_KEY}${'x'.repeat(2000)}`;
-    const result = await replying(
-      new Response(JSON.stringify({ error: { message: long } }), { status: 400 }),
-    ).complete(request('привет'), signal());
+    const result = await upstreamFor(STUB_URL, {
+      fetch: stubFetch(new Response(JSON.stringify({ error: { message: long } }), { status: 400 })),
+    }).complete(chatRequest('привет'), signal());
 
     expect(result.ok).toBe(false);
     if (result.ok) return;

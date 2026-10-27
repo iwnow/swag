@@ -48,25 +48,23 @@ function httpFailure(status: number, text: string, secrets: string[]): UpstreamF
   return { kind: 'http', status, message: redact(message.slice(0, MESSAGE_LIMIT), secrets) };
 }
 
+// Причина срабатывания таймера: по ней callUpstream отличает таймаут от внешнего abort.
+const TIMEOUT_REASON = Symbol('idle-timeout');
+
 // Спека 002, 4.5: таймер простоя взводится до запроса и перезапускается на каждом куске тела.
-// Сигнал запроса объединяет его с внешним signal; timedOut отличает таймаут от внешнего abort.
+// Сигнал запроса объединяет его с внешним signal; AbortSignal.any отдаёт reason первого сработавшего источника.
 function idleGuard(outer: AbortSignal, idleTimeoutMs: number) {
   const own = new AbortController();
-  let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const arm = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => {
-      timedOut = true;
-      own.abort();
-    }, idleTimeoutMs);
+    timer = setTimeout(() => own.abort(TIMEOUT_REASON), idleTimeoutMs);
   };
   arm();
   return {
     signal: AbortSignal.any([outer, own.signal]),
     arm,
     stop: () => clearTimeout(timer),
-    timedOut: () => timedOut,
   };
 }
 
@@ -109,7 +107,8 @@ async function callUpstream(
     });
     text = await readText(res, idle.arm);
   } catch {
-    return { ok: false, failure: idle.timedOut() ? { kind: 'timeout' } : { kind: 'network' } };
+    const timedOut = idle.signal.reason === TIMEOUT_REASON;
+    return { ok: false, failure: timedOut ? { kind: 'timeout' } : { kind: 'network' } };
   } finally {
     idle.stop();
   }

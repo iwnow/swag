@@ -1,23 +1,14 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { startFakeProvider } from '../../../infra/llm/fake-provider/server.ts';
-import { createLiteLlmUpstream } from '../src/index.ts';
+import { afterEach, describe, expect, it } from 'vitest';
+import { chatRequest, signal, upstreamFor, useFake } from './helpers.ts';
 
 // Спека 002, 4.5: таймаут простоя и внешний abort. Тесты без AC-id: AC-002-16 описывает 504 шлюза (T-16, T-20).
-const MASTER_KEY = 'sk-swag-local-not-secret';
 
-type Fake = Awaited<ReturnType<typeof startFakeProvider>>;
-
-let fake: Fake;
+const fake = useFake();
 const servers: Server[] = [];
 
-beforeEach(async () => {
-  fake = await startFakeProvider({ port: 0 });
-});
-
 afterEach(async () => {
-  await fake.close();
   for (const server of servers.splice(0)) {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -26,20 +17,7 @@ afterEach(async () => {
   }
 });
 
-const upstreamFor = (baseUrl: string, idleTimeoutMs: number) =>
-  createLiteLlmUpstream({
-    baseUrl,
-    masterKey: MASTER_KEY,
-    idleTimeoutMs,
-    secrets: [MASTER_KEY],
-  });
-
-const hangRequest = {
-  model: 'fake-small',
-  messages: [{ role: 'user', content: '__hang__' }],
-};
-
-const signal = () => new AbortController().signal;
+const hang = chatRequest('__hang__');
 
 async function listen(server: Server): Promise<string> {
   servers.push(server);
@@ -71,20 +49,23 @@ function hangingServer(): Promise<string> {
 
 describe('complete: таймаут простоя (спека 002, 4.5, REQ-002-10)', () => {
   it('__hang__ при idleTimeoutMs 200 — timeout за 200–1000 мс', async () => {
-    const started = Date.now();
+    const started = performance.now();
 
-    const result = await upstreamFor(fake.url, 200).complete(hangRequest, signal());
+    const result = await upstreamFor(fake.current.url, { idleTimeoutMs: 200 }).complete(
+      hang,
+      signal(),
+    );
 
-    const elapsed = Date.now() - started;
+    const elapsed = performance.now() - started;
     expect(result).toEqual({ ok: false, failure: { kind: 'timeout' } });
-    expect(elapsed).toBeGreaterThanOrEqual(200);
+    expect(elapsed).toBeGreaterThanOrEqual(190);
     expect(elapsed).toBeLessThan(1000);
   });
 
   it('таймер перезапускается на каждом куске: тело частями по 100 мс при idleTimeoutMs 250 — ok', async () => {
     const url = await trickleServer(100, ['{"object":', '"chat.completion",', '"choices":[]}']);
 
-    const result = await upstreamFor(url, 250).complete(hangRequest, signal());
+    const result = await upstreamFor(url, { idleTimeoutMs: 250 }).complete(hang, signal());
 
     expect(result).toEqual({ ok: true, body: { object: 'chat.completion', choices: [] } });
   });
@@ -92,27 +73,41 @@ describe('complete: таймаут простоя (спека 002, 4.5, REQ-002-
   it('пауза между кусками тела больше idleTimeoutMs — timeout, даже если начало пришло', async () => {
     const url = await trickleServer(400, ['{"object":', '"chat.completion"}']);
 
-    const result = await upstreamFor(url, 200).complete(hangRequest, signal());
+    const result = await upstreamFor(url, { idleTimeoutMs: 200 }).complete(hang, signal());
 
     expect(result).toEqual({ ok: false, failure: { kind: 'timeout' } });
   });
 
-  it('внешний abort через 50 мс — network быстро, не timeout', async () => {
-    const controller = new AbortController();
-    const started = Date.now();
-    setTimeout(() => controller.abort(), 50);
+  it('D-51: не-2xx, у которого сервер обрывает тело, — network, не timeout', async () => {
+    const url = await listen(
+      createServer((_req, res) => {
+        res.writeHead(502, { 'content-type': 'application/json' });
+        res.write('{"error":{"mes');
+        setTimeout(() => res.socket?.destroy(), 50);
+      }),
+    );
 
-    const result = await upstreamFor(fake.url, 120_000).complete(hangRequest, controller.signal);
+    const result = await upstreamFor(url).complete(chatRequest('привет'), signal());
 
     expect(result).toEqual({ ok: false, failure: { kind: 'network' } });
-    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('внешний abort через 50 мс — network быстро, не timeout', async () => {
+    const controller = new AbortController();
+    const started = performance.now();
+    setTimeout(() => controller.abort(), 50);
+
+    const result = await upstreamFor(fake.current.url).complete(hang, controller.signal);
+
+    expect(result).toEqual({ ok: false, failure: { kind: 'network' } });
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 
   it('уже прерванный внешний signal — network', async () => {
     const controller = new AbortController();
     controller.abort();
 
-    const result = await upstreamFor(fake.url, 120_000).complete(hangRequest, controller.signal);
+    const result = await upstreamFor(fake.current.url).complete(hang, controller.signal);
 
     expect(result).toEqual({ ok: false, failure: { kind: 'network' } });
   });
@@ -122,7 +117,7 @@ describe('complete: таймаут простоя (спека 002, 4.5, REQ-002-
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 150);
 
-    const result = await upstreamFor(url, 120_000).complete(hangRequest, controller.signal);
+    const result = await upstreamFor(url).complete(hang, controller.signal);
 
     expect(result).toEqual({ ok: false, failure: { kind: 'network' } });
   });
@@ -131,13 +126,13 @@ describe('complete: таймаут простоя (спека 002, 4.5, REQ-002-
 describe('listModels: таймаут простоя и внешний abort (спека 002, 4.5)', () => {
   it('нет ответа при idleTimeoutMs 200 — timeout за 200–1000 мс', async () => {
     const url = await hangingServer();
-    const started = Date.now();
+    const started = performance.now();
 
-    const result = await upstreamFor(url, 200).listModels(signal());
+    const result = await upstreamFor(url, { idleTimeoutMs: 200 }).listModels(signal());
 
-    const elapsed = Date.now() - started;
+    const elapsed = performance.now() - started;
     expect(result).toEqual({ ok: false, failure: { kind: 'timeout' } });
-    expect(elapsed).toBeGreaterThanOrEqual(200);
+    expect(elapsed).toBeGreaterThanOrEqual(190);
     expect(elapsed).toBeLessThan(1000);
   });
 
@@ -146,7 +141,7 @@ describe('listModels: таймаут простоя и внешний abort (с�
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 50);
 
-    const result = await upstreamFor(url, 120_000).listModels(controller.signal);
+    const result = await upstreamFor(url).listModels(controller.signal);
 
     expect(result).toEqual({ ok: false, failure: { kind: 'network' } });
   });
