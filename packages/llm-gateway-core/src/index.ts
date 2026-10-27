@@ -91,3 +91,23 @@ export function parseProviderCost(raw: unknown): number | null {
   if (typeof cost !== 'number' || !Number.isFinite(cost) || cost < 0) return null;
   return Math.round(cost * 1_000_000);
 }
+
+// Спека 002, 4.4. Порт апстрима: сейчас только обычный вызов (stream и listModels — T-11, T-13).
+export type UpstreamFailure =
+  | { kind: 'http'; status: number; message: string } // message уже без секретов (4.5)
+  | { kind: 'network' }
+  | { kind: 'timeout' };
+
+export type UpstreamResponse =
+  { ok: true; body: unknown } | { ok: false; failure: UpstreamFailure };
+
+// Спека 002, 4.4 пишет AbortSignal. Ядро собирается без DOM и @types/node (architecture.md), поэтому тип структурный:
+// подходит любой AbortSignal; ядро только передаёт сигнал дальше.
+export interface UpstreamSignal {
+  readonly aborted: boolean;
+}
+
+export interface LlmUpstream {
+  // Обычный вызов. Тело уже проверено ядром.
+  complete(body: ChatRequest, signal: UpstreamSignal): Promise<UpstreamResponse>;
+}

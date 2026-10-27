@@ -6,5 +6,12 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "1.10.0",
+    "@swag/llm-gateway-core": "0.0.0"
+  },
+  "devDependencies": {
+    "@swag/adapter-telemetry": "0.0.0"
   }
 }
