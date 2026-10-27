@@ -6,7 +6,7 @@ import { startTelemetry, type Telemetry } from '@swag/adapter-telemetry';
 import { BaseConfig, LlmGatewayConfig, loadConfig } from '@swag/config';
 import { eventsSubject, type ModelCatalog } from '@swag/contracts';
 import { createLlmGatewayCore } from '@swag/llm-gateway-core';
-import { buildApp } from './app.ts';
+import { buildApp, telemetryAppOptions } from './app.ts';
 import { readCatalog } from './catalog.ts';
 import { startGateway, upstreamSecrets } from './start.ts';
 
@@ -75,10 +75,15 @@ const core = createLlmGatewayCore({
   version,
 });
 
-const app = await buildApp(core, {
-  token: config.LLM_GATEWAY_TOKEN,
-  bodyLimitBytes: config.LLM_GATEWAY_BODY_LIMIT_BYTES,
-});
+// Fastify пишет тем же логгером; каждый запрос, кроме /health, — серверный спан с родителем из traceparent (как в apps/api).
+const app = await buildApp(
+  core,
+  {
+    token: config.LLM_GATEWAY_TOKEN,
+    bodyLimitBytes: config.LLM_GATEWAY_BODY_LIMIT_BYTES,
+  },
+  telemetryAppOptions(telemetry),
+);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(

@@ -12,11 +12,12 @@
 
 ## Что внутри сейчас
 
-- `src/main.ts` — телеметрия (`startTelemetry`, сервис `llm-gateway`), конфигурация, каталог, NATS, адаптер, ядро, запуск, остановка по `SIGINT`/`SIGTERM`. Слушает `0.0.0.0` внутри контейнера.
+- `src/main.ts` — телеметрия (`startTelemetry`, сервис `llm-gateway`), конфигурация, каталог, NATS, адаптер, ядро (`trace: telemetry.trace`), приложение с опциями `telemetryAppOptions(telemetry)`, запуск, остановка по `SIGINT`/`SIGTERM` со сбросом телеметрии. Слушает `0.0.0.0` внутри контейнера.
 - `src/start.ts` — `startGateway` (сверка, затем `listen`, либо выход 1), `waitForUpstream` (повтор раз в 1 с до таймаута), `upstreamSecrets`.
 - `src/catalog.ts` — `readCatalog`: читает файл и проверяет его схемой `ModelCatalog`.
-- `src/app.ts` — `buildApp(core, { token, bodyLimitBytes })`: Fastify с `GET /health` (без токена), `GET /v1/models` и `POST /v1/chat/completions` за проверкой токена в `onRequest`; заголовки вызывающего и тело уходят в ядро как есть; отказ ядра — статус и тело по 4.2; `kind: 'json'` отвечает `200` с телом ядра как есть; `kind: 'stream'` пишет SSE (`writeStream`: `200`, `content-type: text/event-stream`, `cache-control: no-cache`, каждый фрагмент — `data: <payload>\n\n` сразу после получения, `reply.hijack()` и `reply.raw`); вызов отменяется, если клиент ушёл до ответа; ошибка разбора тела (больше `bodyLimitBytes` — `413`, не JSON — `400`) — тело по 4.2 с `code: 'invalid_request'` (D-65).
-- `test/support.ts` — общие хелперы тестов: `openGateway(options)` (фейк, ядро, шина в памяти с подпиской на события, лог; порт не слушается), `listenUrl(app)` (`127.0.0.1` на свободном порту), `closeAll` (ставится в `afterEach` каждого файла), `caller`, `authorized`, `SWARM_ID`, фикстура каталога.
+- `src/app.ts` — `telemetryAppOptions(telemetry)`: опции Fastify телеметрии (логгер `telemetry.logger.pino`, `tracedHttpServer` с `ignorePaths: ['/health']`), общие для `main.ts` и `test/telemetry.test.ts`; `buildApp(core, { token, bodyLimitBytes }, options)`: Fastify с `GET /health` (без токена), `GET /v1/models` и `POST /v1/chat/completions` за проверкой токена в `onRequest`; заголовки вызывающего и тело уходят в ядро как есть; отказ ядра — статус и тело по 4.2; `kind: 'json'` отвечает `200` с телом ядра как есть; `kind: 'stream'` пишет SSE (`writeStream`: `200`, `content-type: text/event-stream`, `cache-control: no-cache`, каждый фрагмент — `data: <payload>\n\n` сразу после получения, `reply.hijack()` и `reply.raw`); вызов отменяется, если клиент ушёл до ответа; ошибка разбора тела (больше `bodyLimitBytes` — `413`, не JSON — `400`) — тело по 4.2 с `code: 'invalid_request'` (D-65).
+- `test/support.ts` — общие хелперы тестов: `openGateway(options)` (фейк, ядро, шина в памяти с подпиской на события, лог; порт не слушается), `makeCore(url, log, events, options)` (опции `traceId` — стаб трейса, `trace` — порт телеметрии, `secrets`, `masterKey` — ключ, уходящий апстриму), `listenUrl(app)` (`127.0.0.1` на свободном порту), `closeAll` (ставится в `afterEach` каждого файла), `caller`, `authorized`, `SWARM_ID`, фикстура каталога.
+- `test/telemetry.test.ts` — оболочка с телеметрией, как в `apps/api`: `startTelemetry` с выводом строк в массив и спанами в памяти (`createMemoryExporters`), Fastify на `loggerInstance` и `tracedHttpServer`, сеть по `listen`: AC-002-23 (без потока и потоком: маркер нет в логах, спанах и событии; на каждый вызов одна `llm call` — `LogRecord` с `service: 'llm-gateway'`), AC-002-17 в двух проходах (`masterKey` — мастер-ключ и ключ фейка: ключ прохода реально уходит фейку в `Authorization`, в ответе `Bearer ***`, ни одного ключа в логах, спанах и событии), REQ-002-14 в двух вариантах — без потока и потоком (трейс из `traceparent`: запись, событие и серверный спан в трейсе запроса).
 - `test/routes.test.ts` — тесты на фейке через `app.inject`:
   - отказы до ядра: AC-002-2 (`401` без токена, с чужим и с токеном другой длины), AC-002-3 (`400 invalid_caller`), AC-002-4 (`model_not_found`), AC-002-5 (`invalid_request`: нет `messages`, пустой, тело-массив), AC-002-6 (`/v1/models`), AC-002-28 (поля провайдера в теле), тело больше лимита → `413`, валидный вызов доходит до фейка с телом;
   - ответ JSON: AC-002-1 (без потока с `tools`, `tool_choice`, `temperature`: `200`, тело как у фейка, фейк получил тело как отправлено), AC-002-9 (одно `llm.call` в шине с `traceId`, проходит `PlatformEventInput`), AC-002-14 (без `usage`: событие с `usage: null`, `warn` `usage_missing`), AC-002-15 без потока (`502 upstream_error`, `429 rate_limited`, `400 upstream_bad_request`), AC-002-16 (таймаут простоя 200 мс: `504 upstream_timeout`);
@@ -28,7 +29,7 @@
 ## Ограничения
 
 - Поток SSE пишется без ожидания `drain`: медленный клиент копит фрагменты в памяти процесса (D-68).
-- Телеметрия только для логгера и `TraceContext`: хуки Fastify и `tracedHttpServer` — T-24. Dockerfile — T-25.
+- Dockerfile — T-25.
 - Каталог читается один раз при старте; смена каталога требует перезапуска.
 - Полный запуск (`main.ts`) требует NATS и LiteLLM; в тестах не запускается, проверяется `startGateway` с фейком.
 
@@ -40,6 +41,9 @@
 
 ## Ключевые решения
 
+- Телеметрия как в `apps/api` (4.10): `startTelemetry` с сервисом `llm-gateway`; логгер ядра (`telemetry.logger`) и логгер Fastify (`loggerInstance: telemetry.logger.pino`) — один pino, одна схема `LogRecord`. Ошибка потока после старта по-прежнему пишется `request.log.error` (T-23) — это тот же логгер, отдельного не заводим.
+- Трейс запроса: `tracedHttpServer` открывает серверный спан на каждый запрос (родитель — `traceparent`), кроме `/health`; `TraceContext` ядра — `telemetry.trace`, поэтому `traceId` события и записи `llm call` совпадают с трейсом запроса (REQ-002-14). Заголовки, тело и текст сообщений в логи и спаны не попадают: адаптер логгера пишет только id, числа и перечисления.
+- Секреты в логах и спанах (REQ-002-11): оболочка ничего не маскирует сама. Ошибки апстрима уже очищены `redact` адаптера LiteLLM, а `llm call` и событие несут только поля 4.10.
 - Порт слушается только после успешной сверки (REQ-002-13): `startGateway` вызывает `listen` последним.
 - Каждая попытка сверки получает `AbortSignal.timeout` с остатком срока старта (`LLM_GATEWAY_STARTUP_TIMEOUT_MS`, округлённым вверх до миллисекунд): висящий апстрим не продлевает старт. Попытка, оборванная дедлайном, даёт `network`/`timeout` и `upstream_unavailable` (D-64).
 - Исключение из «последний результат»: если попытка, оборванная дедлайном, пришла после ответа «нет моделей», возвращается этот ответ (`upstream_models_mismatch`). Иначе последняя попытка после `delay` до дедлайна получала бы бюджет около 1 мс и всегда давала бы ложную недоступность (трактовка T-20, см. журнал спеки).
@@ -54,7 +58,9 @@
 - Заголовки `x-swag-swarm-id` и `x-swag-agent-id` передаются в ядро как есть; нет заголовка или он задан дважды — пустая строка, которую `LlmCaller` отклоняет как `invalid_caller`.
 - Поток SSE (4.2): итерация ядра начинается сразу после ответа апстрима и идёт до конца или до ошибки, без `return()` до первого `next()`: событие и лог пишутся в `finally` генератора ядра (D-60). Ответ берётся через `reply.hijack()` и пишется в `reply.raw`, `flushHeaders` отдаёт заголовки до первого фрагмента. Если записать заголовки не удалось, ошибка логируется, а итерация всё равно запускается и `finally` закрывает ответ: поток ядра дочитывается (D-60).
 - Уход клиента во время потока: отмена апстрима тем же `AbortController`, что у JSON-пути; ядро бросает `UpstreamStreamError` (D-62). Оболочка ловит его, ничего не пишет и не логирует как ошибку (`signal.aborted`). Прочие исключения после старта потока — `request.log.error` (`err`), ответ закрывается, процесс не падает.
+- Опции телеметрии Fastify собираются одной функцией `telemetryAppOptions` (`src/app.ts`): `main.ts` и тесты используют одну сборку, поэтому тесты проверяют то же подключение, что процесс (T-24).
+- AC-002-17 проверяется в двух проходах: `masterKey` оболочки — мастер-ключ и ключ фейка (`FAKE_PROVIDER_API_KEY`). Во втором проходе ключ фейка реально приходит фейку в `Authorization`, поэтому отсутствие ключа в выводе проверено не пустым множеством (T-24).
 
 ## Спеки
 
-- 002 — 4.2 (`/health`, `/v1/models`, `/v1/chat/completions`, тело ошибки), 4.6, 4.9, 4.14; REQ-002-3, REQ-002-13; AC-002-1, -2, -3, -4, -5, -6, -9, -10, -11, -12, -13, -14, -15, -16, -18, -28; задачи T-20, T-21, T-22, T-23.
+- 002 — 4.2 (`/health`, `/v1/models`, `/v1/chat/completions`, тело ошибки), 4.6, 4.9, 4.10, 4.14; REQ-002-3, REQ-002-11 (оболочка), REQ-002-13, REQ-002-14; AC-002-1, -2, -3, -4, -5, -6, -9, -10, -11, -12, -13, -14, -15, -16, -17, -18, -23, -28; задачи T-20, T-21, T-22, T-23, T-24.
