@@ -1,11 +1,14 @@
 import http from 'node:http';
 import { PlatformEventInput } from '@swag/contracts';
+import type { LlmGatewayCore } from '@swag/llm-gateway-core';
 import { afterEach, describe, expect, it } from 'vitest';
+import { buildApp } from '../src/app.ts';
 import {
   authorized,
   caller,
   closeAll,
   GATEWAY_TOKEN,
+  gatewayOptions,
   listenUrl,
   openGateway,
   SWARM_ID,
@@ -356,5 +359,33 @@ describe('оболочка llm-gateway: ответ JSON и отмена (спе�
     expect(gateway.events).toMatchObject([
       { data: { status: 'error', errorCode: 'upstream_error' } },
     ]);
+  });
+});
+
+describe('оболочка llm-gateway: ошибка 5xx (спека 002, 4.2, D-66)', () => {
+  it('D-66: исключение без statusCode — 500 с телом 4.2 и Internal error, текст исключения только в логе', async () => {
+    const logged: string[] = [];
+    const core = {
+      complete: async () => {
+        throw new Error('секрет-внутри-исключения');
+      },
+    } as unknown as LlmGatewayCore;
+    const app = await buildApp(core, gatewayOptions, {
+      logger: { level: 'error', stream: { write: (line: string) => void logged.push(line) } },
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { ...caller, 'content-type': 'application/json' },
+      payload: JSON.stringify(validBody),
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({
+      error: { message: 'Internal error', type: 'swag_gateway_error', code: 'upstream_error' },
+    });
+    expect(response.body).not.toContain('секрет-внутри-исключения');
+    expect(logged.join('')).toContain('секрет-внутри-исключения');
+    await app.close();
   });
 });
