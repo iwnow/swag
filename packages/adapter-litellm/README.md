@@ -33,7 +33,7 @@
 - Поле `requests` пишет только `POST /v1/chat/completions` (трактовка T-7): `GET /v1/models` и неизвестные пути в журнал запросов не попадают, чтобы тесты проверяли только вызовы чата.
 - `content: null` в ответе с `tool_calls` — формат OpenAI, решение D-45.
 - Поток (T-8, D-46): кадры `chat.completion.chunk` в формате OpenAI, заголовки `content-type: text/event-stream` и `cache-control: no-cache`. Пауза `FAKE_CHUNK_DELAY_MS` читается из env на каждом запросе (опции `startFakeProvider` не менялись); для `__slow_chunks__` фиксированные 500 мс. Пауза стоит между всеми кадрами, включая `usage` и `[DONE]`.
-- `__cut__` — первый кадр, затем `socket.destroy()`. Кадр ошибки `upstream_error` фейк не шлёт: его формирует шлюз. `closedByClient` ставится только при закрытии клиентом, обрыв фейка и `closeServer()` его не ставят.
+- `__cut__` — первый кадр, затем `socket.destroy()`. Кадр ошибки `upstream_error` фейк не шлёт: его формирует шлюз. `closedByClient` ставится при любом закрытии сокета до конца ответа, кроме собственного обрыва `__cut__`: закрытие клиентом (например, `AbortController.abort()`) и `closeServer()`, который рвёт открытые соединения через `closeAllConnections`, дают `true`.
 - `__hang__` — заголовки не отправляются никогда. Соединение снимает клиент (`closedByClient: true`) или `close()` через `closeAllConnections`.
 
 ## Спеки

@@ -94,15 +94,17 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const writeFrame = (res: ServerResponse, data: string) =>
   new Promise<void>((resolve) => res.write(`data: ${data}\n\n`, () => resolve()));
 
-// closedByClient — соединение закрыто клиентом, а не фейком (обрыв `__cut__`) и не ответом.
-function watchClientClose(
-  res: ServerResponse,
-  record: FakeRequest,
-  serverClosed: { value: boolean },
-) {
+// closedByClient — сокет закрыт до конца ответа, кроме собственного обрыва `__cut__`.
+// Закрытие через closeServer() (closeAllConnections) тоже попадает сюда: это закрытие до конца ответа.
+// Возвращает markOwnCut: `__cut__` вызывает её перед своим обрывом.
+function watchClientClose(res: ServerResponse, record: FakeRequest): () => void {
+  let ownCut = false;
   res.on('close', () => {
-    if (!res.writableFinished && !serverClosed.value) record.closedByClient = true;
+    if (!res.writableFinished && !ownCut) record.closedByClient = true;
   });
+  return () => {
+    ownCut = true;
+  };
 }
 
 function streamEvents(body: unknown, text: string): unknown[] {
@@ -135,8 +137,7 @@ async function streamResponse(
   body: unknown,
   text: string,
 ): Promise<void> {
-  const serverClosed = { value: false };
-  watchClientClose(res, record, serverClosed);
+  const markOwnCut = watchClientClose(res, record);
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
 
   const frames = [...streamEvents(body, text).map((event) => JSON.stringify(event)), '[DONE]'];
@@ -147,7 +148,7 @@ async function streamResponse(
     if (res.destroyed) return;
     await writeFrame(res, data);
     if (cut) {
-      serverClosed.value = true;
+      markOwnCut();
       req.socket.destroy();
       return;
     }
@@ -187,7 +188,7 @@ async function handle(
   }
   if (text.includes('__hang__')) {
     // Ответа нет никогда: соединение закроет клиент (closedByClient) или closeServer().
-    watchClientClose(res, record, { value: false });
+    watchClientClose(res, record);
     return;
   }
   if (isRecord(body) && body.stream === true) {

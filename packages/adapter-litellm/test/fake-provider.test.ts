@@ -3,11 +3,35 @@ import { startFakeProvider } from '../../../infra/llm/fake-provider/server.ts';
 
 type Fake = Awaited<ReturnType<typeof startFakeProvider>>;
 
+let fake: Fake;
+
+beforeEach(async () => {
+  fake = await startFakeProvider({ port: 0 });
+});
+
+afterEach(async () => {
+  await fake.close();
+});
+
 const chatBody = (content: unknown, extra: Record<string, unknown> = {}) => ({
   model: 'fake-small',
   messages: [{ role: 'user', content }],
   ...extra,
 });
+
+const streamBody = (content: unknown, extra: Record<string, unknown> = {}) =>
+  chatBody(content, { stream: true, ...extra });
+
+const post = (
+  body: unknown,
+  opts: { headers?: Record<string, string>; signal?: AbortSignal } = {},
+) =>
+  fetch(`${fake.url}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...opts.headers },
+    body: JSON.stringify(body),
+    signal: opts.signal ?? null,
+  });
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -27,8 +51,16 @@ const sseFrames = (text: string): string[] =>
     .filter((frame) => frame !== '')
     .map((frame) => frame.replace(/^data: /, ''));
 
-// Читает поток до конца или до обрыва; обрыв не бросает, а возвращается в error.
-async function readText(res: Response): Promise<{ text: string; error?: unknown }> {
+const chunksOf = (text: string) =>
+  sseFrames(text)
+    .filter((frame) => frame !== '[DONE]')
+    .map((frame) => JSON.parse(frame) as Record<string, unknown>);
+
+// Читает поток до конца; onText вызывается после каждого куска. Обрыв не бросает, а возвращается в error.
+async function readStream(
+  res: Response,
+  onText?: (text: string) => void,
+): Promise<{ text: string; error?: unknown }> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let text = '';
@@ -37,6 +69,7 @@ async function readText(res: Response): Promise<{ text: string; error?: unknown 
       const { done, value } = await reader.read();
       if (done) break;
       text += decoder.decode(value, { stream: true });
+      onText?.(text);
     }
     return { text };
   } catch (error: unknown) {
@@ -45,26 +78,9 @@ async function readText(res: Response): Promise<{ text: string; error?: unknown 
 }
 
 describe('фейковый провайдер, без потока (спека 002, 4.12)', () => {
-  let fake: Fake;
-
-  beforeEach(async () => {
-    fake = await startFakeProvider({ port: 0 });
-  });
-
-  afterEach(async () => {
-    await fake.close();
-  });
-
-  const post = (body: unknown, headers: Record<string, string> = {}) =>
-    fetch(`${fake.url}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...headers },
-      body: JSON.stringify(body),
-    });
-
   it('без маркера отдаёт chat.completion с usage и cost и записывает запрос', async () => {
     const body = chatBody('привет');
-    const res = await post(body, { authorization: 'Bearer test-token' });
+    const res = await post(body, { headers: { authorization: 'Bearer test-token' } });
 
     expect(res.status).toBe(200);
     const json = (await res.json()) as Record<string, unknown>;
@@ -173,7 +189,9 @@ describe('фейковый провайдер, без потока (спека 0
   });
 
   it('__fail_400__ — 400, сообщение содержит значение заголовка Authorization', async () => {
-    const res = await post(chatBody('__fail_400__'), { authorization: 'Bearer fake-key-x' });
+    const res = await post(chatBody('__fail_400__'), {
+      headers: { authorization: 'Bearer fake-key-x' },
+    });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({
       error: { message: 'bad request, auth was: Bearer fake-key-x' },
@@ -216,31 +234,6 @@ describe('фейковый провайдер, без потока (спека 0
 });
 
 describe('фейковый провайдер, поток (спека 002, 4.12)', () => {
-  let fake: Fake;
-
-  beforeEach(async () => {
-    fake = await startFakeProvider({ port: 0 });
-  });
-
-  afterEach(async () => {
-    await fake.close();
-  });
-
-  const post = (body: unknown) =>
-    fetch(`${fake.url}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-  const streamBody = (content: unknown, extra: Record<string, unknown> = {}) =>
-    chatBody(content, { stream: true, ...extra });
-
-  const chunksOf = (text: string) =>
-    sseFrames(text)
-      .filter((frame) => frame !== '[DONE]')
-      .map((frame) => JSON.parse(frame) as Record<string, unknown>);
-
   it('поток по умолчанию: два текстовых фрагмента, без usage, затем [DONE]', async () => {
     const res = await post(streamBody('привет'));
 
@@ -312,18 +305,12 @@ describe('фейковый провайдер, поток (спека 002, 4.12)
 
   it('__slow_chunks__: первый фрагмент приходит сразу, весь поток — не раньше 500 мс', async () => {
     const started = Date.now();
-    const res = await post(streamBody('__slow_chunks__'));
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    let text = '';
     let firstAt: number | undefined;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      text += decoder.decode(value, { stream: true });
-      if (firstAt === undefined && text.includes('"content":"fake"'))
+    const res = await post(streamBody('__slow_chunks__'));
+    const { text } = await readStream(res, (soFar) => {
+      if (firstAt === undefined && soFar.includes('"content":"fake"'))
         firstAt = Date.now() - started;
-    }
+    });
 
     expect(firstAt).toBeLessThan(300);
     expect(Date.now() - started).toBeGreaterThanOrEqual(500);
@@ -332,7 +319,7 @@ describe('фейковый провайдер, поток (спека 002, 4.12)
 
   it('__cut__: первый фрагмент, затем обрыв без [DONE]', async () => {
     const res = await post(streamBody('__cut__'));
-    const { text, error } = await readText(res);
+    const { text, error } = await readStream(res);
 
     expect(text).toContain('"content":"fake"');
     expect(text).not.toContain('reply');
@@ -345,10 +332,7 @@ describe('фейковый провайдер, поток (спека 002, 4.12)
   it('__hang__: заголовки не приходят, пока клиент не закроет соединение', async () => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 200);
-    const error: unknown = await fetch(`${fake.url}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(chatBody('__hang__')),
+    const error: unknown = await post(chatBody('__hang__'), {
       signal: controller.signal,
     }).catch((reason: unknown) => reason);
     clearTimeout(timer);
@@ -359,23 +343,12 @@ describe('фейковый провайдер, поток (спека 002, 4.12)
 
   it('closedByClient: клиент рвёт поток после первого фрагмента — фейк видит закрытие', async () => {
     const controller = new AbortController();
-    const res = await fetch(`${fake.url}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(streamBody('__slow_chunks__')),
-      signal: controller.signal,
+    const res = await post(streamBody('__slow_chunks__'), { signal: controller.signal });
+    const { text } = await readStream(res, (soFar) => {
+      if (soFar.includes('"content":"fake"')) controller.abort();
     });
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    let text = '';
-    while (!text.includes('"content":"fake"')) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      text += decoder.decode(value, { stream: true });
-    }
-    expect(text).toContain('"content":"fake"');
 
-    controller.abort();
+    expect(text).toContain('"content":"fake"');
     await waitFor(() => fake.requests[0]?.closedByClient === true);
   });
 });
