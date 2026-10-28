@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { AgentId, SwarmId } from './swarm.ts';
+
+// Спека 022, 4.1. Модели платформы, одинаковые во всех профилях (002, Q-4). Для выбора в форме роя.
+export const PlatformModel = z.enum(['chat-small', 'chat-large']);
+export type PlatformModel = z.infer<typeof PlatformModel>;
 
 // Спека 002, 4.1. Имя модели платформы: одинаково во всех профилях (Q-4).
 export const ModelId = z.string().regex(/^[a-z][a-z0-9-]{1,39}$/);
@@ -68,5 +71,3 @@ export type LlmCallData = z.infer<typeof LlmCallData>;
 // Заголовки вызывающего (Q-3): до спеки 004 агент называет себя сам.
 export const SWARM_ID_HEADER = 'x-swag-swarm-id';
 export const AGENT_ID_HEADER = 'x-swag-agent-id';
-export const LlmCaller = z.strictObject({ swarmId: SwarmId, agentId: AgentId });
-export type LlmCaller = z.infer<typeof LlmCaller>;

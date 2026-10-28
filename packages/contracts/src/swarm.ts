@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PlatformModel } from './llm.ts';
 
 // Спека 001, 4.1. Лимиты длин полей — предложение, утверждено в Q-3.
 export const AgentId = z.string().regex(/^agent-[1-9][0-9]?$/); // agent-1 … agent-99, назначает api по порядку
@@ -10,6 +11,7 @@ export type SwarmId = z.infer<typeof SwarmId>;
 export const AgentDraft = z.strictObject({
   name: z.string().trim().min(1).max(40),
   role: z.string().trim().min(1).max(500), // роль агента: текст обязанностей, не путать с ролью пользователя
+  model: PlatformModel.default('chat-small'),
 });
 export type AgentDraft = z.infer<typeof AgentDraft>;
 
@@ -21,6 +23,8 @@ export type SwarmCreateRequest = z.infer<typeof SwarmCreateRequest>;
 
 export const AgentSpec = AgentDraft.extend({ id: AgentId });
 export type AgentSpec = z.infer<typeof AgentSpec>;
+
+export const ENTRY_AGENT_ID = 'agent-1'; // агент-вход: получает задачу от user и только он завершает рой (022, Q-3)
 
 export const SwarmStatus = z.enum(['starting', 'running', 'completed', 'stopped', 'failed']);
 export type SwarmStatus = z.infer<typeof SwarmStatus>;
@@ -45,3 +49,7 @@ export const SwarmSummary = z.object({
   createdAt: z.iso.datetime(),
 });
 export type SwarmSummary = z.infer<typeof SwarmSummary>;
+
+// Спека 002, 4.1: вызывающий LLM Gateway. Живёт в swarm.ts, а не в llm.ts: llm.ts не должен импортировать swarm.ts (цикл с PlatformModel).
+export const LlmCaller = z.strictObject({ swarmId: SwarmId, agentId: AgentId });
+export type LlmCaller = z.infer<typeof LlmCaller>;

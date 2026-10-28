@@ -45,6 +45,7 @@ export const PlatformEventInput = z.discriminatedUnion('type', [
         'swarm_timeout',
         'orchestrator_unavailable',
         'sandbox_error',
+        'agent_failed',
       ]),
       detail: z.string().optional(),
     }),
@@ -58,6 +59,22 @@ export const PlatformEventInput = z.discriminatedUnion('type', [
   z.strictObject({
     ...Envelope,
     type: z.literal('agent.working'),
+    data: z.strictObject({ messageId: z.uuid() }),
+  }),
+  // Спека 022, 4.1: шаг агента — один ответ модели; idle — конец хода без finish.
+  z.strictObject({
+    ...Envelope,
+    type: z.literal('agent.step'),
+    data: z.strictObject({
+      messageId: z.uuid(), // входящее сообщение, на которое идёт ход
+      stepIndex: z.number().int().min(1), // сквозной номер шага агента за всю жизнь, = номер вызова модели
+      text: z.string().nullable(), // content ответа модели; null — пусто
+      toolCalls: z.array(z.strictObject({ id: z.string(), name: z.string() })), // в порядке ответа
+    }),
+  }),
+  z.strictObject({
+    ...Envelope,
+    type: z.literal('agent.idle'),
     data: z.strictObject({ messageId: z.uuid() }),
   }),
   z.strictObject({

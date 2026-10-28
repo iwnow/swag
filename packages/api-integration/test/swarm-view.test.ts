@@ -34,8 +34,8 @@ function sequence(): PlatformEvent[] {
       data: {
         task: 'T',
         agents: [
-          { id: A1, name: 'A', role: 'r1' },
-          { id: A2, name: 'B', role: 'r2' },
+          { id: A1, name: 'A', role: 'r1', model: 'chat-small' },
+          { id: A2, name: 'B', role: 'r2', model: 'chat-small' },
         ],
       },
     }),
@@ -91,7 +91,7 @@ describe('projectSwarm', () => {
     const created = ev({
       ...base(null, 'api'),
       type: 'swarm.created',
-      data: { task: 'T', agents: [{ id: A1, name: 'A', role: 'r1' }] },
+      data: { task: 'T', agents: [{ id: A1, name: 'A', role: 'r1', model: 'chat-small' }] },
     });
     const failed = ev({
       ...base(null, 'api'),

@@ -1,7 +1,7 @@
 ---
 id: "022"
 title: Агентный цикл
-status: draft
+status: in-progress
 roadmap_stage: 2
 depends_on: ["001", "002", "016"]
 superseded_by: null
@@ -407,7 +407,7 @@ DOCKER_AGENT_LLM_GATEWAY_URL=http://llm-gateway:3002/v1
 
 Выполняются по порядку. После каждой задачи — коммит. Каждая рассчитана на один бриф субагенту.
 
-- [ ] **T-1.** `contracts`: `PlatformModel`, `model` в `AgentDraft`, `ENTRY_AGENT_ID`, события `agent.step`, `agent.idle`, причина `agent_failed` (4.1); глоссарий сверен. Закрывает: REQ-022-15, AC-022-1. Готово, когда: тесты `contracts` зелёные.
+- [x] **T-1.** `contracts`: `PlatformModel`, `model` в `AgentDraft`, `ENTRY_AGENT_ID`, события `agent.step`, `agent.idle`, причина `agent_failed` (4.1); глоссарий сверен. Закрывает: REQ-022-15, AC-022-1. Готово, когда: тесты `contracts` зелёные.
 - [ ] **T-2.** `api-integration`: правила проекции 4.6, `model` и `steps` в `SwarmView`, пустые рёбра при создании; обновить тест AC-001-2 под новые правила. Закрывает: REQ-022-12, AC-022-2. Готово, когда: тесты пакета зелёные.
 - [ ] **T-3.** Фейковый провайдер: два правила 4.7. Закрывает: AC-022-20. Готово, когда: тесты 002 и новый тест зелёные.
 - [ ] **T-4.** `agent-core/src/loop.ts`: типы 4.2 и `runAgentLoop`, тесты со скриптовым `ChatModel`. Закрывает: REQ-022-1…4, AC-022-3…11. Готово, когда: тесты пакета зелёные, `arch:check` проходит.
@@ -465,3 +465,5 @@ DOCKER_AGENT_LLM_GATEWAY_URL=http://llm-gateway:3002/v1
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+| 2026-10-28 | `spec/022-t1` | `ready` поставлен по команде человека, спека взята в работу. Этап — задача, ветка от свежей `main`, PR этапа в `main`. T-8 и T-9 выполняются раньше T-7: агенту роя нужны `ChatModel` и `AgentConfig` | порядок T-7 ↔ T-8, T-9 |
+| 2026-10-28 | `spec/022-t1` | T-1: `PlatformModel`, `model` в `AgentDraft`, `ENTRY_AGENT_ID`, `agent.step`, `agent.idle`, `agent_failed` | `LlmCaller` перенесён из `llm.ts` в `swarm.ts`: `swarm.ts` импортирует `PlatformModel` из `llm.ts`, обратный импорт давал цикл модулей; публичный API `@swag/contracts` не изменился |

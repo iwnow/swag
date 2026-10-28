@@ -11,12 +11,12 @@
 
 ## Что внутри сейчас
 
-- `swarm.ts` — `AgentId`, `SwarmId`, `AgentDraft`, `SwarmCreateRequest`, `AgentSpec`, `SwarmStatus`, `AgentStatus`, `SwarmLaunch`, `SwarmSummary`.
+- `swarm.ts` — `AgentId`, `SwarmId`, `AgentDraft` (с `model: PlatformModel`, по умолчанию `chat-small`), `SwarmCreateRequest`, `AgentSpec`, `ENTRY_AGENT_ID`, `SwarmStatus`, `AgentStatus`, `SwarmLaunch`, `SwarmSummary`, `LlmCaller`.
 - `bus.ts` — `BusMessage`, subjects `inboxSubject`, `eventsSubject`, `ALL_INBOXES`, `ALL_EVENTS`.
-- `events.ts` — `TraceId`, `PlatformEventInput` (дискриминированное объединение по `type`, в конверте `traceId: TraceId | null`; вариант `llm.call` с `LlmCallData`, источник `llm-gateway`), `PlatformEvent` (с `seq`).
+- `events.ts` — `TraceId`, `PlatformEventInput` (дискриминированное объединение по `type`, в конверте `traceId: TraceId | null`; вариант `llm.call` с `LlmCallData`, источник `llm-gateway`; `agent.step`, `agent.idle`; причина `agent_failed` в `swarm.failed`), `PlatformEvent` (с `seq`).
 - `log.ts` — `LogLevel`, `ServiceName` (с `llm-gateway`), `LogError`, `LogRecord`.
 - `service-info.ts` — `ServiceInfo` (`service` с `llm-gateway`).
-- `llm.ts` — `ModelId`, `PricePerMTok`, `ModelPrices`, `CatalogModel`, `ModelCatalog` (`models.json`), `LlmUsage`, `GatewayErrorCode`, `LlmCallStatus`, `LlmCallData`, заголовки `SWARM_ID_HEADER`, `AGENT_ID_HEADER`, `LlmCaller`.
+- `llm.ts` — `ModelId`, `PricePerMTok`, `ModelPrices`, `CatalogModel`, `ModelCatalog` (`models.json`), `LlmUsage`, `GatewayErrorCode`, `LlmCallStatus`, `LlmCallData`, `PlatformModel` (`chat-small`, `chat-large`), заголовки `SWARM_ID_HEADER`, `AGENT_ID_HEADER`.
 
 ## Ограничения
 
@@ -39,10 +39,12 @@
 - LLM: `usage` и `costMicroUsd` в `LlmCallData` — `null`, если провайдер не прислал usage или поток оборван до него; `costMicroUsd` задан тогда и только тогда, когда задан `usage` (по комментарию в схеме, схема этого не проверяет).
 - LLM: `providerCostMicroUsd` — фактическая стоимость у провайдера для счёта платформы (D-38); на `costMicroUsd` не влияет.
 - LLM: заголовки `x-swag-swarm-id` и `x-swag-agent-id` — до спеки 004 агент называет себя сам (Q-3).
+- 022: `PlatformModel` в `llm.ts`; `model` агента и `ENTRY_AGENT_ID` в `swarm.ts`; `agent.step`, `agent.idle` и причина `agent_failed` (4.1). `LlmCaller` переехал из `llm.ts` в `swarm.ts`: `swarm.ts` импортирует `PlatformModel` из `llm.ts`, обратный импорт `llm.ts` → `swarm.ts` дал бы цикл модулей.
 
 ## Спеки
 
 - 000 — `ServiceInfo`.
 - 001 — разделы 4.1–4.3.
-- 002 — раздел 4.1 (`llm.ts`).
+- 002 — раздел 4.1 (`llm.ts`, `LlmCaller` в `swarm.ts`).
+- 022 — раздел 4.1 (T-1).
 - 016 — разделы 4.1, 4.2.
