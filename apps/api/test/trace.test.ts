@@ -68,7 +68,13 @@ async function stack() {
     ids,
     log: current.logger,
     trace: current.trace,
-    agent: { template: 'swag-agent:test', stepDelayMs: 0 },
+    agent: {
+      template: 'swag-agent:test',
+      maxSteps: 20,
+      maxTokens: 2048,
+      llmGatewayToken: 'fake-gateway-token-for-tests-000000',
+      flushTimeoutMs: 2000,
+    },
     timeouts: { agentStartMs: 30000, swarmMs: 300000 },
   });
   const orchestratorApp = buildOrchestratorApp(orchestrator, {

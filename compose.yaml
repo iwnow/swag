@@ -81,7 +81,11 @@ services:
       DOCKER_AGENT_NETWORK: ${DOCKER_AGENT_NETWORK}
       DOCKER_AGENT_NATS_URL: ${DOCKER_AGENT_NATS_URL}
       DOCKER_AGENT_OTLP_ENDPOINT: ${DOCKER_AGENT_OTLP_ENDPOINT:-}
-      AGENT_STEP_DELAY_MS: ${AGENT_STEP_DELAY_MS}
+      # Спека 022, 4.8: лимиты агента, адрес и общий токен llm-gateway.
+      AGENT_MAX_STEPS: ${AGENT_MAX_STEPS}
+      AGENT_MAX_TOKENS: ${AGENT_MAX_TOKENS}
+      LLM_GATEWAY_TOKEN: ${LLM_GATEWAY_TOKEN}
+      DOCKER_AGENT_LLM_GATEWAY_URL: ${DOCKER_AGENT_LLM_GATEWAY_URL}
       AGENT_START_TIMEOUT_MS: ${AGENT_START_TIMEOUT_MS}
       SWARM_TIMEOUT_MS: ${SWARM_TIMEOUT_MS}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
@@ -97,6 +101,8 @@ services:
       postgres:
         condition: service_healthy
       nats:
+        condition: service_healthy
+      llm-gateway:
         condition: service_healthy
       otel-collector:
         condition: service_started

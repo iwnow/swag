@@ -50,6 +50,7 @@ const bus = await connectNatsBus({
 const sandboxes = createDockerSandboxProvider({
   network: config.DOCKER_AGENT_NETWORK,
   natsUrl: config.DOCKER_AGENT_NATS_URL,
+  llmGatewayUrl: config.DOCKER_AGENT_LLM_GATEWAY_URL,
   otlpEndpoint: config.DOCKER_AGENT_OTLP_ENDPOINT,
 });
 const ports: OrchestratorBus = {
@@ -70,7 +71,13 @@ const core = createOrchestratorCore({
   ids: { uuid: () => randomUUID() },
   log,
   trace: telemetry.trace,
-  agent: { template: config.AGENT_TEMPLATE, stepDelayMs: config.AGENT_STEP_DELAY_MS },
+  agent: {
+    template: config.AGENT_TEMPLATE,
+    maxSteps: config.AGENT_MAX_STEPS,
+    maxTokens: config.AGENT_MAX_TOKENS,
+    llmGatewayToken: config.LLM_GATEWAY_TOKEN,
+    flushTimeoutMs: config.TELEMETRY_FLUSH_TIMEOUT_MS,
+  },
   timeouts: { agentStartMs: config.AGENT_START_TIMEOUT_MS, swarmMs: config.SWARM_TIMEOUT_MS },
 });
 
