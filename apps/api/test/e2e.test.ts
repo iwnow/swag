@@ -5,7 +5,13 @@ import {
   type OrchestratorClient,
   type TraceContext,
 } from '@swag/api-core';
-import { createAgentCore, type AgentBus } from '@swag/agent-core';
+import {
+  createAgentCore,
+  type AgentBus,
+  type AgentConfigCore,
+  type ChatModel,
+  type ChatModelResult,
+} from '@swag/agent-core';
 import {
   createOrchestratorCore,
   type OrchestratorBus,
@@ -14,17 +20,19 @@ import {
 } from '@swag/orchestrator-core';
 import { createMemorySwarmStore } from '@swag/adapter-memory';
 import { createMemoryExporters, startTelemetry, type Telemetry } from '@swag/adapter-telemetry';
+import { AgentConfig, loadConfig } from '@swag/config';
 import {
   ALL_EVENTS,
   ALL_INBOXES,
   eventsSubject,
   inboxSubject,
-  type AgentId,
+  type ModelId,
   type PlatformEventInput,
 } from '@swag/contracts';
 
-// Сквозной тест без Docker и сети (AC-001-20): api-core, orchestrator-core и три agent-core
-// в одном процессе; шина — в памяти; песочница — фейк, который поднимает agent-core в процессе.
+// Сквозной тест без Docker и сети (AC-022-21): api-core, orchestrator-core и три agent-core
+// в одном процессе; шина — в памяти; песочница — фейк, который поднимает agent-core из env,
+// собранного ядром оркестратора (тем же разбором, что в apps/agent); модель — скриптовая на агента.
 
 type Handler = (raw: unknown) => void;
 
@@ -54,6 +62,62 @@ function createHub() {
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
+const toolCall = (name: string, args: Record<string, unknown>): ChatModelResult => ({
+  ok: true,
+  message: {
+    content: null,
+    tool_calls: [
+      { id: `call_${name}`, type: 'function', function: { name, arguments: JSON.stringify(args) } },
+    ],
+  },
+});
+const reply = (content: string): ChatModelResult => ({
+  ok: true,
+  message: { content, tool_calls: [] },
+});
+
+// Скриптовый ChatModel: ответы по порядку. Исчерпанный сценарий — ok: false, агент уходит в failed, и тест это увидит.
+function scripted(replies: ChatModelResult[]): ChatModel {
+  return {
+    complete: async () =>
+      replies.shift() ?? {
+        ok: false,
+        error: { code: 'invalid_response', message: 'сценарий исчерпан' },
+      },
+  };
+}
+
+// Сценарий AC-022-21: agent-1 → agent-2 → agent-3 → agent-1; agent-1 завершает задачу finish после ответа agent-3.
+// Сценарий создаётся заново на каждую песочницу, поэтому очередь ответов не делится между роями.
+function team(agentId: string): ChatModelResult[] {
+  switch (agentId) {
+    case 'agent-1':
+      return [
+        toolCall('send_message', { to: 'agent-2', text: 'Подготовь часть' }),
+        reply('Жду ответа'),
+        toolCall('finish', { result: 'Итог: задача решена' }),
+      ];
+    case 'agent-2':
+      return [
+        toolCall('send_message', { to: 'agent-3', text: 'Дополни' }),
+        reply('Передал дальше'),
+      ];
+    case 'agent-3':
+      return [toolCall('send_message', { to: 'agent-1', text: 'Дополнено' }), reply('Отправил')];
+    default:
+      return [];
+  }
+}
+
+// Агент без участников не отвечает: одиночный рой из AC-016-12 ждёт остановки, а не завершения.
+const modelFor = (config: AgentConfigCore): ChatModel =>
+  config.peers.length === 0
+    ? { complete: () => new Promise<ChatModelResult>(() => undefined) }
+    : scripted(team(config.agentId));
+
+const threeAgents = (role: (n: number) => string) =>
+  ['A', 'B', 'C'].map((name, i) => ({ name, role: role(i + 1) }));
+
 // Весь рой в одном процессе: api-core, orchestrator-core, agent-core на каждую «песочницу».
 function world(log: Logger, trace: TraceContext) {
   const hub = createHub();
@@ -68,7 +132,12 @@ function world(log: Logger, trace: TraceContext) {
     create: async (spec) => {
       const sandboxId = `sb-${++counter}`;
       sandboxes.set(sandboxId, spec);
-      const env = spec.env;
+      // Адаптерные ключи (шина и gateway) — фейковые; остальное разбирается как в apps/agent.
+      const env = loadConfig(AgentConfig, {
+        ...spec.env,
+        NATS_URL: 'nats://fake:4222',
+        LLM_GATEWAY_URL: 'http://fake-gateway/v1',
+      });
       const agentBus: AgentBus = {
         subscribe: async (subject, handler) => {
           running.set(sandboxId, hub.subscribe(subject, handler));
@@ -77,22 +146,26 @@ function world(log: Logger, trace: TraceContext) {
         publishMessage: async (message) =>
           hub.publish(inboxSubject(message.swarmId, message.to), message),
       };
+      const config: AgentConfigCore = {
+        swarmId: env.SWARM_ID,
+        agentId: env.AGENT_ID,
+        agentName: env.AGENT_NAME,
+        agentRole: env.AGENT_ROLE,
+        model: env.AGENT_MODEL as ModelId,
+        peers: env.AGENT_PEERS,
+        entryAgentId: env.AGENT_ENTRY,
+        maxSteps: env.AGENT_MAX_STEPS,
+        maxTokens: env.AGENT_MAX_TOKENS,
+      };
       const agent = createAgentCore({
         version: 'test',
         bus: agentBus,
         clock,
         ids,
-        timers: { setTimeout: (fn, ms) => setTimeout(fn, ms) },
         log,
         trace,
-        config: {
-          swarmId: env['SWARM_ID'] as string,
-          agentId: env['AGENT_ID'] as AgentId,
-          agentName: env['AGENT_NAME'] as string,
-          agentRole: env['AGENT_ROLE'] as string,
-          agentNext: env['AGENT_NEXT'] ? (env['AGENT_NEXT'] as AgentId) : null,
-          stepDelayMs: 0,
-        },
+        model: modelFor(config),
+        config,
       });
       await agent.start();
       return { sandboxId };
@@ -130,7 +203,13 @@ function world(log: Logger, trace: TraceContext) {
     ids,
     log,
     trace,
-    agent: { template: 'swag-agent:test', stepDelayMs: 0 },
+    agent: {
+      template: 'swag-agent:test',
+      maxSteps: 20,
+      maxTokens: 2048,
+      llmGatewayToken: 'fake-gateway-token-0123456789abcdef',
+      flushTimeoutMs: 500,
+    },
     timeouts: { agentStartMs: 5000, swarmMs: 60000 },
   });
   hub.subscribe(ALL_EVENTS, (raw) => void orchestrator.handleEvent(raw));
@@ -161,7 +240,7 @@ function world(log: Logger, trace: TraceContext) {
 }
 
 describe('сквозной скелет без Docker', () => {
-  it('AC-001-20: createSwarm с тремя агентами — completed, результат эстафеты, песочниц нет, seq без пропусков', async () => {
+  it('AC-022-21, AC-001-20: createSwarm с тремя агентами — completed по сообщениям, result из finish, песочниц нет, seq без пропусков', async () => {
     const logs: string[] = [];
     const nothing = () => undefined;
     const log = {
@@ -174,11 +253,7 @@ describe('сквозной скелет без Docker', () => {
 
     const created = await api.createSwarm({
       task: 'T',
-      agents: [
-        { name: 'A', role: 'r1' },
-        { name: 'B', role: 'r2' },
-        { name: 'C', role: 'r3' },
-      ],
+      agents: threeAgents((n) => `r${n}`),
     });
     expect(created.ok).toBe(true);
     if (!created.ok) return;
@@ -193,11 +268,15 @@ describe('сквозной скелет без Docker', () => {
 
     const view = api.getSwarm(id);
     if (!view.ok) throw new Error('рой не найден');
-    expect(view.value.result).toBe('T\nA (r1): ok\nB (r2): ok\nC (r3): ok');
+    expect(view.value.result).toBe('Итог: задача решена');
     expect(view.value.agents.every((a) => a.status === 'stopped' || a.status === 'done')).toBe(
       true,
     );
-    expect(view.value.edges.map((e) => e.messages)).toEqual([1, 1]);
+    expect(view.value.edges).toEqual([
+      { from: 'agent-1', to: 'agent-2', messages: 1 },
+      { from: 'agent-2', to: 'agent-3', messages: 1 },
+      { from: 'agent-3', to: 'agent-1', messages: 1 },
+    ]);
     expect(sandboxes.size).toBe(0);
     const events = api.getEvents(id, 0);
     if (!events.ok) throw new Error('нет событий');
@@ -238,14 +317,7 @@ describe('сквозной скелет с трассировкой', () => {
     const { telemetry: tel, api } = traced();
 
     const first = await tel.inSpan('POST /swarms', { parent: parent(T) }, () =>
-      api.createSwarm({
-        task: 'T',
-        agents: [
-          { name: 'A', role: 'r1' },
-          { name: 'B', role: 'r2' },
-          { name: 'C', role: 'r3' },
-        ],
-      }),
+      api.createSwarm({ task: 'T', agents: threeAgents((n) => `r${n}`) }),
     );
     if (!first.ok) throw new Error('не создан');
     await vi.waitFor(
@@ -282,10 +354,7 @@ describe('сквозной скелет с трассировкой', () => {
     const created = await tel.inSpan('POST /swarms', { parent: parent(T) }, () =>
       api.createSwarm({
         task: `Задача ${MARKER}`,
-        agents: [
-          { name: 'A', role: `роль ${MARKER}` },
-          { name: 'B', role: `роль ${MARKER}` },
-        ],
+        agents: threeAgents((n) => `роль ${MARKER} ${n}`),
       }),
     );
     if (!created.ok) throw new Error('не создан');
