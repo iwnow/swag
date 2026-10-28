@@ -1,7 +1,7 @@
 ---
 id: "022"
 title: Агентный цикл
-status: draft
+status: in-progress
 roadmap_stage: 2
 depends_on: ["001", "002", "016"]
 superseded_by: null
@@ -465,3 +465,4 @@ DOCKER_AGENT_LLM_GATEWAY_URL=http://llm-gateway:3002/v1
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+| 2026-10-28 | `spec/022-agent-loop` | `ready` поставлен по команде человека, спека взята в работу. Задачи — по одной, PR на задачу в ветку спеки. T-8 и T-9 выполняются раньше T-7: агенту роя нужны `ChatModel` и `AgentConfig` | порядок T-7 ↔ T-8, T-9 |
