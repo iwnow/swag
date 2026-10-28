@@ -129,14 +129,15 @@ describe.skipIf(!url)('adapter-nats', () => {
       await bus.publishJson(eventsSubject(SWARM), { n: 2 });
       await waitFor(() => expect(log).toHaveLength(3));
 
-      const consumers = memory.finishedSpans.filter(
-        (s) =>
-          s.kind === SpanKind.CONSUMER &&
-          s.attributes['messaging.destination.name'] === eventsSubject(SWARM),
-      );
-      await waitFor(() => expect(consumers).toHaveLength(2));
+      const consumers = () =>
+        memory.finishedSpans.filter(
+          (s) =>
+            s.kind === SpanKind.CONSUMER &&
+            s.attributes['messaging.destination.name'] === eventsSubject(SWARM),
+        );
+      await waitFor(() => expect(consumers()).toHaveLength(2));
       expect(log).toEqual(['start 1', 'end 1', 'start 2']);
-      const [first, second] = consumers;
+      const [first, second] = consumers();
       expect(
         spanMs(first?.endTime ?? [0, 0]) - spanMs(first?.startTime ?? [0, 0]),
       ).toBeGreaterThanOrEqual(200);

@@ -470,3 +470,4 @@ DOCKER_AGENT_LLM_GATEWAY_URL=http://llm-gateway:3002/v1
 | 2026-10-28 | `spec/022-t2` | T-2: правила проекции 4.6, `model` и `steps` в `SwarmView`, пустые рёбра при создании роя | — |
 | 2026-10-28 | `spec/022-t3` | T-3: правила 4.7 фейкового провайдера в `infra/llm/fake-provider/server.ts`, описаны в README `adapter-litellm` | неверная форма JSON после `__tool_calls__` трактована как «правило не срабатывает» (D-78) |
 | 2026-10-28 | `spec/022-t4` | T-4: `runAgentLoop` и типы 4.2 в `agent-core/src/loop.ts`; тесты AC-022-3…11 со скриптовым `ChatModel` | — (`steps` растёт и при неуспешном вызове, `stop` — первый по порядку `tool_calls`, исключение `ChatModel.complete` не перехватывается: буква 4.2) |
+| 2026-10-28 | `spec/022-t5` | T-5: обработчик `subscribeJson` может вернуть `Promise`, спан consumer ждёт его, сообщения по одному; тест AC-022-22 на NATS | — |
