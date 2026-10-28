@@ -3,13 +3,14 @@ import type { SwarmView } from '@swag/api-integration';
 
 // Граф роя по спеке 022, 4.10: агенты по кругу в порядке id (первый — сверху), цвет по статусу,
 // на каждом ребре from → to стрелка и число сообщений. Встречные рёбра (a → b и b → a) — две дуги
-// в разные стороны, петли — дуга наружу от круга. Чистый SVG, геометрия — в чистых функциях ниже.
+// внутрь круга на разную глубину (наружу дуга задела бы соседние узлы), петли — дуга наружу от круга. Чистый SVG, геометрия — в чистых функциях ниже.
 const NODE_W = 150;
 const NODE_H = 80;
 const MIN_RADIUS = 120;
 const NODE_GAP = 60; // минимальный зазор между соседними узлами по хорде
 const PAD = 90; // больше LOOP: петля крайнего узла остаётся в границах SVG
-const BEND = 0.3; // смещение средней точки дуги встречного ребра, доля длины ребра
+const BENDS = [15, 60]; // глубина дуг встречной пары, px: ребро от меньшего индекса — первая
+const PAIR_LABEL_T = 0.4; // подпись дуги пары ближе к её началу: подписи пары не накладываются
 const LOOP = 60; // высота петли над узлом
 
 export interface Point {
@@ -57,7 +58,7 @@ export interface EdgePath {
 }
 
 // Путь ребра from → to (индексы в layout.centers). reciprocal — есть встречное ребро:
-// тогда дуга изгибается, и пара рисуется двумя дугами по разные стороны от прямой.
+// тогда пара рисуется двумя дугами внутрь круга на разную глубину.
 export function edgePath(
   layout: GraphLayout,
   from: number,
@@ -68,18 +69,27 @@ export function edgePath(
   const b = layout.centers[to];
   if (from === to) return loopPath(layout, a);
 
-  const bend = reciprocal ? BEND : 0;
   const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  // Контрольная точка — сдвиг середины по левой нормали к направлению from → to.
-  const control = { x: mid.x - dy * bend, y: mid.y + dx * bend };
+  const control = reciprocal ? bendControl(layout, mid, from, to) : mid;
   const start = rectExit(a, control);
   const end = rectExit(b, control);
   return {
     d: quad(start, control, end),
-    label: quadPoint(start, control, end),
+    label: quadPoint(start, control, end, reciprocal ? PAIR_LABEL_T : 0.5),
   };
+}
+
+// Контрольная точка дуги встречного ребра: нормаль к паре (одна на оба направления), к центру круга.
+// Вершина квадратичной кривой — на половине смещения контрольной точки.
+function bendControl(layout: GraphLayout, mid: Point, from: number, to: number): Point {
+  const p = layout.centers[Math.min(from, to)];
+  const q = layout.centers[Math.max(from, to)];
+  const len = Math.hypot(q.x - p.x, q.y - p.y);
+  let n = { x: -(q.y - p.y) / len, y: (q.x - p.x) / len };
+  if (n.x * (layout.origin.x - mid.x) + n.y * (layout.origin.y - mid.y) < 0)
+    n = { x: -n.x, y: -n.y };
+  const depth = BENDS[from < to ? 0 : 1] * 2;
+  return { x: mid.x + n.x * depth, y: mid.y + n.y * depth };
 }
 
 function loopPath(layout: GraphLayout, center: Point): EdgePath {
@@ -100,11 +110,12 @@ function quad(start: Point, control: Point, end: Point): string {
   return `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`;
 }
 
-// Точка квадратичной кривой при t = 0.5.
-function quadPoint(start: Point, control: Point, end: Point): Point {
+// Точка квадратичной кривой при параметре t.
+function quadPoint(start: Point, control: Point, end: Point, t = 0.5): Point {
+  const s = 1 - t;
   return {
-    x: 0.25 * start.x + 0.5 * control.x + 0.25 * end.x,
-    y: 0.25 * start.y + 0.5 * control.y + 0.25 * end.y,
+    x: s * s * start.x + 2 * s * t * control.x + t * t * end.x,
+    y: s * s * start.y + 2 * s * t * control.y + t * t * end.y,
   };
 }
 
@@ -154,18 +165,20 @@ function quadPoint(start: Point, control: Point, end: Point): Point {
           [attr.data-status]="node.status"
         >
           <rect
-            width="150"
-            height="80"
+            [attr.width]="nodeW"
+            [attr.height]="nodeH"
             rx="10"
             [attr.fill]="node.fill"
             stroke="#2b3240"
             stroke-width="1.5"
           />
-          <text x="75" y="24" text-anchor="middle" class="node-name">{{ node.name }}</text>
-          <text x="75" y="44" text-anchor="middle" class="node-status">
+          <text [attr.x]="nodeW / 2" y="24" text-anchor="middle" class="node-name">
+            {{ node.name }}
+          </text>
+          <text [attr.x]="nodeW / 2" y="44" text-anchor="middle" class="node-status">
             {{ node.id }} · {{ node.statusText }}
           </text>
-          <text x="75" y="64" text-anchor="middle" class="node-status">
+          <text [attr.x]="nodeW / 2" y="64" text-anchor="middle" class="node-status">
             {{ node.model }} · шагов: {{ node.steps }}
           </text>
         </g>
@@ -198,6 +211,8 @@ function quadPoint(start: Point, control: Point, end: Point): Point {
 })
 export class SwarmGraphComponent {
   readonly view = input.required<SwarmView>();
+  protected readonly nodeW = NODE_W;
+  protected readonly nodeH = NODE_H;
 
   protected readonly layout = computed(() => layoutNodes(this.view().agents.length));
 
