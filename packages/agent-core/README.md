@@ -5,16 +5,17 @@
 ## Задачи
 
 - `start()`: подписаться на свои входящие (`inbox`), затем опубликовать `agent.started`.
-- На каждое сообщение — ход: `agent.working`, цикл по 4.2 с историей агента, на каждый ответ модели `agent.step` со сквозным `stepIndex`, исход хода: `agent.idle` (ответ текстом), `agent.result` (`finish` у агента-входа), `agent.failed` (`max_steps` или `model_error:<code>`).
+- На каждое сообщение — ход: `agent.working`, цикл по 4.2 с историей агента, на каждый ответ модели `agent.step` со сквозным `stepIndex`, исход хода: `agent.idle` (ответ текстом), `agent.result` (`finish` у агента-входа или повторный текст после напоминания), `agent.failed` (`max_steps` или `model_error:<code>`).
+- Агент-вход, закончивший ход текстом при пустом `awaiting`, один раз за ход получает напоминание 4.5 (`ENTRY_REMINDER`) и ещё один проход цикла (4.4, шаг 5).
 - После `finish` или `agent.failed` агент не вызывает модель: следующие сообщения отбрасываются с `warn message dropped`, `reason: agent_finished`.
 
 ## Что внутри сейчас
 
 - `runAgentLoop(deps, context)` в `src/loop.ts` (спека 022, 4.2): цикл «вызов модели → инструменты → результаты». Вход — `AgentCallContext` (модель, системный промпт, история, новое сообщение, инструменты, `maxSteps`/`maxTokens`), порт `ChatModel` и колбэк `onStep`; выход — `AgentLoopResult` (`text`, `stopped`, `max_steps`, `model_error`). Цикл не импортирует ничего о рое.
-- `src/prompt.ts` (спека 022, 4.5): чистые функции `systemPrompt(agent)`, `inboxMessage({from, text}, peers)` и `swarmTools(agent, send)`. Типы `AgentPeer`, `PromptAgent`, `SendMessage`.
-- `src/index.ts` (спека 022, 4.4): `createAgentCore(deps)` с портами `AgentBus`, `ChatModel`, `Clock`, `IdGenerator`, `Logger`, `TraceContext`. Ход агента — `turn` и `handle`, исход — `publishOutcome`. История и счётчик шагов живут в замыкании на всё время жизни агента.
+- `src/prompt.ts` (спека 022, 4.5): чистые функции `systemPrompt(agent)`, `inboxMessage({from, text}, peers)` и `swarmTools(agent, send)`, константа `ENTRY_REMINDER` (текст напоминания шага 5). Типы `AgentPeer`, `PromptAgent`, `SendMessage`.
+- `src/index.ts` (спека 022, 4.4): `createAgentCore(deps)` с портами `AgentBus`, `ChatModel`, `Clock`, `IdGenerator`, `Logger`, `TraceContext`. Ход агента — `turn` и `handle`, исход — `publishOutcome`. История, счётчик шагов и множество `awaiting` (адресаты `send_message`, от которых не пришёл ответ) живут в замыкании на всё время жизни агента.
 - Логи по 4.11 спеки 022: `info agent started`, `debug turn finished` (`messageId`, `kind`, `steps`), `warn message dropped` с `reason` (`invalid_schema`, `wrong_recipient`, `agent_finished`). Тексты промпта, сообщений и ответов в логах нет.
-- Тесты: `test/loop.test.ts` — AC-022-3…11; `test/prompt.test.ts` — AC-022-12, AC-022-14; `test/agent-core.test.ts` — AC-000-16, AC-001-19, AC-016-6, AC-016-7, AC-022-13, AC-022-15, AC-022-16.
+- Тесты: `test/loop.test.ts` — AC-022-3…11; `test/prompt.test.ts` — AC-022-12, AC-022-14; `test/agent-core.test.ts` — AC-000-16, AC-001-19, AC-016-6, AC-016-7, AC-022-13, AC-022-15, AC-022-16, AC-022-28.
 
 ## Ограничения
 
@@ -23,7 +24,7 @@
 - Зависимости — `zod`, `@swag/contracts`.
 - Нет окружения и инфраструктуры: шина, модель, часы — порты. Таймеров нет.
 
-Пока не сделано (задачи спеки 022): напоминание агенту-входу при итоге текстом без ожидаемых ответов (шаг 5 алгоритма 4.4, `awaiting`, T-7a) — сейчас итог `text` сразу даёт `agent.idle`. Последовательность ходов обеспечивает адаптер подписки (`adapter-nats`), ядро очереди не держит.
+Последовательность ходов обеспечивает адаптер подписки (`adapter-nats`), ядро очереди не держит.
 
 В 022 нет ключей, бюджетов, истории в Postgres и журнала инструментов: это спеки 004, 003 и 008.
 
@@ -36,6 +37,7 @@
 ## Ключевые решения
 
 - Ход агента не ставит очередь: `AgentBus.subscribe` принимает обработчик-`Promise`, адаптер ждёт его и обрабатывает сообщения по одному (022, Q-2, REQ-022-14). Ошибка обработчика уходит адаптеру, ядро её не глотает.
+- Напоминание (022, 4.4 шаг 5, REQ-022-19) только у агента-входа и только при пустом `awaiting`. `awaiting` добавляет `send`, а приём сообщения от участника убирает `from` до хода. Повторный `text` после напоминания — `stopped` с `result = text`, буквально по 4.4; трактовка на подтверждение — D-82 в `docs/spec/questions.md`. `steps` в логе `turn finished` — шаги хода по обоим проходам.
 - `stepIndex` в `agent.step` — сквозной за всю жизнь агента (`stepsDone` + номер шага в цикле), `maxSteps` цикла — остаток `AGENT_MAX_STEPS` (022, 4.4 шаг 3).
 - Сообщение, адресованное не этому агенту, отбрасывается с предупреждением (защита от ошибки подписки). Проверка схемы и адресата — раньше проверки `finished`.
 - `agent.started` публикуется после подписки.
@@ -56,4 +58,4 @@
 - 001 — эстафета (4.7.2) удалена спекой 022; AC-001-19 переписан на ход агента входа (тест в `test/agent-core.test.ts`).
 - 016 — порты `Logger` и `TraceContext`, логи 4.8.
 - 002 — агентный цикл с LLM.
-- 022 — `loop.ts` по 4.2 (T-4); промпт и инструменты 4.5 — `prompt.ts` (T-6); агент роя по 4.4 — `index.ts` (T-7).
+- 022 — `loop.ts` по 4.2 (T-4); промпт и инструменты 4.5 — `prompt.ts` (T-6); агент роя по 4.4 — `index.ts` (T-7), напоминание шага 5 — T-7a.

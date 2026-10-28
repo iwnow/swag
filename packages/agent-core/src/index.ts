@@ -9,6 +9,7 @@ import {
 } from '@swag/contracts';
 import { runAgentLoop, type AgentLoopResult, type ChatMessage, type ChatModel } from './loop.ts';
 import {
+  ENTRY_REMINDER,
   inboxMessage,
   swarmTools,
   systemPrompt,
@@ -83,6 +84,7 @@ export interface AgentCore {
 export function createAgentCore(deps: AgentCoreDeps): AgentCore {
   const { bus, clock, ids, log, trace, model, config } = deps;
   const ctx = { swarmId: config.swarmId, agentId: config.agentId };
+  const isEntry = config.agentId === config.entryAgentId;
   const agent: PromptAgent = {
     agentId: config.agentId,
     agentName: config.agentName,
@@ -95,6 +97,8 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
   let stepsDone = 0;
   // done или failed: модель больше не вызывается (REQ-022-8).
   let finished = false;
+  // Участники, которым отправлено сообщение и от которых ответа ещё не пришло (4.4, шаг 5).
+  const awaiting = new Set<AgentId>();
 
   const envelope = () => ({
     id: ids.uuid(),
@@ -105,8 +109,9 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
     traceId: trace.currentTraceId(),
   });
 
-  const send = (to: AgentId, text: string) =>
-    bus.publishMessage({
+  const send = (to: AgentId, text: string) => {
+    awaiting.add(to);
+    return bus.publishMessage({
       id: ids.uuid(),
       swarmId: config.swarmId,
       from: config.agentId,
@@ -114,11 +119,11 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
       text,
       ts: clock.now(),
     });
+  };
 
   async function publishOutcome(messageId: string, loop: AgentLoopResult): Promise<void> {
     switch (loop.kind) {
       case 'text':
-        // Шаг 5 алгоритма 4.4 (напоминание агенту-входу) — задача T-7a.
         await bus.publishEvent({ ...envelope(), type: 'agent.idle', data: { messageId } });
         return;
       case 'stopped':
@@ -154,38 +159,57 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
       type: 'agent.working',
       data: { messageId: message.id },
     });
-    const loop = await runAgentLoop(
-      {
-        model,
-        onStep: (step) =>
-          bus.publishEvent({
-            ...envelope(),
-            type: 'agent.step',
-            data: {
-              messageId: message.id,
-              stepIndex: stepsDone + step.stepIndex,
-              text: step.text,
-              toolCalls: step.toolCalls,
-            },
-          }),
-      },
-      {
-        model: config.model,
-        systemPrompt: systemPrompt(agent),
-        history,
-        input: inboxMessage({ from: message.from, text: message.text }, config.peers),
-        tools: swarmTools(agent, send),
-        limits: { maxSteps: config.maxSteps - stepsDone, maxTokens: config.maxTokens },
-      },
+    const stepsAtStart = stepsDone;
+    const runLoop = (input: ChatMessage) =>
+      runAgentLoop(
+        {
+          model,
+          onStep: (step) =>
+            bus.publishEvent({
+              ...envelope(),
+              type: 'agent.step',
+              data: {
+                messageId: message.id,
+                stepIndex: stepsDone + step.stepIndex,
+                text: step.text,
+                toolCalls: step.toolCalls,
+              },
+            }),
+        },
+        {
+          model: config.model,
+          systemPrompt: systemPrompt(agent),
+          history,
+          input,
+          tools: swarmTools(agent, send),
+          limits: { maxSteps: config.maxSteps - stepsDone, maxTokens: config.maxTokens },
+        },
+      );
+    let loop = await runLoop(
+      inboxMessage({ from: message.from, text: message.text }, config.peers),
     );
     history.push(...loop.messages);
     stepsDone += loop.steps;
+    // Шаг 5 алгоритма 4.4: напоминание агенту-входу — один раз за ход, без ожидаемых ответов.
+    if (loop.kind === 'text' && isEntry && awaiting.size === 0) {
+      loop = await runLoop({ role: 'user', content: ENTRY_REMINDER });
+      history.push(...loop.messages);
+      stepsDone += loop.steps;
+      if (loop.kind === 'text') {
+        loop = {
+          messages: loop.messages,
+          steps: loop.steps,
+          kind: 'stopped',
+          result: loop.text ?? '',
+        };
+      }
+    }
     await publishOutcome(message.id, loop);
     log.debug('turn finished', {
       ...ctx,
       messageId: message.id,
       kind: loop.kind,
-      steps: loop.steps,
+      steps: stepsDone - stepsAtStart,
     });
   }
 
@@ -204,6 +228,7 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
       log.warn('message dropped', { ...ctx, reason: 'agent_finished' });
       return;
     }
+    if (message.from !== 'user') awaiting.delete(message.from);
     await turn(message);
   }
 

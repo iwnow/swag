@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { BusMessage, PlatformEventInput } from '@swag/contracts';
 import {
   createAgentCore,
+  ENTRY_REMINDER,
   type AgentBus,
   type AgentConfigCore,
   type AgentPeer,
+  type ChatMessage,
   type ChatModel,
   type ChatModelRequest,
   type ChatModelResult,
@@ -14,6 +16,7 @@ import {
 const SWARM = '0b6f6d2e-6a4c-4c3e-9f5e-111111111111';
 const MSG = '0b6f6d2e-6a4c-4c3e-9f5e-333333333333';
 const MSG2 = '0b6f6d2e-6a4c-4c3e-9f5e-333333333334';
+const MSG3 = '0b6f6d2e-6a4c-4c3e-9f5e-333333333335';
 const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
 const PEERS: AgentPeer[] = [{ id: 'agent-2', name: 'Редактор', role: 'проверяет текст' }];
 
@@ -116,6 +119,9 @@ const inbox = (
   to: BusMessage['to'] = 'agent-1',
   id = MSG,
 ) => ({ id, swarmId: SWARM, from, to, text, ts: '2026-10-22T10:00:01.000Z' });
+
+const countReminders = (messages: ChatMessage[]) =>
+  messages.filter((m) => m.role === 'user' && m.content === ENTRY_REMINDER).length;
 
 describe('agent-core', () => {
   it('AC-000-16: info() возвращает ServiceInfo сервиса agent с версией из оболочки', () => {
@@ -288,7 +294,10 @@ describe('agent-core', () => {
   });
 
   it('AC-016-7: agent-core пишет логи 4.8 без текста роли и сообщения', async () => {
-    const { core, entries, deliver } = setup({ agentRole: 'секретная роль' }, [reply('ответ')]);
+    const { core, entries, deliver } = setup({ agentRole: 'секретная роль' }, [
+      reply('ответ'),
+      reply('ответ 2'),
+    ]);
     await core.start();
     await deliver(inbox('секретный текст'));
     expect(entries.map((e) => [e.level, e.msg])).toEqual([
@@ -296,5 +305,91 @@ describe('agent-core', () => {
       ['debug', 'turn finished'],
     ]);
     expect(JSON.stringify(entries)).not.toContain('секрет');
+  });
+
+  it('AC-022-28: агент-вход ответил текстом — одно напоминание 4.5, повторный текст — agent.result «итог»', async () => {
+    const { core, events, entries, requests, deliver } = setup({}, [
+      reply('черновик'),
+      reply('итог'),
+    ]);
+    await core.start();
+    await deliver(inbox('T'));
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.messages.at(-1)).toEqual({ role: 'user', content: ENTRY_REMINDER });
+    expect(countReminders(requests[1]?.messages ?? [])).toBe(1);
+    expect(events.slice(1).map((e) => e.type)).toEqual([
+      'agent.working',
+      'agent.step',
+      'agent.step',
+      'agent.result',
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      type: 'agent.result',
+      agentId: 'agent-1',
+      data: { text: 'итог' },
+    });
+    await deliver(inbox('ещё', 'user', 'agent-1', MSG2));
+    expect(requests).toHaveLength(2);
+    expect(entries).toContainEqual({
+      level: 'warn',
+      msg: 'message dropped',
+      ctx: { swarmId: SWARM, agentId: 'agent-1', reason: 'agent_finished' },
+    });
+  });
+
+  it('AC-022-28: после напоминания вызов finish — agent.result с результатом finish', async () => {
+    const { core, events, requests, deliver } = setup({}, [
+      reply('черновик'),
+      toolCall('finish', { result: 'итог finish' }),
+    ]);
+    await core.start();
+    await deliver(inbox('T'));
+    expect(requests).toHaveLength(2);
+    expect(events.at(-1)).toMatchObject({ type: 'agent.result', data: { text: 'итог finish' } });
+  });
+
+  it('AC-022-28: агент-вход ждёт agent-2 и agent-3 — текст без напоминания даёт idle; после последнего ответа — напоминание', async () => {
+    const { core, events, requests, deliver } = setup(
+      { peers: [...PEERS, { id: 'agent-3', name: 'Корректор', role: 'правит текст' }] },
+      [
+        toolCall('send_message', { to: 'agent-2', text: 'a' }),
+        toolCall('send_message', { to: 'agent-3', text: 'b' }),
+        reply('ждём'),
+        reply('ждём участников'),
+        reply('ответ 3'),
+        reply('итог'),
+      ],
+    );
+    await core.start();
+    await deliver(inbox('T'));
+    expect(events.at(-1)).toMatchObject({ type: 'agent.idle' });
+    expect(requests).toHaveLength(3);
+
+    await deliver(inbox('ответ 2', 'agent-2', 'agent-1', MSG2));
+    expect(events.at(-1)).toMatchObject({ type: 'agent.idle' });
+    expect(requests).toHaveLength(4);
+    expect(countReminders(requests[3]?.messages ?? [])).toBe(0);
+
+    await deliver(inbox('ответ 3', 'agent-3', 'agent-1', MSG3));
+    expect(requests).toHaveLength(6);
+    expect(countReminders(requests[4]?.messages ?? [])).toBe(0);
+    expect(countReminders(requests[5]?.messages ?? [])).toBe(1);
+    expect(events.at(-1)).toMatchObject({ type: 'agent.result', data: { text: 'итог' } });
+  });
+
+  it('AC-022-28: агент не-вход при итоге text напоминания не получает — agent.idle после одного вызова модели', async () => {
+    const { core, events, requests, deliver } = setup(
+      {
+        agentId: 'agent-2',
+        agentName: 'Редактор',
+        entryAgentId: 'agent-1',
+        peers: [{ id: 'agent-1', name: 'Автор', role: 'пишет' }],
+      },
+      [reply('готово')],
+    );
+    await core.start();
+    await deliver(inbox('правь', 'agent-1', 'agent-2', MSG));
+    expect(requests).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({ type: 'agent.idle' });
   });
 });
