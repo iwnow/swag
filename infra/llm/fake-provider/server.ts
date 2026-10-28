@@ -54,6 +54,52 @@ function firstToolName(body: unknown): string | undefined {
   return isRecord(fn) && typeof fn.name === 'string' ? fn.name : '';
 }
 
+// Спека 022, 4.7: роль последнего сообщения.
+function lastMessageRole(body: unknown): unknown {
+  if (!isRecord(body) || !Array.isArray(body.messages)) return undefined;
+  return (body.messages.at(-1) as { role?: unknown } | undefined)?.role;
+}
+
+// Спека 022, 4.7: JSON после маркера `__tool_calls__`; невалидный JSON или не [{ name, arguments }] — undefined.
+function markedToolCalls(
+  text: string,
+): { name: string; arguments: Record<string, unknown> }[] | undefined {
+  const marker = '__tool_calls__';
+  const index = text.indexOf(marker);
+  if (index === -1) return undefined;
+  try {
+    const calls: unknown = JSON.parse(text.slice(index + marker.length));
+    if (!Array.isArray(calls)) return undefined;
+    const valid = calls.every(
+      (call) => isRecord(call) && typeof call.name === 'string' && isRecord(call.arguments),
+    );
+    return valid ? (calls as { name: string; arguments: Record<string, unknown> }[]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Спека 022, 4.7: правила проверяются раньше таблицы 4.12 (без потока). undefined — правило не сработало.
+function scriptedChoice(
+  body: unknown,
+  text: string,
+): { message: object; finishReason: string } | undefined {
+  if (lastMessageRole(body) === 'tool') {
+    return { message: { role: 'assistant', content: 'fake reply' }, finishReason: 'stop' };
+  }
+  const calls = markedToolCalls(text);
+  if (calls === undefined) return undefined;
+  const tool_calls = calls.map((call, index) => ({
+    id: `call_${String(index)}`,
+    type: 'function',
+    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+  }));
+  return {
+    message: { role: 'assistant', content: null, tool_calls },
+    finishReason: 'tool_calls',
+  };
+}
+
 function flattenHeaders(raw: IncomingHttpHeaders): Record<string, string> {
   const headers: Record<string, string> = {};
   for (const [name, value] of Object.entries(raw)) {
@@ -180,6 +226,11 @@ async function handle(
   requests.push(record);
 
   const text = lastMessageText(body);
+  const stream = isRecord(body) && body.stream === true;
+  const scripted = stream ? undefined : scriptedChoice(body, text);
+  if (scripted) {
+    return sendJson(res, 200, completion(body, text, scripted.message, scripted.finishReason));
+  }
   if (text.includes('__fail_500__')) return sendJson(res, 500, { error: { message: 'boom' } });
   if (text.includes('__fail_429__')) return sendJson(res, 429, { error: { message: 'slow down' } });
   if (text.includes('__fail_400__')) {
@@ -191,7 +242,7 @@ async function handle(
     watchClientClose(res, record);
     return;
   }
-  if (isRecord(body) && body.stream === true) {
+  if (stream) {
     return streamResponse(req, res, record, body, text);
   }
 
@@ -206,14 +257,22 @@ async function handle(
             { id: 'call_fake_1', type: 'function', function: { name: toolName, arguments: '{}' } },
           ],
         };
-  sendJson(res, 200, {
+  sendJson(
+    res,
+    200,
+    completion(body, text, message, toolName === undefined ? 'stop' : 'tool_calls'),
+  );
+}
+
+function completion(body: unknown, text: string, message: object, finishReason: string) {
+  return {
     id: 'chatcmpl-fake',
     object: 'chat.completion',
     created: Math.floor(Date.now() / 1000),
     model: isRecord(body) ? body.model : undefined,
-    choices: [{ index: 0, message, finish_reason: toolName === undefined ? 'stop' : 'tool_calls' }],
+    choices: [{ index: 0, message, finish_reason: finishReason }],
     ...(text.includes('__no_usage__') ? {} : { usage: usage(!text.includes('__no_cost__')) }),
-  });
+  };
 }
 
 function closeServer(server: Server): Promise<void> {

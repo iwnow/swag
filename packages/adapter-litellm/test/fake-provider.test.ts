@@ -352,3 +352,74 @@ describe('фейковый провайдер, поток (спека 002, 4.12)
     await waitFor(() => fake.requests[0]?.closedByClient === true);
   });
 });
+
+describe('фейковый провайдер, правила спеки 022 (4.7)', () => {
+  const tools = [
+    { type: 'function', function: { name: 'lookup', parameters: { type: 'object' } } },
+  ];
+
+  it('AC-022-20: последнее сообщение role tool при tools — текст без tool_calls', async () => {
+    const res = await post({
+      model: 'fake-small',
+      messages: [
+        { role: 'user', content: 'вызови' },
+        { role: 'assistant', content: null, tool_calls: [] },
+        { role: 'tool', tool_call_id: 'call_0', content: '{"ok":true}' },
+      ],
+      tools,
+    });
+
+    const json = (await res.json()) as { choices: unknown[]; usage: Record<string, unknown> };
+    expect(json.choices).toEqual([
+      { index: 0, message: { role: 'assistant', content: 'fake reply' }, finish_reason: 'stop' },
+    ]);
+    expect(json.usage).toMatchObject({ prompt_tokens: 1000, cost: 0.0085 });
+  });
+
+  it('AC-022-20: маркер __tool_calls__ с двумя вызовами — два tool_calls call_0 и call_1', async () => {
+    const calls = [
+      { name: 'lookup', arguments: { q: 'a' } },
+      { name: 'other', arguments: {} },
+    ];
+    const res = await post(chatBody(`__tool_calls__${JSON.stringify(calls)}`, { tools }));
+
+    const json = (await res.json()) as { choices: { message: unknown; finish_reason: string }[] };
+    expect(json.choices[0]).toEqual({
+      index: 0,
+      message: {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          {
+            id: 'call_0',
+            type: 'function',
+            function: { name: 'lookup', arguments: '{"q":"a"}' },
+          },
+          { id: 'call_1', type: 'function', function: { name: 'other', arguments: '{}' } },
+        ],
+      },
+      finish_reason: 'tool_calls',
+    });
+  });
+
+  it('AC-022-20: невалидный JSON после маркера — правило не срабатывает, ответ по умолчанию 002', async () => {
+    const res = await post(chatBody('__tool_calls__[{"name":', { tools }));
+
+    const json = (await res.json()) as { choices: { message: unknown; finish_reason: string }[] };
+    expect(json.choices[0]).toEqual({
+      index: 0,
+      message: {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          {
+            id: 'call_fake_1',
+            type: 'function',
+            function: { name: 'lookup', arguments: '{}' },
+          },
+        ],
+      },
+      finish_reason: 'tool_calls',
+    });
+  });
+});
