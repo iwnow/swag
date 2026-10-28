@@ -12,7 +12,7 @@
 
 - `src/app.ts` — маршруты и перевод результатов ядра в HTTP-ответы (`STATUS` по кодам ошибок).
 - `src/main.ts` — телеметрия (`adapter-telemetry`), конфигурация (`ApiConfig`), адаптеры (память, HTTP-оркестратор, NATS), запуск, остановка по сигналу со сбросом телеметрии. Слушает `0.0.0.0` внутри контейнера; наружу порт публикуется только на `127.0.0.1`.
-- Тесты: `test/health.test.ts` (AC-000-4), `test/api.test.ts` (AC-001-3, 4, 9, 10), `test/e2e.test.ts` (AC-001-20 — сквозной без Docker; AC-016-12, AC-016-13 — он же с настоящим `TraceContext`: один `traceId` на рой, нет утечки текста в логи и спаны), `test/trace.test.ts` (AC-016-9 — HTTP-цепочка `api` → `orchestrator` с настоящими серверами).
+- Тесты: `test/health.test.ts` (AC-000-4), `test/api.test.ts` (AC-001-3, 4, 9, 10), `test/e2e.test.ts` (AC-022-21 и AC-001-20 — сквозной без Docker по сообщениям роя; AC-016-12, AC-016-13 — он же с настоящим `TraceContext`: один `traceId` на рой, нет утечки текста в логи и спаны), `test/trace.test.ts` (AC-016-9 — HTTP-цепочка `api` → `orchestrator` с настоящими серверами).
 
 ## Ограничения
 
@@ -27,6 +27,7 @@
 
 ## Ключевые решения
 
+- Сквозной тест (T-13, спека 022): песочница-фейк на `create` собирает `AgentConfigCore` из `spec.env` через `loadConfig(AgentConfig, env)` из `@swag/config` — тот же разбор, что в `apps/agent`. Адаптерные ключи `NATS_URL` и `LLM_GATEWAY_URL` в env оркестратора нет (их ставит `adapter-docker`), поэтому тест подставляет фейковые значения. Модель — скриптовый `ChatModel` на агента, сценарий 1 → 2 → 3 → 1 с `finish` у агента-входа; локальный в тесте, т.к. скриптовая модель из `agent-core/test` не экспортируется. Агент без участников получает модель, которая не отвечает: одиночный рой AC-016-12 ждёт остановки. Рёбра проверяются по `SwarmView.edges` через `api.getSwarm`.
 - Fastify 5.12.7, `@fastify/websocket` 11.3.4 (точные версии); WebSocket на `ws` внутри плагина.
 - Сверка с документацией (T-33 спеки 002, 2026-10-28). 5.12.7 — актуальная версия ветки v5 (https://fastify.dev/docs/latest/Reference/Server/): `listen({ host, port })`, `setErrorHandler`, `logLevel` маршрута — без изменений. `@fastify/websocket` 11.3.4 (https://github.com/fastify/fastify-websocket): регистрация до маршрутов, `{ websocket: true }`, обработчик `(socket, request)`, где `socket` — сам WebSocket (`send`, `on('close')`, `close(4404, …)`); пир-зависимость — Fastify 5.
 - Ошибки ядра → HTTP: `validation_error` 400, `not_found` 404, `too_many_active_swarms` и `swarm_finished` 409 (`STATUS` в `app.ts`); ошибки формата тела Fastify приводятся к формату 4.5.3.

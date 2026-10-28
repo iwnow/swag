@@ -17,6 +17,39 @@ const validEnv = {
   NATS_URL: 'nats://nats:4222',
 };
 
+const gatewayToken = 'swag-local-gateway-token-not-secret-000';
+
+// Спека 022, 4.8: env агента, который ставит ядро оркестратора.
+const agentEnv = {
+  NATS_URL: 'nats://nats:4222',
+  SWARM_ID: '0b6f6d2e-6a4c-4c3e-9f5e-111111111111',
+  AGENT_ID: 'agent-2',
+  AGENT_NAME: 'Редактор',
+  AGENT_ROLE: 'Проверяет текст',
+  AGENT_MODEL: 'chat-small',
+  AGENT_PEERS: '[{"id":"agent-1","name":"Автор","role":"Пишет текст"}]',
+  AGENT_ENTRY: 'agent-1',
+  AGENT_MAX_STEPS: '20',
+  AGENT_MAX_TOKENS: '2048',
+  LLM_GATEWAY_URL: 'http://llm-gateway:3002/v1',
+  LLM_GATEWAY_TOKEN: gatewayToken,
+};
+
+// Спека 022, 4.8: env оркестратора; значения из .env.example.
+const orchestratorEnv = {
+  ...validEnv,
+  ORCHESTRATOR_PORT: '3001',
+  AGENT_TEMPLATE: 'swag-agent:dev',
+  DOCKER_AGENT_NETWORK: 'swag_default',
+  DOCKER_AGENT_NATS_URL: 'nats://nats:4222',
+  AGENT_START_TIMEOUT_MS: '30000',
+  SWARM_TIMEOUT_MS: '300000',
+  AGENT_MAX_STEPS: '20',
+  AGENT_MAX_TOKENS: '2048',
+  LLM_GATEWAY_TOKEN: gatewayToken,
+  DOCKER_AGENT_LLM_GATEWAY_URL: 'http://llm-gateway:3002/v1',
+};
+
 describe('loadConfig', () => {
   it('AC-000-2: валидный env даёт типизированный объект', () => {
     const config: BaseConfig = loadConfig(BaseConfig, { ...validEnv, UNRELATED: 'x' });
@@ -45,21 +78,49 @@ describe('loadConfig', () => {
     expect(() => loadConfig(ApiConfig, { ...apiEnv, API_PORT: 'abc' })).toThrow(/API_PORT/);
   });
 
-  it('AC-001-agent: AGENT_NEXT пустой — последний агент (null); лишний agent-id — ошибка', () => {
-    const agentEnv = {
-      NATS_URL: 'nats://nats:4222',
-      SWARM_ID: '0b6f6d2e-6a4c-4c3e-9f5e-111111111111',
-      AGENT_ID: 'agent-2',
-      AGENT_NAME: 'Редактор',
-      AGENT_ROLE: 'Проверяет текст',
-      AGENT_NEXT: '',
-      AGENT_STEP_DELAY_MS: '1000',
-    };
-    expect(loadConfig(AgentConfig, agentEnv).AGENT_NEXT).toBeNull();
-    expect(loadConfig(AgentConfig, { ...agentEnv, AGENT_NEXT: 'agent-3' }).AGENT_NEXT).toBe(
-      'agent-3',
+  it('спека 022, 4.8: AgentConfig разбирает AGENT_PEERS, умолчания и не знает AGENT_NEXT', () => {
+    const config = loadConfig(AgentConfig, agentEnv);
+    expect(config).toMatchObject({
+      AGENT_MODEL: 'chat-small',
+      AGENT_PEERS: [{ id: 'agent-1', name: 'Автор', role: 'Пишет текст' }],
+      AGENT_ENTRY: 'agent-1',
+      AGENT_MAX_STEPS: 20,
+      AGENT_MAX_TOKENS: 2048,
+      LLM_GATEWAY_URL: 'http://llm-gateway:3002/v1',
+      AGENT_LLM_TIMEOUT_MS: 120000,
+      AGENT_LLM_MAX_RETRIES: 2,
+    });
+    expect(config).not.toHaveProperty('AGENT_NEXT');
+    expect(config).not.toHaveProperty('AGENT_STEP_DELAY_MS');
+    expect(loadConfig(AgentConfig, { ...agentEnv, AGENT_PEERS: '[]' }).AGENT_PEERS).toEqual([]);
+    expect(
+      loadConfig(AgentConfig, {
+        ...agentEnv,
+        AGENT_LLM_TIMEOUT_MS: '5000',
+        AGENT_LLM_MAX_RETRIES: '0',
+      }),
+    ).toMatchObject({ AGENT_LLM_TIMEOUT_MS: 5000, AGENT_LLM_MAX_RETRIES: 0 });
+  });
+
+  it('спека 022, 4.8: AgentConfig отвергает плохой AGENT_PEERS, AGENT_ENTRY и лимиты', () => {
+    expect(() => loadConfig(AgentConfig, { ...agentEnv, AGENT_PEERS: 'не json' })).toThrow(
+      /AGENT_PEERS/,
     );
-    expect(() => loadConfig(AgentConfig, { ...agentEnv, AGENT_NEXT: 'bob' })).toThrow(/AGENT_NEXT/);
+    expect(() =>
+      loadConfig(AgentConfig, { ...agentEnv, AGENT_PEERS: '[{"id":"bob","name":"x","role":"y"}]' }),
+    ).toThrow(/AGENT_PEERS/);
+    expect(() => loadConfig(AgentConfig, { ...agentEnv, AGENT_ENTRY: 'bob' })).toThrow(
+      /AGENT_ENTRY/,
+    );
+    expect(() => loadConfig(AgentConfig, { ...agentEnv, AGENT_MAX_STEPS: '0' })).toThrow(
+      /AGENT_MAX_STEPS/,
+    );
+    expect(() => loadConfig(AgentConfig, { ...agentEnv, AGENT_MAX_TOKENS: '0' })).toThrow(
+      /AGENT_MAX_TOKENS/,
+    );
+    expect(() =>
+      loadConfig(AgentConfig, { ...agentEnv, LLM_GATEWAY_TOKEN: 'x'.repeat(31) }),
+    ).toThrow(/LLM_GATEWAY_TOKEN/);
   });
 
   it('телеметрия: LOG_LEVEL из LogLevel, OTLP-адрес, TRACEPARENT агента; пустые строки — null', () => {
@@ -78,13 +139,9 @@ describe('loadConfig', () => {
     expect(loadConfig(ObservabilityConfig, { GRAFANA_PORT: '3300' }).GRAFANA_PORT).toBe(3300);
 
     const agent = loadConfig(AgentConfig, {
-      NATS_URL: 'nats://nats:4222',
-      SWARM_ID: '0b6f6d2e-6a4c-4c3e-9f5e-111111111111',
+      ...agentEnv,
       AGENT_ID: 'agent-1',
-      AGENT_NAME: 'A',
-      AGENT_ROLE: 'r',
-      AGENT_NEXT: '',
-      AGENT_STEP_DELAY_MS: '0',
+      AGENT_PEERS: '[]',
       TRACEPARENT: '',
       OTEL_EXPORTER_OTLP_ENDPOINT: '',
     });
@@ -96,16 +153,6 @@ describe('loadConfig', () => {
   });
 
   it('DOCKER_AGENT_OTLP_ENDPOINT необязательный: пусто или нет — null, иначе адрес', () => {
-    const orchestratorEnv = {
-      ...validEnv,
-      ORCHESTRATOR_PORT: '3001',
-      AGENT_TEMPLATE: 'swag-agent:dev',
-      DOCKER_AGENT_NETWORK: 'swag_default',
-      DOCKER_AGENT_NATS_URL: 'nats://nats:4222',
-      AGENT_STEP_DELAY_MS: '0',
-      AGENT_START_TIMEOUT_MS: '30000',
-      SWARM_TIMEOUT_MS: '300000',
-    };
     expect(loadConfig(OrchestratorConfig, orchestratorEnv).DOCKER_AGENT_OTLP_ENDPOINT).toBeNull();
     expect(
       loadConfig(OrchestratorConfig, { ...orchestratorEnv, DOCKER_AGENT_OTLP_ENDPOINT: '' })
@@ -120,6 +167,35 @@ describe('loadConfig', () => {
     expect(() =>
       loadConfig(OrchestratorConfig, { ...orchestratorEnv, DOCKER_AGENT_OTLP_ENDPOINT: 'нет' }),
     ).toThrow(/DOCKER_AGENT_OTLP_ENDPOINT/);
+  });
+
+  it('спека 022, 4.8: OrchestratorConfig требует лимиты агента и адрес gateway; AGENT_STEP_DELAY_MS удалён', () => {
+    const config = loadConfig(OrchestratorConfig, orchestratorEnv);
+    expect(config).toMatchObject({
+      AGENT_MAX_STEPS: 20,
+      AGENT_MAX_TOKENS: 2048,
+      LLM_GATEWAY_TOKEN: gatewayToken,
+      DOCKER_AGENT_LLM_GATEWAY_URL: 'http://llm-gateway:3002/v1',
+    });
+    expect(config).not.toHaveProperty('AGENT_STEP_DELAY_MS');
+    expect(() =>
+      loadConfig(OrchestratorConfig, { ...orchestratorEnv, AGENT_MAX_STEPS: '0' }),
+    ).toThrow(/AGENT_MAX_STEPS/);
+    expect(() =>
+      loadConfig(OrchestratorConfig, { ...orchestratorEnv, AGENT_MAX_TOKENS: undefined }),
+    ).toThrow(/AGENT_MAX_TOKENS/);
+    expect(() =>
+      loadConfig(OrchestratorConfig, { ...orchestratorEnv, DOCKER_AGENT_LLM_GATEWAY_URL: 'нет' }),
+    ).toThrow(/DOCKER_AGENT_LLM_GATEWAY_URL/);
+  });
+
+  it('спека 022, 4.8: .env.example проходит OrchestratorConfig и содержит новые переменные', () => {
+    const example = parseEnv(
+      readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8'),
+    );
+    expect(loadConfig(OrchestratorConfig, example).AGENT_MAX_STEPS).toBe(20);
+    expect(example).not.toHaveProperty('AGENT_NEXT');
+    expect(example).not.toHaveProperty('AGENT_STEP_DELAY_MS');
   });
 
   it('AC-002-27: LlmGatewayConfig — токен от 32 символов, LITELLM_MASTER_KEY с sk-; примеры окружения проходят', () => {

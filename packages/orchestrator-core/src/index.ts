@@ -1,5 +1,6 @@
 import {
   BusMessage,
+  ENTRY_AGENT_ID,
   PlatformEventInput,
   SwarmLaunch,
   type AgentId,
@@ -67,7 +68,14 @@ export interface OrchestratorCoreDeps {
   ids: IdGenerator;
   log: Logger;
   trace: TraceContext;
-  agent: { template: string; stepDelayMs: number }; // как песочница попадает в сеть и к NATS — дело адаптера
+  // Значения env 4.8, которые ставит ядро. NATS_URL, OTEL_EXPORTER_OTLP_ENDPOINT, LLM_GATEWAY_URL — дело адаптера.
+  agent: {
+    template: string;
+    maxSteps: number;
+    maxTokens: number;
+    llmGatewayToken: string;
+    flushTimeoutMs: number;
+  };
   timeouts: { agentStartMs: number; swarmMs: number };
 }
 
@@ -83,7 +91,7 @@ export interface OrchestratorCore {
   info(): ServiceInfo;
   launch(body: unknown): Promise<Result<void>>;
   stop(swarmId: string): Promise<Result<void>>;
-  handleEvent(raw: unknown): Promise<void>; // реагирует на agent.started и agent.result
+  handleEvent(raw: unknown): Promise<void>; // реагирует на agent.started, agent.result и agent.failed
   cleanupOrphans(): Promise<number>; // число удалённых песочниц
 }
 
@@ -102,7 +110,10 @@ type Outcome =
   | { type: 'swarm.stopped'; data: { reason: 'user' } }
   | {
       type: 'swarm.failed';
-      data: { reason: 'agent_start_timeout' | 'swarm_timeout' | 'sandbox_error'; detail?: string };
+      data: {
+        reason: 'agent_start_timeout' | 'swarm_timeout' | 'sandbox_error' | 'agent_failed';
+        detail?: string;
+      };
     };
 
 const FINISHED_STATUS: Record<Outcome['type'], 'completed' | 'stopped' | 'failed'> = {
@@ -180,8 +191,11 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
     await publish({ ...envelope(swarmId, null), type: 'swarm.started', data: {} });
   }
 
-  function agentSpec(run: Run, index: number, agent: AgentSpec): SandboxSpec {
-    const next = run.launch.agents[index + 1];
+  // env 4.8 без адаптерных ключей. TRACEPARENT здесь нет: порт TraceContext отдаёт только traceId (см. README).
+  function agentSpec(run: Run, agent: AgentSpec): SandboxSpec {
+    const peers = run.launch.agents
+      .filter((other) => other.id !== agent.id)
+      .map((other) => ({ id: other.id, name: other.name, role: other.role }));
     return {
       template: deps.agent.template,
       env: {
@@ -189,8 +203,13 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
         AGENT_ID: agent.id,
         AGENT_NAME: agent.name,
         AGENT_ROLE: agent.role,
-        AGENT_NEXT: next?.id ?? '',
-        AGENT_STEP_DELAY_MS: String(deps.agent.stepDelayMs),
+        AGENT_MODEL: agent.model,
+        AGENT_PEERS: JSON.stringify(peers),
+        AGENT_ENTRY: ENTRY_AGENT_ID,
+        AGENT_MAX_STEPS: String(deps.agent.maxSteps),
+        AGENT_MAX_TOKENS: String(deps.agent.maxTokens),
+        LLM_GATEWAY_TOKEN: deps.agent.llmGatewayToken,
+        TELEMETRY_FLUSH_TIMEOUT_MS: String(deps.agent.flushTimeoutMs),
       },
       metadata: {
         'swag.kind': 'agent',
@@ -245,9 +264,9 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
         }, deps.timeouts.agentStartMs),
       );
 
-      for (const [index, agent] of launch.agents.entries()) {
+      for (const agent of launch.agents) {
         try {
-          const { sandboxId } = await sandboxes.create(agentSpec(run, index, agent));
+          const { sandboxId } = await sandboxes.create(agentSpec(run, agent));
           if (run.phase === 'finished') {
             // рой остановили во время создания — эту песочницу удаляем сразу
             await sandboxes.remove(sandboxId);
@@ -301,10 +320,15 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
         run.started.add(event.agentId);
         await checkReady(run);
       } else if (event.type === 'agent.result') {
-        const last = run.launch.agents[run.launch.agents.length - 1];
-        if (run.phase === 'running' && last && event.agentId === last.id) {
+        // 4.9: итог роя — только ответ агента-входа; ответы остальных агентов игнорируются
+        if (run.phase === 'running' && event.agentId === ENTRY_AGENT_ID) {
           await finish(run, { type: 'swarm.completed', data: { result: event.data.text } });
         }
+      } else if (event.type === 'agent.failed' && run.phase === 'running') {
+        await finish(run, {
+          type: 'swarm.failed',
+          data: { reason: 'agent_failed', detail: `${event.agentId}: ${event.data.reason}` },
+        });
       }
     },
 

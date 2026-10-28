@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { createAgentCore, type AgentBus } from '@swag/agent-core';
 import { AgentConfig, loadConfig } from '@swag/config';
+import { createOpenAiChatModel } from '@swag/adapter-openai';
 import type { NatsBus, NatsBusOptions } from '@swag/adapter-nats';
 import type { Telemetry, TelemetryOptions } from '@swag/adapter-telemetry';
-import { eventsSubject, inboxSubject, type AgentId } from '@swag/contracts';
+import { eventsSubject, inboxSubject, type AgentId, type ModelId } from '@swag/contracts';
 import { runAgent } from './run.ts';
 
 // Спека 016, 4.7: телеметрия до NATS, старт в спане agent.start с родителем TRACEPARENT,
 // ошибка старта — error-лог с err, сброс телеметрии, выход с кодом 1.
+// Спека 022, 4.8: модель — adapter-openai через llm-gateway; traceparent — из текущего спана.
 
 export interface AgentProcessDeps {
   env: Record<string, string | undefined>;
@@ -79,21 +81,32 @@ export async function startAgentProcess(deps: AgentProcessDeps): Promise<AgentPr
           publishMessage: async (message) =>
             connection.publishJson(inboxSubject(message.swarmId, message.to), message),
         };
+        const caller = { swarmId: config.SWARM_ID, agentId: config.AGENT_ID as AgentId };
+        const model = createOpenAiChatModel({
+          baseUrl: config.LLM_GATEWAY_URL,
+          token: config.LLM_GATEWAY_TOKEN,
+          caller,
+          traceparent: () => telemetry.currentTraceparent(),
+          timeoutMs: config.AGENT_LLM_TIMEOUT_MS,
+          maxRetries: config.AGENT_LLM_MAX_RETRIES,
+        });
         const agent = createAgentCore({
           version: deps.version,
           bus,
           clock: { now: () => new Date().toISOString() },
           ids: { uuid: () => randomUUID() },
-          timers: { setTimeout: (fn, ms) => setTimeout(fn, ms) },
           log,
           trace: telemetry.trace,
+          model,
           config: {
-            swarmId: config.SWARM_ID,
-            agentId: config.AGENT_ID as AgentId,
+            ...caller,
             agentName: config.AGENT_NAME,
             agentRole: config.AGENT_ROLE,
-            agentNext: config.AGENT_NEXT as AgentId | null,
-            stepDelayMs: config.AGENT_STEP_DELAY_MS,
+            model: config.AGENT_MODEL as ModelId,
+            peers: config.AGENT_PEERS,
+            entryAgentId: config.AGENT_ENTRY as AgentId,
+            maxSteps: config.AGENT_MAX_STEPS,
+            maxTokens: config.AGENT_MAX_TOKENS,
           },
         });
         await agent.start();

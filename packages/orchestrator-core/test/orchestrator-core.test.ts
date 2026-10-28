@@ -13,6 +13,7 @@ const SWARM = '0b6f6d2e-6a4c-4c3e-9f5e-111111111111';
 const TEMPLATE = 'swag-agent:test';
 
 const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
+const LLM_TOKEN = 'fake-gateway-token-0123456789abcdef';
 
 interface Entry {
   level: 'debug' | 'info' | 'warn' | 'error';
@@ -101,7 +102,13 @@ function setup(
     ids: { uuid: () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}` },
     log: { debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error') },
     trace: { currentTraceId: () => TRACE },
-    agent: { template: TEMPLATE, stepDelayMs: 1000 },
+    agent: {
+      template: TEMPLATE,
+      maxSteps: 20,
+      maxTokens: 2048,
+      llmGatewayToken: LLM_TOKEN,
+      flushTimeoutMs: 2000,
+    },
     timeouts: { agentStartMs: options.agentStartMs ?? 30000, swarmMs: options.swarmMs ?? 300000 },
   });
   return {
@@ -131,7 +138,11 @@ const agents = (count: number) =>
 const launchBody = (count: number) => ({ swarmId: SWARM, task: 'T', agents: agents(count) });
 
 let seq = 0;
-const agentEvent = (type: 'agent.started' | 'agent.result', agentId: string, data: object) =>
+const agentEvent = (
+  type: 'agent.started' | 'agent.result' | 'agent.failed',
+  agentId: string,
+  data: object,
+) =>
   ({
     id: `00000000-0000-4000-9000-${String(++seq).padStart(12, '0')}`,
     swarmId: SWARM,
@@ -148,7 +159,7 @@ describe('orchestrator-core', () => {
     expect(setup().core.info()).toEqual({ service: 'orchestrator', version: 'test' });
   });
 
-  it('AC-001-11: три песочницы с шаблоном, метаданными и ровно нужным env; цепочка AGENT_NEXT; три agent.launched', async () => {
+  it('AC-001-11: три песочницы с шаблоном и метаданными; три agent.launched', async () => {
     const fake = setup();
     const result = await fake.core.launch(launchBody(3));
     expect(result.ok).toBe(true);
@@ -160,18 +171,52 @@ describe('orchestrator-core', () => {
       'swag.swarm': SWARM,
       'swag.agent': 'agent-1',
     });
-    const envKeys = [
-      'AGENT_ID',
-      'AGENT_NAME',
-      'AGENT_NEXT',
-      'AGENT_ROLE',
-      'AGENT_STEP_DELAY_MS',
-      'SWARM_ID',
-    ];
-    for (const spec of specs) expect(Object.keys(spec.env).sort()).toEqual(envKeys);
-    expect(specs.map((s) => s.env['AGENT_NEXT'])).toEqual(['agent-2', 'agent-3', '']);
-    expect(specs[0]?.env['AGENT_STEP_DELAY_MS']).toBe('1000');
     expect(fake.events.filter((e) => e.type === 'agent.launched')).toHaveLength(3);
+  });
+
+  it('AC-022-17: env каждой песочницы — ровно ключи 4.8 от ядра; AGENT_PEERS без самого агента; AGENT_ENTRY и AGENT_MODEL из плана; ни ключей провайдеров, ни AGENT_NEXT', async () => {
+    const fake = setup();
+    const models = ['chat-small', 'chat-large', 'chat-small'] as const;
+    const body = {
+      swarmId: SWARM,
+      task: 'T',
+      agents: agents(3).map((agent, i) => ({ ...agent, model: models[i] })),
+    };
+    expect((await fake.core.launch(body)).ok).toBe(true);
+    const specs = [...fake.sandboxes.values()];
+    const coreKeys = [
+      'AGENT_ENTRY',
+      'AGENT_ID',
+      'AGENT_MAX_STEPS',
+      'AGENT_MAX_TOKENS',
+      'AGENT_MODEL',
+      'AGENT_NAME',
+      'AGENT_PEERS',
+      'AGENT_ROLE',
+      'LLM_GATEWAY_TOKEN',
+      'SWARM_ID',
+      'TELEMETRY_FLUSH_TIMEOUT_MS',
+    ];
+    for (const spec of specs) expect(Object.keys(spec.env).sort()).toEqual(coreKeys);
+    for (const spec of specs) {
+      expect(spec.env['AGENT_ENTRY']).toBe('agent-1');
+      expect(spec.env['AGENT_MAX_STEPS']).toBe('20');
+      expect(spec.env['AGENT_MAX_TOKENS']).toBe('2048');
+      expect(spec.env['LLM_GATEWAY_TOKEN']).toBe(LLM_TOKEN);
+      expect(spec.env['TELEMETRY_FLUSH_TIMEOUT_MS']).toBe('2000');
+    }
+    expect(specs.map((s) => s.env['AGENT_MODEL'])).toEqual(models);
+    const peersOf = (spec: SandboxSpec | undefined): { id: string }[] =>
+      JSON.parse(spec?.env['AGENT_PEERS'] ?? '[]');
+    expect(peersOf(specs[0])).toEqual([
+      { id: 'agent-2', name: 'A2', role: 'r2' },
+      { id: 'agent-3', name: 'A3', role: 'r3' },
+    ]);
+    expect(peersOf(specs[1]).map((p) => p.id)).toEqual(['agent-1', 'agent-3']);
+    const allKeys = specs.flatMap((spec) => Object.keys(spec.env));
+    expect(allKeys.filter((key) => /_API_KEY$|LITELLM_MASTER_KEY|AGENT_NEXT/.test(key))).toEqual(
+      [],
+    );
   });
 
   it('AC-001-12: лишнее поле image — validation_error, песочницы не создаются', async () => {
@@ -211,12 +256,12 @@ describe('orchestrator-core', () => {
     expect(last).toMatchObject({ type: 'swarm.failed', data: { reason: 'agent_start_timeout' } });
   });
 
-  it('AC-001-15: agent.result от последнего — песочницы удалены, agent.stopped по каждому, затем swarm.completed', async () => {
+  it('AC-001-15: agent.result от агента-входа (agent-1) — песочницы удалены, agent.stopped по каждому, затем swarm.completed с его текстом', async () => {
     const fake = setup();
     await fake.core.launch(launchBody(3));
     for (const id of ['agent-1', 'agent-2', 'agent-3'])
       await fake.core.handleEvent(agentEvent('agent.started', id, {}));
-    await fake.core.handleEvent(agentEvent('agent.result', 'agent-3', { text: 'R' }));
+    await fake.core.handleEvent(agentEvent('agent.result', 'agent-1', { text: 'R' }));
     expect(fake.sandboxes.size).toBe(0);
     const types = fake.events.map((e) => e.type);
     expect(types.slice(-4)).toEqual([
@@ -226,6 +271,30 @@ describe('orchestrator-core', () => {
       'swarm.completed',
     ]);
     expect(fake.events.at(-1)).toMatchObject({ data: { result: 'R' } });
+  });
+
+  it('AC-022-18: agent.result не от входа — рой running; agent.result от входа — completed; agent.failed max_steps — swarm.failed agent_failed с detail', async () => {
+    const fake = setup();
+    await fake.core.launch(launchBody(3));
+    for (const id of ['agent-1', 'agent-2', 'agent-3'])
+      await fake.core.handleEvent(agentEvent('agent.started', id, {}));
+    await fake.core.handleEvent(agentEvent('agent.result', 'agent-2', { text: 'X' }));
+    expect(fake.sandboxes.size).toBe(3);
+    expect(fake.events.some((e) => e.type === 'swarm.completed')).toBe(false);
+    await fake.core.handleEvent(agentEvent('agent.result', 'agent-1', { text: 'R' }));
+    expect(fake.events.at(-1)).toMatchObject({ type: 'swarm.completed', data: { result: 'R' } });
+
+    const failing = setup();
+    await failing.core.launch(launchBody(3));
+    for (const id of ['agent-1', 'agent-2', 'agent-3'])
+      await failing.core.handleEvent(agentEvent('agent.started', id, {}));
+    await failing.core.handleEvent(agentEvent('agent.failed', 'agent-3', { reason: 'max_steps' }));
+    expect(failing.sandboxes.size).toBe(0);
+    expect(failing.events.filter((e) => e.type === 'agent.stopped')).toHaveLength(3);
+    expect(failing.events.at(-1)).toMatchObject({
+      type: 'swarm.failed',
+      data: { reason: 'agent_failed', detail: 'agent-3: max_steps' },
+    });
   });
 
   it('AC-001-16: stop — уборка, agent.stopped, swarm.stopped (reason user); повторный stop — успех без событий; неизвестный — not_found', async () => {
