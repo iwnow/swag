@@ -25,7 +25,8 @@ import {
 export interface NatsBus {
   publishJson(subject: string, value: unknown): Promise<void>;
   // Подписка: кривой JSON пропускается с предупреждением, исключения обработчика не останавливают подписку.
-  subscribeJson(subject: string, handler: (value: unknown) => void): Subscription;
+  // Обработчик может вернуть Promise (REQ-022-14): сообщения одной подписки обрабатываются по одному, по порядку.
+  subscribeJson(subject: string, handler: (value: unknown) => void | Promise<void>): Subscription;
   close(): Promise<void>;
 }
 
@@ -102,19 +103,20 @@ export async function connectNatsBus(options: NatsBusOptions): Promise<NatsBus> 
     subscribeJson(subject, handler) {
       const subscription = connection.subscribe(subject);
       void (async () => {
+        // Цикл ждёт каждое сообщение: обработка одной подписки идёт по одному, в порядке поступления (REQ-022-14).
         for await (const message of subscription) {
           // Родитель — traceparent из заголовков; без заголовка — новый трейс (REQ-016-3).
           const parent: Context = propagation.extract(ROOT_CONTEXT, message.headers, headerGetter);
           const { template, attributes } = subjectAttributes(message.subject);
           const tracer = trace.getTracer(TRACER);
-          tracer.startActiveSpan(
+          await tracer.startActiveSpan(
             `process ${template}`,
             {
               kind: SpanKind.CONSUMER,
               attributes: { ...attributes, 'messaging.operation.type': 'process' },
             },
             parent,
-            (span) => {
+            async (span) => {
               try {
                 let value: unknown;
                 try {
@@ -125,7 +127,7 @@ export async function connectNatsBus(options: NatsBusOptions): Promise<NatsBus> 
                   return;
                 }
                 try {
-                  handler(value);
+                  await handler(value);
                 } catch (error) {
                   span.recordException(error instanceof Error ? error : String(error));
                   span.setStatus({ code: SpanStatusCode.ERROR });
