@@ -9,6 +9,10 @@ const OptionalUrl = z
   .optional()
   .transform((value) => (value ? value : null));
 const FlushTimeoutMs = PositiveInt.default(2000); // TELEMETRY_FLUSH_TIMEOUT_MS
+// Спека 022, 4.8: общий токен gateway; оркестратор и агент получают одно значение.
+const GatewayToken = z.string().min(32);
+const AgentId = z.string().regex(/^agent-[1-9][0-9]?$/);
+const AgentPeerEnv = z.object({ id: AgentId, name: z.string().min(1), role: z.string().min(1) });
 
 export const BaseConfig = z.object({
   DATABASE_URL: z.string().url(),
@@ -34,7 +38,11 @@ export const OrchestratorConfig = BaseConfig.extend({
   DOCKER_AGENT_NETWORK: z.string().min(1),
   DOCKER_AGENT_NATS_URL: z.string().url(),
   DOCKER_AGENT_OTLP_ENDPOINT: OptionalUrl, // адрес Collector изнутри песочницы (016, 4.7; D-18)
-  AGENT_STEP_DELAY_MS: PositiveInt,
+  // Спека 022, 4.8: лимиты агента и адрес gateway изнутри песочницы.
+  AGENT_MAX_STEPS: PositiveInt.min(1),
+  AGENT_MAX_TOKENS: PositiveInt.min(1),
+  LLM_GATEWAY_TOKEN: GatewayToken,
+  DOCKER_AGENT_LLM_GATEWAY_URL: z.string().url(),
   AGENT_START_TIMEOUT_MS: PositiveInt,
   SWARM_TIMEOUT_MS: PositiveInt,
 });
@@ -51,17 +59,33 @@ export type ObservabilityConfig = z.infer<typeof ObservabilityConfig>;
 // Агент не нуждается в DATABASE_URL, поэтому без BaseConfig (4.9).
 // Телеметрия агента (016, 4.7): контекст и адрес Collector передаёт оркестратор, пустые строки — нет значения.
 // Уровень логов агента — info, оркестратор его не передаёт.
+// Спека 022, 4.8: `AGENT_PEERS` — JSON `AgentPeer[]`; ошибка разбора JSON — ошибка переменной.
+// Таймаут и повторы вызова модели оркестратор не передаёт — умолчания из 4.8.
 export const AgentConfig = z.object({
   NATS_URL: z.string().url(),
   SWARM_ID: z.uuid(),
-  AGENT_ID: z.string().regex(/^agent-[1-9][0-9]?$/),
+  AGENT_ID: AgentId,
   AGENT_NAME: z.string().min(1),
   AGENT_ROLE: z.string().min(1),
-  AGENT_NEXT: z
+  AGENT_MODEL: z.string().min(1),
+  AGENT_PEERS: z
     .string()
-    .regex(/^(agent-[1-9][0-9]?)?$/)
-    .transform((value) => (value === '' ? null : value)),
-  AGENT_STEP_DELAY_MS: PositiveInt,
+    .transform((value, ctx) => {
+      try {
+        return JSON.parse(value) as unknown;
+      } catch {
+        ctx.addIssue({ code: 'custom', message: 'ожидался JSON-массив участников' });
+        return z.NEVER;
+      }
+    })
+    .pipe(z.array(AgentPeerEnv)),
+  AGENT_ENTRY: AgentId,
+  AGENT_MAX_STEPS: PositiveInt.min(1),
+  AGENT_MAX_TOKENS: PositiveInt.min(1),
+  LLM_GATEWAY_URL: z.string().url(),
+  LLM_GATEWAY_TOKEN: GatewayToken,
+  AGENT_LLM_TIMEOUT_MS: z.coerce.number().int().min(1).default(120000),
+  AGENT_LLM_MAX_RETRIES: PositiveInt.default(2),
   TRACEPARENT: z
     .string()
     .optional()
@@ -78,7 +102,7 @@ export const LlmGatewayConfig = z.object({
   LOG_LEVEL: LogLevel.default('info'),
   TELEMETRY_FLUSH_TIMEOUT_MS: FlushTimeoutMs,
   LLM_GATEWAY_PORT: Port,
-  LLM_GATEWAY_TOKEN: z.string().min(32),
+  LLM_GATEWAY_TOKEN: GatewayToken,
   LLM_CATALOG_PATH: z.string().min(1),
   LITELLM_URL: z.string().url(),
   LITELLM_MASTER_KEY: z.string().startsWith('sk-').min(16),
