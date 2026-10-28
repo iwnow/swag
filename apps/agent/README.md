@@ -14,7 +14,7 @@
 - `src/run.ts` — баннер: версия Node, версия агента, `agent ok`.
 - `src/start.ts` — `startAgentProcess(deps)`: телеметрия, конфигурация, адаптер NATS, модель `createOpenAiChatModel` из `adapter-openai`, ядро `createAgentCore` и запуск в спане `agent.start`; зависимости (env, `startTelemetry`, `connect`, `exit`) внедряются.
 - `src/main.ts` — сборка настоящих зависимостей и обработка `SIGTERM`.
-- Тесты: `test/run.test.ts` (баннер), `test/start.test.ts` (AC-016-11 — NATS недоступен), `test/turn.test.ts` (AC-022-24 — маркеры не попадают в логи и спаны).
+- Тесты: `test/run.test.ts` (баннер), `test/start.test.ts` (AC-016-11 — NATS недоступен), `test/turn.test.ts` (AC-022-24 — два случая: успешный ход с маркерами и ошибка модели с `AGENT_LLM_MAX_RETRIES=0`).
 
 ## Ограничения
 
@@ -37,7 +37,7 @@
 - Переменные телеметрии и id агента разбираются отдельно от полной конфигурации (`AgentConfig.pick`): ошибка конфигурации тоже пишется логом с `swarmId`, `agentId` и `traceId`, если эти значения валидны.
 - `agent start failed` пишется внутри спана `agent.start`, поэтому у записи `traceId` из `TRACEPARENT`; спан получает статус `ERROR`.
 - Тест AC-016-11 — вызов `startAgentProcess` с внедрёнными зависимостями: настоящие `adapter-telemetry` и `adapter-nats` (NATS на закрытом порту), экспорт логов в память, `exit` — фейк.
-- Тест AC-022-24 (`test/turn.test.ts`): модель — настоящий `adapter-openai` поверх локального HTTP-сервера, который отвечает фиксированным JSON (`content` с маркером и `send_message` с маркером в аргументах; на результат инструмента — `готово`). Выбран он, а не `infra/llm/fake-provider`: тому нужен `__tool_calls__` в тексте, а маркер в `content` ответа он не отдаёт. Шина — фейк `NatsBus`, обработчик inbox вызывается напрямую. Маркеры проверяются на прохождение (запрос модели, `agent.step`, сообщение агенту-2), затем — на отсутствие в логах, stdout и спанах (имя, атрибуты, события).
+- Тест AC-022-24 (`test/turn.test.ts`): модель — настоящий `adapter-openai` поверх локального HTTP-сервера, который отвечает фиксированным JSON (`content` с маркером и `send_message` с маркером в аргументах; на результат инструмента — `готово`). Выбран он, а не `infra/llm/fake-provider`: тому нужен `__tool_calls__` в тексте, а маркер в `content` ответа он не отдаёт. Шина — фейк `NatsBus`: `subscribeJson` оборачивает обработчик в `telemetry.inSpan` со спаном consumer по шаблону subject (атрибуты — `subjectAttributes` из `adapter-nats`, как в настоящем адаптере); исключение обработчика спан помечает ERROR. Шлюз проверяет заголовки `x-swag-swarm-id`, `x-swag-agent-id`, `authorization` и `traceparent` (trace-id совпадает со спаном хода). Маркеры и токен проверяются на прохождение (запрос модели, `agent.step`, сообщение агенту-2), затем — на отсутствие в логах, stdout и спанах (имя, атрибуты, события, статус, связи). Записей логов хода нет: ход пишет только `debug`, уровень агента — `info`.
 - Образ агента `apps/agent/Dockerfile` собирается отдельно (`npm run agent:image`, профиль `agent`) и не стартует в `npm run up`.
 - `SIGTERM` → закрытие NATS → сброс телеметрии → `exit(0)`.
 
