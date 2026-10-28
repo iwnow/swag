@@ -39,7 +39,7 @@
 - LLM: `usage` и `costMicroUsd` в `LlmCallData` — `null`, если провайдер не прислал usage или поток оборван до него; `costMicroUsd` задан тогда и только тогда, когда задан `usage` (по комментарию в схеме, схема этого не проверяет).
 - LLM: `providerCostMicroUsd` — фактическая стоимость у провайдера для счёта платформы (D-38); на `costMicroUsd` не влияет.
 - LLM: заголовки `x-swag-swarm-id` и `x-swag-agent-id` — до спеки 004 агент называет себя сам (Q-3).
-- 022: `PlatformModel` в `llm.ts`; `model` агента и `ENTRY_AGENT_ID` в `swarm.ts`; `agent.step`, `agent.idle` и причина `agent_failed` (4.1). `LlmCaller` переехал из `llm.ts` в `swarm.ts`: `llm.ts` импортирует `PlatformModel` из `swarm.ts` не должен, иначе цикл импорта (`swarm.ts` импортирует `llm.ts` ради `PlatformModel`).
+- 022: `PlatformModel` в `llm.ts`; `model` агента и `ENTRY_AGENT_ID` в `swarm.ts`; `agent.step`, `agent.idle` и причина `agent_failed` (4.1). `LlmCaller` переехал из `llm.ts` в `swarm.ts`: `swarm.ts` импортирует `PlatformModel` из `llm.ts`, обратный импорт `llm.ts` → `swarm.ts` дал бы цикл модулей.
 
 ## Спеки
 
