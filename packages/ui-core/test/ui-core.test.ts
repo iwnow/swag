@@ -98,7 +98,10 @@ describe('ui-core', () => {
 
     const valid = await core.createSwarm({ task: 'T', agents: [{ name: 'A', role: 'r' }] });
     expect(valid.ok).toBe(true);
-    expect(api.create).toHaveBeenCalledWith({ task: 'T', agents: [{ name: 'A', role: 'r' }] });
+    expect(api.create).toHaveBeenCalledWith({
+      task: 'T',
+      agents: [{ name: 'A', role: 'r', model: 'chat-small' }],
+    });
   });
 
   it('AC-001-23: поток отдаёт события — состояние страницы совпадает с projectSwarm', () => {
