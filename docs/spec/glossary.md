@@ -23,7 +23,7 @@
 | Шаг агента (событие) | `agent.step` | Событие на каждый ответ модели: `messageId`, `stepIndex`, текст, `toolCalls` (022, 4.1). |
 | Агент ждёт | `agent.idle` | Конец хода без `finish`: агент ждёт следующего сообщения (022, 4.1). |
 | Падение агента в рое | `agent_failed` | Причина `swarm.failed`: `agent.failed` любого агента, `detail = "<agentId>: <reason>"` (022, 4.9). |
-| Адаптер OpenAI | `packages/adapter-openai`, `createOpenAiChatModel` | `ChatModel` на OpenAI SDK, ходит только в `llm-gateway` (022, 4.3). |
+| Адаптер OpenAI | `packages/adapter-openai`, `createOpenAiChatModel`, `OpenAiChatModelOptions` | `ChatModel` на OpenAI SDK, ходит только в `llm-gateway` (022, 4.3). |
 | Маркер вызовов фейка | `__tool_calls__` | Текст после маркера — JSON вызовов инструментов, которые вернёт фейковый провайдер (022, 4.7). |
 | Строка шага | `formatAgentStep` | Функция `ui-core`: строка `agent.step` в ленте роя (022, 4.10). |
 | Координатор | `Coordinator` | Компонент, который по задаче пользователя генерирует план роя. |

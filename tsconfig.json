@@ -15,6 +15,7 @@
     { "path": "packages/adapter-telemetry" },
     { "path": "packages/adapter-nats" },
     { "path": "packages/adapter-litellm" },
+    { "path": "packages/adapter-openai" },
     { "path": "packages/adapter-orchestrator-http" },
     { "path": "packages/adapter-docker" },
     { "path": "apps/api" },
