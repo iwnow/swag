@@ -66,6 +66,16 @@ export interface UiCore {
 
 const TRACE_ID_SLOT = '{traceId}';
 
+export type AgentStepData = Extract<PlatformEvent, { type: 'agent.step' }>['data'];
+
+// Спека 022, 4.10: строка шага агента в ленте роя.
+export function formatAgentStep(data: AgentStepData): string {
+  const text = data.text === null ? '' : `: ${data.text}`;
+  const tools =
+    data.toolCalls.length === 0 ? '' : ` → ${data.toolCalls.map((call) => call.name).join(', ')}`;
+  return `шаг ${data.stepIndex}${text}${tools}`;
+}
+
 // Спека 002, 4.11: строка вызова модели в ленте роя. Стоимость — микродоллары / 1e6, 6 знаков.
 export function formatLlmCall(data: LlmCallData): string {
   if (data.status === 'error') return `${data.model} · ошибка ${data.errorCode}`;

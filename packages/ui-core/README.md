@@ -11,17 +11,21 @@
 - `SwarmPage.stop()` — остановка через `SwarmsApi.stop`; `close()` — закрыть поток и отменить переподключение.
 - `traceUrl(traceId)` — адрес трейса события в Grafana по шаблону из зависимостей; без `traceId` — `null` (спека 016, 4.10).
 - `formatLlmCall(data)` — строка события `llm.call` для ленты роя: модель, токены с кэшем, стоимость в долларах (6 знаков), статус `прерван` или `ошибка <код>`; при `usage: null` — `без usage` (спека 002, 4.11). Чистая функция вне `createUiCore`: фронтенд вызывает её напрямую.
+- `formatAgentStep(data)` — строка `agent.step` в ленте роя: `шаг N`, текст ответа через `: ` (если не `null`), имена инструментов через `→` (спека 022, 4.10). Тип `data` — `AgentStepData`, выведен из `@swag/contracts`.
+- Форма: модель агента — поле `AgentDraft.model`; без выбора схема `SwarmCreateRequest` в `validateForm` подставляет `chat-small`, в `SwarmsApi.create` уходит она.
 
 ## Что внутри сейчас
 
-- `src/index.ts` — `createUiCore`, порты `SwarmsApi`, `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функция `formatLlmCall`.
-- `test/ui-core.test.ts` — AC-001-23, AC-016-14.
+- `src/index.ts` — `createUiCore`, порты `SwarmsApi`, `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функции `formatLlmCall`, `formatAgentStep`.
+- `test/ui-core.test.ts` — AC-001-23, AC-016-14, AC-022-23.
 - `test/format-llm-call.test.ts` — AC-002-24.
+- `test/format-agent-step.test.ts` — AC-022-23.
 
 ## Ключевые решения
 
 - Порты, а не `fetch`/`WebSocket` в ядре: адаптеры живут в `apps/ui/cabinet/src/app/api.ts` (T-12, T-13).
 - Переподключение: `onError` от потока → `Timers.setTimeout` → `open(id, lastSeq)`; защита от повторов — проверкой `event.seq <= view.lastSeq` до `applyEvent`; событие, не подходящее к состоянию, пропускается.
+- Модель формы роя не дублируется: список моделей UI берёт из `PlatformModel.options` контракта, форма валидируется `SwarmCreateRequest`, значение по умолчанию — из схемы (`chat-small`).
 - Зависимости (`package.json`): `@swag/contracts`, `@swag/api-integration`, `zod`; в исходниках `zod` напрямую не импортируется. Белый список ядра — REQ-001-18.
 - `traceUrl`: шаблон с подстановкой `{traceId}` приходит от фронтенда (`traces.urlTemplate`, обязательная зависимость), ядро не знает адреса Grafana. `traceId` подставляется через `encodeURIComponent` (для hex — без изменений), заменяются все вхождения `{traceId}`.
 
@@ -40,3 +44,4 @@
 - 016 — 4.10, REQ-016-13, AC-016-14.
 - 014 — деление `ui-core` по фронтендам (D-11).
 - 002 — 4.11, REQ-002-15, AC-002-24.
+- 022 — 4.1 (`PlatformModel`, `AgentDraft.model`), 4.10, REQ-022-15, AC-022-23.
