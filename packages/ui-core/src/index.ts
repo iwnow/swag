@@ -1,5 +1,4 @@
 import {
-  PlatformModel,
   SwarmCreateRequest,
   type LlmCallData,
   type PlatformEvent,
@@ -66,9 +65,6 @@ export interface UiCore {
 }
 
 const TRACE_ID_SLOT = '{traceId}';
-
-// Спека 022, 4.1 и 4.10: модели для выбора в форме роя — из контракта, без копии списка.
-export const platformModels = PlatformModel.options;
 
 export type AgentStepData = Extract<PlatformEvent, { type: 'agent.step' }>['data'];
 

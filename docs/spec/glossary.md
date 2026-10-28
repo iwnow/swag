@@ -27,7 +27,6 @@
 | Адаптер OpenAI | `packages/adapter-openai`, `createOpenAiChatModel`, `OpenAiChatModelOptions` | `ChatModel` на OpenAI SDK, ходит только в `llm-gateway` (022, 4.3). |
 | Маркер вызовов фейка | `__tool_calls__` | Текст после маркера — JSON вызовов инструментов, которые вернёт фейковый провайдер (022, 4.7). |
 | Строка шага | `formatAgentStep` | Функция `ui-core`: строка `agent.step` в ленте роя (022, 4.10). |
-| Модели формы роя | `platformModels` | Список `PlatformModel.options` для выбора модели агента в UI, экспорт `ui-core` (022, 4.10). |
 | Данные шага агента | `AgentStepData` | Тип `data` события `agent.step`, выведен из контракта, экспорт `ui-core` (022, 4.10). |
 | Координатор | `Coordinator` | Компонент, который по задаче пользователя генерирует план роя. |
 | Оркестратор | `Orchestrator` | Компонент, который исполняет план: песочницы, сети, ключи, accounts шины, уборка. |
