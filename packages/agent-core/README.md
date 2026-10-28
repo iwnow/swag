@@ -11,7 +11,9 @@
 ## Что внутри сейчас
 
 - `runAgentLoop(deps, context)` в `src/loop.ts` (спека 022, 4.2): цикл «вызов модели → инструменты → результаты». Вход — `AgentCallContext` (модель, системный промпт, история, новое сообщение, инструменты, `maxSteps`/`maxTokens`), порт `ChatModel` и колбэк `onStep`; выход — `AgentLoopResult` (`text`, `stopped`, `max_steps`, `model_error`). Экспорт из `src/index.ts`.
+- `src/prompt.ts` (спека 022, 4.5): чистые функции `systemPrompt(agent)` (шаблон промпта, блок участников и строка про `send_message` только при участниках, последняя строка — для входа или для остальных), `inboxMessage({from, text}, peers)` (сообщение `role: user`) и `swarmTools(agent, send)` (инструменты `send_message` — только при участниках, `finish` — только у входа). Типы `AgentPeer`, `PromptAgent`, `SendMessage`. Экспорт из `src/index.ts`.
 - Тесты цикла: `test/loop.test.ts` — AC-022-3…11 на скриптовом `ChatModel`.
+- Тесты промпта: `test/prompt.test.ts` — AC-022-12 (тексты посимвольно, схемы инструментов), AC-022-14 (ошибки `send_message` к себе, к `user`, к несуществующему агенту — модель получает `error: to: …`, колбэк не вызывается).
 - `createAgentCore(deps)` (эстафета 001) с портами `AgentBus`, `Clock`, `IdGenerator`, `Timers`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`. Пока остаётся; заменяется агентом роя в T-7.
 - Логи по таблице 4.8 спеки 016: `info agent started`, `debug message handled` (`messageId`, `from`); отброшенное сообщение — `warn message dropped` с `reason`, ошибка обработки — `error message failed` с `err`.
 - Тесты эстафеты: `test/agent-core.test.ts` — AC-001-19, AC-016-6, AC-016-7.
@@ -38,6 +40,9 @@
 - `agent.started` публикуется после подписки, как в 4.7.2 п. 1.
 - `traceId` в конверте — из обязательного порта `TraceContext` (016, Q-1): `agent.started` — в контексте старта агента, `agent.working`/`agent.result` — в контексте входящего сообщения. Ядро значение не разбирает.
 - В логах нет текста роли и сообщений, только id (016, Q-4).
+- Промпт и инструменты — чистые функции без шины: отправка — колбэк `send(to, text)`, `BusMessage` собирает агент роя (T-7). Так проверка адресата (AC-022-14) не зависит от шины, а `AgentPeer` живёт в `prompt.ts`, чтобы не было цикла импортов с `index.ts`.
+- Схемы инструментов в `parameters` — литералы из 4.5 (JSON Schema для модели); проверка аргументов — отдельно, Zod (`z.strictObject`, `enum` из id участников). Два описания одной схемы сверены тестом AC-022-12.
+- Пустой путь ошибки Zod (аргументы не объект) выводится как `args`, чтобы сообщение модели начиналось с имени поля.
 - Цикл не импортирует ничего, кроме `import type` из `@swag/contracts` (`ModelId`, `GatewayErrorCode`, AC-022-11): рой, шина и события — за пределами `loop.ts`.
 - Инструменты одного ответа модели исполняются параллельно (`Promise.all`), результаты в истории — в порядке `tool_calls`. `stopped` берёт результат первого по порядку `stop` (трактовка AC-022-8).
 - Ошибки инструмента (неизвестное имя, невалидный JSON, исключение) — сообщением `role: tool` с `error: …`, цикл не прерывается (REQ-022-3).
@@ -50,4 +55,4 @@
 - 001 — 4.7.
 - 016 — порты `Logger` и `TraceContext`, логи 4.8.
 - 002 — агентный цикл с LLM.
-- 022 — `loop.ts` по 4.2 (T-4); агент роя и эстафета — T-6, T-7.
+- 022 — `loop.ts` по 4.2 (T-4); промпт и инструменты 4.5 — `prompt.ts` (T-6); агент роя и эстафета — T-7.

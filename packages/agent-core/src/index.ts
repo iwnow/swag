@@ -8,6 +8,7 @@ import {
 } from '@swag/contracts';
 
 export * from './loop.ts';
+export * from './prompt.ts';
 
 // Спека 001, 4.7.2 — «эстафета» без LLM. Порты объявляет ядро.
 

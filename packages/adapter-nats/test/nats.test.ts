@@ -149,8 +149,11 @@ describe.skipIf(!url)('adapter-nats', () => {
   });
 });
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+async function delay(ms: number): Promise<void> {
+  const end = performance.now() + ms;
+  while (performance.now() < end) {
+    await new Promise((resolve) => setTimeout(resolve, end - performance.now()));
+  }
 }
 
 function spanMs(time: HrTime): number {
