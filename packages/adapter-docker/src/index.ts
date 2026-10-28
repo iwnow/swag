@@ -12,9 +12,11 @@ import type { SandboxProvider, SandboxSpec } from '@swag/orchestrator-core';
 // Спека 001, 4.6.3: SandboxProvider на Docker. template → образ, metadata → метки, env + NATS_URL.
 // Без монтирований, публикации портов и привилегий. Ограничения ресурсов — спека 005.
 // Спека 016, 4.7: в env песочницы — TRACEPARENT и OTEL_EXPORTER_OTLP_ENDPOINT, спаны sandbox.create и sandbox.remove.
+// Спека 022, 4.8: в env песочницы — LLM_GATEWAY_URL, адрес gateway изнутри контейнера.
 export interface DockerSandboxOptions {
   network: string; // DOCKER_AGENT_NETWORK — сеть compose
   natsUrl: string; // DOCKER_AGENT_NATS_URL — адрес NATS изнутри контейнера агента
+  llmGatewayUrl: string; // DOCKER_AGENT_LLM_GATEWAY_URL — адрес llm-gateway изнутри контейнера агента
   otlpEndpoint?: string | null; // DOCKER_AGENT_OTLP_ENDPOINT — адрес Collector изнутри песочницы; null — без экспорта
   docker?: Docker; // по умолчанию — локальный сокет / pipe
 }
@@ -66,6 +68,7 @@ export function createDockerSandboxProvider(options: DockerSandboxOptions): Sand
         const env = [
           ...Object.entries(spec.env).map(([key, value]) => `${key}=${value}`),
           `NATS_URL=${options.natsUrl}`,
+          `LLM_GATEWAY_URL=${options.llmGatewayUrl}`,
           `TRACEPARENT=${carrier['traceparent'] ?? ''}`,
           `OTEL_EXPORTER_OTLP_ENDPOINT=${options.otlpEndpoint ?? ''}`,
         ];

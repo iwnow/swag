@@ -12,11 +12,12 @@ const dockerAvailable = await docker.ping().then(
   () => false,
 );
 if (!dockerAvailable) {
-  console.warn('adapter-docker: Docker недоступен, AC-001-22 и AC-016-10 пропущены');
+  console.warn('adapter-docker: Docker недоступен, AC-001-22, AC-016-10 и AC-022-17 пропущены');
 }
 
 const IMAGE = 'alpine:3.22';
 const SWARM = '0b6f6d2e-6a4c-4c3e-9f5e-111111111111';
+const GATEWAY_URL = 'http://llm-gateway:3002/v1';
 
 async function ensureImage(): Promise<void> {
   const images = await docker.listImages({ filters: { reference: [IMAGE] } });
@@ -37,6 +38,7 @@ describe.skipIf(!dockerAvailable)('adapter-docker', () => {
     const provider = createDockerSandboxProvider({
       network: 'bridge',
       natsUrl: 'nats://nats:4222',
+      llmGatewayUrl: GATEWAY_URL,
     });
     const metadata = { 'swag.kind': 'agent', 'swag.swarm': SWARM, 'swag.agent': 'agent-1' };
     const { sandboxId } = await provider.create({
@@ -64,6 +66,27 @@ describe.skipIf(!dockerAvailable)('adapter-docker', () => {
     await provider.remove(sandboxId); // повторное удаление — не ошибка
   }, 120_000);
 
+  it('AC-022-17: у контейнера есть LLM_GATEWAY_URL из опции llmGatewayUrl (DOCKER_AGENT_LLM_GATEWAY_URL)', async () => {
+    await ensureImage();
+    const provider = createDockerSandboxProvider({
+      network: 'bridge',
+      natsUrl: 'nats://nats:4222',
+      llmGatewayUrl: GATEWAY_URL,
+    });
+    const { sandboxId } = await provider.create({
+      template: IMAGE,
+      env: { SWARM_ID: SWARM, AGENT_ID: 'agent-1' },
+      metadata: { 'swag.kind': 'agent', 'swag.swarm': SWARM, 'swag.agent': 'agent-1' },
+    });
+    try {
+      const info = await docker.getContainer(sandboxId).inspect();
+      expect(info.Config.Env).toContain(`LLM_GATEWAY_URL=${GATEWAY_URL}`);
+      expect(info.Config.Env.filter((e) => /_API_KEY=|LITELLM_MASTER_KEY/.test(e))).toEqual([]);
+    } finally {
+      await provider.remove(sandboxId);
+    }
+  }, 120_000);
+
   it('AC-016-10: в env контейнера TRACEPARENT с trace-id T и OTEL_EXPORTER_OTLP_ENDPOINT; в SandboxSpec их нет; спан sandbox.create', async () => {
     await ensureImage();
     const memory = createMemoryExporters();
@@ -79,6 +102,7 @@ describe.skipIf(!dockerAvailable)('adapter-docker', () => {
     const provider = createDockerSandboxProvider({
       network: 'bridge',
       natsUrl: 'nats://nats:4222',
+      llmGatewayUrl: GATEWAY_URL,
       otlpEndpoint: 'http://otel-collector:4318',
     });
     const swarm = '0b6f6d2e-6a4c-4c3e-9f5e-016016016016';
