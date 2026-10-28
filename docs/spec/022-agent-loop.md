@@ -410,7 +410,7 @@ DOCKER_AGENT_LLM_GATEWAY_URL=http://llm-gateway:3002/v1
 - [x] **T-1.** `contracts`: `PlatformModel`, `model` в `AgentDraft`, `ENTRY_AGENT_ID`, события `agent.step`, `agent.idle`, причина `agent_failed` (4.1); глоссарий сверен. Закрывает: REQ-022-15, AC-022-1. Готово, когда: тесты `contracts` зелёные.
 - [x] **T-2.** `api-integration`: правила проекции 4.6, `model` и `steps` в `SwarmView`, пустые рёбра при создании; обновить тест AC-001-2 под новые правила. Закрывает: REQ-022-12, AC-022-2. Готово, когда: тесты пакета зелёные.
 - [x] **T-3.** Фейковый провайдер: два правила 4.7. Закрывает: AC-022-20. Готово, когда: тесты 002 и новый тест зелёные.
-- [ ] **T-4.** `agent-core/src/loop.ts`: типы 4.2 и `runAgentLoop`, тесты со скриптовым `ChatModel`. Закрывает: REQ-022-1…4, AC-022-3…11. Готово, когда: тесты пакета зелёные, `arch:check` проходит.
+- [x] **T-4.** `agent-core/src/loop.ts`: типы 4.2 и `runAgentLoop`, тесты со скриптовым `ChatModel`. Закрывает: REQ-022-1…4, AC-022-3…11. Готово, когда: тесты пакета зелёные, `arch:check` проходит.
 - [ ] **T-5.** `adapter-nats`: асинхронный обработчик по REQ-022-14. Закрывает: REQ-022-14, AC-022-22. Готово, когда: тест на NATS зелёный, `api` и `orchestrator` работают без правок.
 - [ ] **T-6.** `agent-core`: промпт, сообщения и инструменты 4.5 (чистые функции `systemPrompt`, `inboxMessage`, `swarmTools`). Закрывает: REQ-022-5, REQ-022-6, AC-022-12, AC-022-14. Готово, когда: тесты зелёные.
 - [ ] **T-7.** `agent-core`: агент роя по 4.4 вместо эстафеты, порт `AgentBus` с `Promise`, удалить `timers` и эстафету; тест AC-001-19 переписать на ход агента. Закрывает: REQ-022-7, REQ-022-8, AC-022-13, AC-022-15, AC-022-16. Готово, когда: тесты пакета зелёные.
@@ -469,3 +469,4 @@ DOCKER_AGENT_LLM_GATEWAY_URL=http://llm-gateway:3002/v1
 | 2026-10-28 | `spec/022-t1` | T-1: `PlatformModel`, `model` в `AgentDraft`, `ENTRY_AGENT_ID`, `agent.step`, `agent.idle`, `agent_failed` | `LlmCaller` перенесён из `llm.ts` в `swarm.ts`: `swarm.ts` импортирует `PlatformModel` из `llm.ts`, обратный импорт давал цикл модулей; публичный API `@swag/contracts` не изменился |
 | 2026-10-28 | `spec/022-t2` | T-2: правила проекции 4.6, `model` и `steps` в `SwarmView`, пустые рёбра при создании роя | — |
 | 2026-10-28 | `spec/022-t3` | T-3: правила 4.7 фейкового провайдера в `infra/llm/fake-provider/server.ts`, описаны в README `adapter-litellm` | неверная форма JSON после `__tool_calls__` трактована как «правило не срабатывает» (D-78) |
+| 2026-10-28 | `spec/022-t4` | T-4: `runAgentLoop` и типы 4.2 в `agent-core/src/loop.ts`; тесты AC-022-3…11 со скриптовым `ChatModel` | — (`steps` растёт и при неуспешном вызове, `stop` — первый по порядку `tool_calls`, исключение `ChatModel.complete` не перехватывается: буква 4.2) |

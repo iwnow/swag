@@ -10,9 +10,11 @@
 
 ## Что внутри сейчас
 
-- `createAgentCore(deps)` с портами `AgentBus`, `Clock`, `IdGenerator`, `Timers`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`.
+- `runAgentLoop(deps, context)` в `src/loop.ts` (спека 022, 4.2): цикл «вызов модели → инструменты → результаты». Вход — `AgentCallContext` (модель, системный промпт, история, новое сообщение, инструменты, `maxSteps`/`maxTokens`), порт `ChatModel` и колбэк `onStep`; выход — `AgentLoopResult` (`text`, `stopped`, `max_steps`, `model_error`). Экспорт из `src/index.ts`.
+- Тесты цикла: `test/loop.test.ts` — AC-022-3…11 на скриптовом `ChatModel`.
+- `createAgentCore(deps)` (эстафета 001) с портами `AgentBus`, `Clock`, `IdGenerator`, `Timers`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`. Пока остаётся; заменяется агентом роя в T-7.
 - Логи по таблице 4.8 спеки 016: `info agent started`, `debug message handled` (`messageId`, `from`); отброшенное сообщение — `warn message dropped` с `reason`, ошибка обработки — `error message failed` с `err`.
-- Тесты: `test/agent-core.test.ts` — AC-001-19, AC-016-6, AC-016-7.
+- Тесты эстафеты: `test/agent-core.test.ts` — AC-001-19, AC-016-6, AC-016-7.
 
 ## Ограничения
 
@@ -36,6 +38,11 @@
 - `agent.started` публикуется после подписки, как в 4.7.2 п. 1.
 - `traceId` в конверте — из обязательного порта `TraceContext` (016, Q-1): `agent.started` — в контексте старта агента, `agent.working`/`agent.result` — в контексте входящего сообщения. Ядро значение не разбирает.
 - В логах нет текста роли и сообщений, только id (016, Q-4).
+- Цикл не импортирует ничего, кроме `import type` из `@swag/contracts` (`ModelId`, `GatewayErrorCode`, AC-022-11): рой, шина и события — за пределами `loop.ts`.
+- Инструменты одного ответа модели исполняются параллельно (`Promise.all`), результаты в истории — в порядке `tool_calls`. `stopped` берёт результат первого по порядку `stop` (трактовка AC-022-8).
+- Ошибки инструмента (неизвестное имя, невалидный JSON, исключение) — сообщением `role: tool` с `error: …`, цикл не прерывается (REQ-022-3).
+- `steps` считает вызовы модели, включая неуспешный: при `model_error` `steps` = 1, `messages` = `[input]`.
+- `ChatModel` не бросает: ошибка — `ok: false`, цикл возвращает `model_error`. Исключение инструмента перехватывается, исключение самой модели — не перехватывается.
 
 ## Спеки
 
@@ -43,3 +50,4 @@
 - 001 — 4.7.
 - 016 — порты `Logger` и `TraceContext`, логи 4.8.
 - 002 — агентный цикл с LLM.
+- 022 — `loop.ts` по 4.2 (T-4); агент роя и эстафета — T-6, T-7.

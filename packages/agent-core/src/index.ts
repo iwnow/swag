@@ -7,6 +7,8 @@ import {
   type ServiceInfo,
 } from '@swag/contracts';
 
+export * from './loop.ts';
+
 // Спека 001, 4.7.2 — «эстафета» без LLM. Порты объявляет ядро.
 
 export interface Clock {
