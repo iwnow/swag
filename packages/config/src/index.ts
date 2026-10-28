@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { LogLevel } from '@swag/contracts';
+import { AgentId, LogLevel } from '@swag/contracts';
 
 const Port = z.coerce.number().int().min(1).max(65535);
 const PositiveInt = z.coerce.number().int().min(0);
@@ -11,7 +11,6 @@ const OptionalUrl = z
 const FlushTimeoutMs = PositiveInt.default(2000); // TELEMETRY_FLUSH_TIMEOUT_MS
 // Спека 022, 4.8: общий токен gateway; оркестратор и агент получают одно значение.
 const GatewayToken = z.string().min(32);
-const AgentId = z.string().regex(/^agent-[1-9][0-9]?$/);
 const AgentPeerEnv = z.object({ id: AgentId, name: z.string().min(1), role: z.string().min(1) });
 
 export const BaseConfig = z.object({
