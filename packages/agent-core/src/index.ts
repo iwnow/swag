@@ -3,14 +3,23 @@ import {
   inboxSubject,
   type AgentId,
   type BusMessage as BusMessageType,
+  type ModelId,
   type PlatformEventInput,
   type ServiceInfo,
 } from '@swag/contracts';
+import { runAgentLoop, type AgentLoopResult, type ChatMessage, type ChatModel } from './loop.ts';
+import {
+  inboxMessage,
+  swarmTools,
+  systemPrompt,
+  type AgentPeer,
+  type PromptAgent,
+} from './prompt.ts';
 
 export * from './loop.ts';
 export * from './prompt.ts';
 
-// Спека 001, 4.7.2 — «эстафета» без LLM. Порты объявляет ядро.
+// Спека 022, 4.4 — агент роя поверх агентного цикла. Порты объявляет ядро.
 
 export interface Clock {
   now(): string;
@@ -36,12 +45,9 @@ export interface Logger {
 export interface TraceContext {
   currentTraceId(): string | null; // null — вне трейса
 }
-export interface Timers {
-  setTimeout(fn: () => void, ms: number): unknown;
-}
 
 export interface AgentBus {
-  subscribe(subject: string, handler: (raw: unknown) => void): Promise<void>;
+  subscribe(subject: string, handler: (raw: unknown) => Promise<void>): Promise<void>; // адаптер ждёт промис и сериализует сообщения (REQ-022-14)
   publishEvent(event: PlatformEventInput): Promise<void>;
   publishMessage(message: BusMessageType): Promise<void>;
 }
@@ -51,8 +57,11 @@ export interface AgentConfigCore {
   agentId: AgentId;
   agentName: string;
   agentRole: string;
-  agentNext: AgentId | null; // null — последний в цепочке
-  stepDelayMs: number;
+  model: ModelId;
+  peers: AgentPeer[]; // другие агенты роя, в порядке id
+  entryAgentId: AgentId;
+  maxSteps: number; // на всю жизнь агента
+  maxTokens: number;
 }
 
 export interface AgentCoreDeps {
@@ -60,9 +69,9 @@ export interface AgentCoreDeps {
   bus: AgentBus;
   clock: Clock;
   ids: IdGenerator;
-  timers: Timers;
   log: Logger;
   trace: TraceContext;
+  model: ChatModel;
   config: AgentConfigCore;
 }
 
@@ -72,10 +81,20 @@ export interface AgentCore {
 }
 
 export function createAgentCore(deps: AgentCoreDeps): AgentCore {
-  const { bus, clock, ids, timers, log, trace, config } = deps;
+  const { bus, clock, ids, log, trace, model, config } = deps;
   const ctx = { swarmId: config.swarmId, agentId: config.agentId };
-  // Сообщения обрабатываются по одному, в порядке поступления (4.7.2, п. 3).
-  let queue: Promise<void> = Promise.resolve();
+  const agent: PromptAgent = {
+    agentId: config.agentId,
+    agentName: config.agentName,
+    agentRole: config.agentRole,
+    peers: config.peers,
+    entryAgentId: config.entryAgentId,
+  };
+  // Одна история на всё время жизни агента (REQ-022-5).
+  const history: ChatMessage[] = [];
+  let stepsDone = 0;
+  // done или failed: модель больше не вызывается (REQ-022-8).
+  let finished = false;
 
   const envelope = () => ({
     id: ids.uuid(),
@@ -86,9 +105,91 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
     traceId: trace.currentTraceId(),
   });
 
-  const pause = (ms: number) => new Promise<void>((resolve) => timers.setTimeout(resolve, ms));
+  const send = (to: AgentId, text: string) =>
+    bus.publishMessage({
+      id: ids.uuid(),
+      swarmId: config.swarmId,
+      from: config.agentId,
+      to,
+      text,
+      ts: clock.now(),
+    });
 
-  async function relay(raw: unknown): Promise<void> {
+  async function publishOutcome(messageId: string, loop: AgentLoopResult): Promise<void> {
+    switch (loop.kind) {
+      case 'text':
+        // Шаг 5 алгоритма 4.4 (напоминание агенту-входу) — задача T-7a.
+        await bus.publishEvent({ ...envelope(), type: 'agent.idle', data: { messageId } });
+        return;
+      case 'stopped':
+        finished = true;
+        await bus.publishEvent({
+          ...envelope(),
+          type: 'agent.result',
+          data: { text: loop.result },
+        });
+        return;
+      case 'max_steps':
+        finished = true;
+        await bus.publishEvent({
+          ...envelope(),
+          type: 'agent.failed',
+          data: { reason: 'max_steps' },
+        });
+        return;
+      case 'model_error':
+        finished = true;
+        await bus.publishEvent({
+          ...envelope(),
+          type: 'agent.failed',
+          data: { reason: `model_error:${loop.error.code}` },
+        });
+        return;
+    }
+  }
+
+  async function turn(message: BusMessageType): Promise<void> {
+    await bus.publishEvent({
+      ...envelope(),
+      type: 'agent.working',
+      data: { messageId: message.id },
+    });
+    const loop = await runAgentLoop(
+      {
+        model,
+        onStep: (step) =>
+          bus.publishEvent({
+            ...envelope(),
+            type: 'agent.step',
+            data: {
+              messageId: message.id,
+              stepIndex: stepsDone + step.stepIndex,
+              text: step.text,
+              toolCalls: step.toolCalls,
+            },
+          }),
+      },
+      {
+        model: config.model,
+        systemPrompt: systemPrompt(agent),
+        history,
+        input: inboxMessage({ from: message.from, text: message.text }, config.peers),
+        tools: swarmTools(agent, send),
+        limits: { maxSteps: config.maxSteps - stepsDone, maxTokens: config.maxTokens },
+      },
+    );
+    history.push(...loop.messages);
+    stepsDone += loop.steps;
+    await publishOutcome(message.id, loop);
+    log.debug('turn finished', {
+      ...ctx,
+      messageId: message.id,
+      kind: loop.kind,
+      steps: loop.steps,
+    });
+  }
+
+  async function handle(raw: unknown): Promise<void> {
     const parsed = BusMessage.safeParse(raw);
     if (!parsed.success) {
       log.warn('message dropped', { ...ctx, reason: 'invalid_schema' });
@@ -99,41 +200,18 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
       log.warn('message dropped', { ...ctx, reason: 'wrong_recipient', to: message.to });
       return;
     }
-
-    await bus.publishEvent({
-      ...envelope(),
-      type: 'agent.working',
-      data: { messageId: message.id },
-    });
-    await pause(config.stepDelayMs);
-
-    const out = `${message.text}\n${config.agentName} (${config.agentRole}): ok`;
-    if (config.agentNext !== null) {
-      await bus.publishMessage({
-        id: ids.uuid(),
-        swarmId: config.swarmId,
-        from: config.agentId,
-        to: config.agentNext,
-        text: out,
-        ts: clock.now(),
-      });
-    } else {
-      await bus.publishEvent({ ...envelope(), type: 'agent.result', data: { text: out } });
+    if (finished) {
+      log.warn('message dropped', { ...ctx, reason: 'agent_finished' });
+      return;
     }
-    log.debug('message handled', { ...ctx, messageId: message.id, from: message.from });
+    await turn(message);
   }
 
   return {
     info: () => ({ service: 'agent', version: deps.version }),
 
     async start() {
-      await bus.subscribe(inboxSubject(config.swarmId, config.agentId), (raw) => {
-        queue = queue
-          .then(() => relay(raw))
-          .catch((error: unknown) => {
-            log.error('message failed', { ...ctx, err: error });
-          });
-      });
+      await bus.subscribe(inboxSubject(config.swarmId, config.agentId), handle);
       await bus.publishEvent({ ...envelope(), type: 'agent.started', data: {} });
       log.info('agent started', ctx);
     },
