@@ -4,13 +4,20 @@
 
 ## Задачи
 
-- `applyEvent(view, event)` — применить одно событие роя к `SwarmView`: статусы роя и агентов, счётчики сообщений, рёбра цепочки, результат и причина ошибки. Событие с `seq` не больше `lastSeq` игнорируется.
+- `applyEvent(view, event)` — применить одно событие роя к `SwarmView`: статусы роя и агентов, счётчики сообщений, число шагов, рёбра по фактическим сообщениям, результат и причина ошибки. Событие с `seq` не больше `lastSeq` игнорируется.
 - `projectSwarm(events)` — состояние роя из всей последовательности событий.
 
 ## Что внутри сейчас
 
-- `src/swarm-view.ts` — тип `SwarmView`, `applyEvent`, `projectSwarm`.
-- `test/swarm-view.test.ts` — AC-001-2.
+- `src/swarm-view.ts` — тип `SwarmView` (агенты с `model` и `steps`), `applyEvent`, `projectSwarm`. Правила — спека 022, 4.6 (с 022 заменяют таблицу 4.4 спеки 001 в части `bus.message`, `agent.step`, `agent.idle`).
+- `test/swarm-view.test.ts` — AC-001-2 (таблица 4.4 с правками 4.6, рёбра при создании пустые) и AC-022-2 (`steps`, рёбра по сообщениям, `bus.message` не меняет статус, `agent.idle` и `done`).
+
+## Правила проекции (022, 4.6)
+
+- `swarm.created` — `edges: []`, агенты с `model` из `AgentSpec` и `steps: 0`.
+- `bus.message` — `messagesIn + 1` у `to`; если `from` — агент, то `messagesOut + 1` у него и ребро `from → to` (создаётся с `messages: 1` или увеличивается). Статус агентов не меняет.
+- `agent.step` — `steps + 1` у агента.
+- `agent.idle` — статус `idle`, если агент не `done`, `failed`, `stopped`.
 
 ## Ограничения
 

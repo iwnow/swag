@@ -1,6 +1,12 @@
-import type { AgentId, AgentStatus, PlatformEvent, SwarmStatus } from '@swag/contracts';
+import type {
+  AgentId,
+  AgentStatus,
+  PlatformEvent,
+  PlatformModel,
+  SwarmStatus,
+} from '@swag/contracts';
 
-// Спека 001, 4.4. Проекция роя из его событий. Одна реализация для api-core и ui-core.
+// Спека 001, 4.4; правила 022, 4.6. Проекция роя из его событий. Одна реализация для api-core и ui-core.
 
 export interface SwarmView {
   id: string;
@@ -11,17 +17,19 @@ export interface SwarmView {
     id: AgentId;
     name: string;
     role: string;
+    model: PlatformModel;
     status: AgentStatus;
     messagesIn: number;
     messagesOut: number;
+    steps: number; // число agent.step — вызовов модели
   }[];
-  edges: { from: AgentId; to: AgentId; messages: number }[]; // цепочка agent-1 → agent-2 → …
+  edges: { from: AgentId; to: AgentId; messages: number }[]; // рёбра по фактическим сообщениям агентов
   result: string | null;
   failure: { reason: string; detail?: string } | null;
   lastSeq: number;
 }
 
-const FINAL_AGENT_STATUSES: readonly AgentStatus[] = ['done', 'failed'];
+const FINAL_AGENT_STATUSES: readonly AgentStatus[] = ['done', 'failed', 'stopped'];
 
 export function applyEvent(view: SwarmView | null, event: PlatformEvent): SwarmView {
   if (view !== null && event.seq <= view.lastSeq) return view; // повтор или устаревший номер — состояние не меняем
@@ -42,26 +50,22 @@ export function projectSwarm(events: PlatformEvent[]): SwarmView {
 }
 
 function createView(event: Extract<PlatformEvent, { type: 'swarm.created' }>): SwarmView {
-  const agents = event.data.agents.map((agent) => ({
-    id: agent.id,
-    name: agent.name,
-    role: agent.role,
-    status: 'starting' as const,
-    messagesIn: 0,
-    messagesOut: 0,
-  }));
-  const edges = agents.slice(1).map((agent, i) => ({
-    from: agents[i]!.id,
-    to: agent.id,
-    messages: 0,
-  }));
   return {
     id: event.swarmId,
     task: event.data.task,
     status: 'starting',
     createdAt: event.ts,
-    agents,
-    edges,
+    agents: event.data.agents.map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+      role: agent.role,
+      model: agent.model,
+      status: 'starting' as const,
+      messagesIn: 0,
+      messagesOut: 0,
+      steps: 0,
+    })),
+    edges: [],
     result: null,
     failure: null,
     lastSeq: event.seq,
@@ -101,6 +105,16 @@ function updateView(view: SwarmView, event: PlatformEvent): SwarmView {
     case 'agent.working':
       if (event.agentId) withAgent(event.agentId, (a) => ({ ...a, status: 'working' }));
       break;
+    case 'agent.step':
+      if (event.agentId) withAgent(event.agentId, (a) => ({ ...a, steps: a.steps + 1 }));
+      break;
+    case 'agent.idle':
+      if (event.agentId) {
+        withAgent(event.agentId, (a) =>
+          FINAL_AGENT_STATUSES.includes(a.status) ? a : { ...a, status: 'idle' },
+        );
+      }
+      break;
     case 'agent.result':
       if (event.agentId) withAgent(event.agentId, (a) => ({ ...a, status: 'done' }));
       break;
@@ -118,7 +132,7 @@ function updateView(view: SwarmView, event: PlatformEvent): SwarmView {
       const { from, to } = event.data;
       withAgent(to, (a) => ({ ...a, messagesIn: a.messagesIn + 1 }));
       if (from !== 'user') {
-        withAgent(from, (a) => ({ ...a, messagesOut: a.messagesOut + 1, status: 'idle' }));
+        withAgent(from, (a) => ({ ...a, messagesOut: a.messagesOut + 1 }));
         const edge = next.edges.find((e) => e.from === from && e.to === to);
         if (edge) {
           next.edges = next.edges.map((e) => (e === edge ? { ...e, messages: e.messages + 1 } : e));
