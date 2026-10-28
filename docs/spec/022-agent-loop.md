@@ -467,3 +467,5 @@ DOCKER_AGENT_LLM_GATEWAY_URL=http://llm-gateway:3002/v1
 |---|---|---|---|
 | 2026-10-28 | `spec/022-t1` | `ready` поставлен по команде человека, спека взята в работу. Этап — задача, ветка от свежей `main`, PR этапа в `main`. T-8 и T-9 выполняются раньше T-7: агенту роя нужны `ChatModel` и `AgentConfig` | порядок T-7 ↔ T-8, T-9 |
 | 2026-10-28 | `spec/022-t1` | T-1: `PlatformModel`, `model` в `AgentDraft`, `ENTRY_AGENT_ID`, `agent.step`, `agent.idle`, `agent_failed` | `LlmCaller` перенесён из `llm.ts` в `swarm.ts`: `swarm.ts` импортирует `PlatformModel` из `llm.ts`, обратный импорт давал цикл модулей; публичный API `@swag/contracts` не изменился |
+| 2026-10-28 | `spec/022-t2` | T-2: правила проекции 4.6, `model` и `steps` в `SwarmView`, пустые рёбра при создании роя | — |
+| 2026-10-28 | `spec/022-t3` | T-3: правила 4.7 фейкового провайдера в `infra/llm/fake-provider/server.ts`, описаны в README `adapter-litellm` | неверная форма JSON после `__tool_calls__` трактована как «правило не срабатывает» (D-78) |
