@@ -1,4 +1,5 @@
 import {
+  PlatformModel,
   SwarmCreateRequest,
   type LlmCallData,
   type PlatformEvent,
@@ -65,6 +66,19 @@ export interface UiCore {
 }
 
 const TRACE_ID_SLOT = '{traceId}';
+
+// Спека 022, 4.1 и 4.10: модели для выбора в форме роя — из контракта, без копии списка.
+export const platformModels = PlatformModel.options;
+
+export type AgentStepData = Extract<PlatformEvent, { type: 'agent.step' }>['data'];
+
+// Спека 022, 4.10: строка шага агента в ленте роя.
+export function formatAgentStep(data: AgentStepData): string {
+  const text = data.text === null ? '' : `: ${data.text}`;
+  const tools =
+    data.toolCalls.length === 0 ? '' : ` → ${data.toolCalls.map((call) => call.name).join(', ')}`;
+  return `шаг ${data.stepIndex}${text}${tools}`;
+}
 
 // Спека 002, 4.11: строка вызова модели в ленте роя. Стоимость — микродоллары / 1e6, 6 знаков.
 export function formatLlmCall(data: LlmCallData): string {

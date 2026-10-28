@@ -28,8 +28,8 @@ const created = ev(1, {
   data: {
     task: 'T',
     agents: [
-      { id: 'agent-1', name: 'A', role: 'r1' },
-      { id: 'agent-2', name: 'B', role: 'r2' },
+      { id: 'agent-1', name: 'A', role: 'r1', model: 'chat-small' },
+      { id: 'agent-2', name: 'B', role: 'r2', model: 'chat-large' },
     ],
   },
 });
@@ -102,6 +102,34 @@ describe('ui-core', () => {
       task: 'T',
       agents: [{ name: 'A', role: 'r', model: 'chat-small' }],
     });
+  });
+
+  it('AC-022-23: форма без модели — в create уходит chat-small; выбранная модель уходит как есть', async () => {
+    const api = fakeApi();
+    const { stream } = fakeStream();
+    const core = createUiCore({ api, stream, timers: fakeTimers().timers, traces });
+
+    await core.createSwarm({ task: 'T', agents: [{ name: 'A', role: 'r' }] });
+    expect(api.create).toHaveBeenLastCalledWith({
+      task: 'T',
+      agents: [{ name: 'A', role: 'r', model: 'chat-small' }],
+    });
+
+    await core.createSwarm({
+      task: 'T',
+      agents: [{ name: 'A', role: 'r', model: 'chat-large' }],
+    });
+    expect(api.create).toHaveBeenLastCalledWith({
+      task: 'T',
+      agents: [{ name: 'A', role: 'r', model: 'chat-large' }],
+    });
+
+    const invalid = core.validateForm({
+      task: 'T',
+      agents: [{ name: 'A', role: 'r', model: 'gpt-4' }],
+    });
+    expect(invalid.ok).toBe(false);
+    expect(invalid.ok === false && invalid.issues[0]?.path).toBe('agents.0.model');
   });
 
   it('AC-001-23: поток отдаёт события — состояние страницы совпадает с projectSwarm', () => {
