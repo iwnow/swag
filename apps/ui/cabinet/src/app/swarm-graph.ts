@@ -1,17 +1,123 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import type { SwarmView } from '@swag/api-integration';
 
-// Граф роя: цепочка агентов слева направо, цвет по статусу, на рёбрах — число сообщений. Чистый SVG.
+// Граф роя по спеке 022, 4.10: агенты по кругу в порядке id (первый — сверху), цвет по статусу,
+// на каждом ребре from → to стрелка и число сообщений. Встречные рёбра (a → b и b → a) — две дуги
+// в разные стороны, петли — дуга наружу от круга. Чистый SVG, геометрия — в чистых функциях ниже.
 const NODE_W = 150;
-const NODE_H = 64;
-const GAP = 70;
-const PAD = 20;
+const NODE_H = 80;
+const MIN_RADIUS = 120;
+const NODE_GAP = 60; // минимальный зазор между соседними узлами по хорде
+const PAD = 90; // больше LOOP: петля крайнего узла остаётся в границах SVG
+const BEND = 0.3; // смещение средней точки дуги встречного ребра, доля длины ребра
+const LOOP = 60; // высота петли над узлом
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export interface GraphLayout {
+  centers: Point[]; // центры узлов в порядке view.agents
+  origin: Point; // центр круга
+  width: number;
+  height: number;
+}
+
+export function layoutNodes(count: number): GraphLayout {
+  const radius =
+    count < 2
+      ? MIN_RADIUS
+      : Math.max(MIN_RADIUS, (NODE_W + NODE_GAP) / (2 * Math.sin(Math.PI / count)));
+  const origin = { x: PAD + radius + NODE_W / 2, y: PAD + radius + NODE_H / 2 };
+  const centers = Array.from({ length: count }, (_, i) => {
+    const angle = -Math.PI / 2 + (2 * Math.PI * i) / count;
+    return {
+      x: origin.x + radius * Math.cos(angle),
+      y: origin.y + radius * Math.sin(angle),
+    };
+  });
+  return { centers, origin, width: origin.x * 2, height: origin.y * 2 };
+}
+
+// Точка границы узла, в которую попадает луч из его центра к точке target.
+function rectExit(center: Point, target: Point): Point {
+  const dx = target.x - center.x;
+  const dy = target.y - center.y;
+  const t = Math.min(
+    dx === 0 ? Infinity : NODE_W / 2 / Math.abs(dx),
+    dy === 0 ? Infinity : NODE_H / 2 / Math.abs(dy),
+  );
+  return { x: center.x + dx * t, y: center.y + dy * t };
+}
+
+export interface EdgePath {
+  d: string;
+  label: Point;
+}
+
+// Путь ребра from → to (индексы в layout.centers). reciprocal — есть встречное ребро:
+// тогда дуга изгибается, и пара рисуется двумя дугами по разные стороны от прямой.
+export function edgePath(
+  layout: GraphLayout,
+  from: number,
+  to: number,
+  reciprocal: boolean,
+): EdgePath {
+  const a = layout.centers[from];
+  const b = layout.centers[to];
+  if (from === to) return loopPath(layout, a);
+
+  const bend = reciprocal ? BEND : 0;
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  // Контрольная точка — сдвиг середины по левой нормали к направлению from → to.
+  const control = { x: mid.x - dy * bend, y: mid.y + dx * bend };
+  const start = rectExit(a, control);
+  const end = rectExit(b, control);
+  return {
+    d: quad(start, control, end),
+    label: quadPoint(start, control, end),
+  };
+}
+
+function loopPath(layout: GraphLayout, center: Point): EdgePath {
+  const dx = center.x - layout.origin.x;
+  const dy = center.y - layout.origin.y;
+  const len = Math.hypot(dx, dy);
+  const u = len === 0 ? { x: 0, y: -1 } : { x: dx / len, y: dy / len }; // наружу от круга
+  const t = { x: -u.y, y: u.x };
+  const base = rectExit(center, { x: center.x + u.x, y: center.y + u.y });
+  const start = { x: base.x - t.x * 16, y: base.y - t.y * 16 };
+  const end = { x: base.x + t.x * 16, y: base.y + t.y * 16 };
+  const control = { x: base.x + u.x * LOOP * 2, y: base.y + u.y * LOOP * 2 };
+  const peak = quadPoint(start, control, end);
+  return { d: quad(start, control, end), label: { x: peak.x + u.x * 12, y: peak.y + u.y * 12 } };
+}
+
+function quad(start: Point, control: Point, end: Point): string {
+  return `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`;
+}
+
+// Точка квадратичной кривой при t = 0.5.
+function quadPoint(start: Point, control: Point, end: Point): Point {
+  return {
+    x: 0.25 * start.x + 0.5 * control.x + 0.25 * end.x,
+    y: 0.25 * start.y + 0.5 * control.y + 0.25 * end.y,
+  };
+}
 
 @Component({
   selector: 'app-swarm-graph',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <svg [attr.width]="width()" [attr.height]="height" role="img" aria-label="Граф роя">
+    <svg
+      [attr.width]="layout().width"
+      [attr.height]="layout().height"
+      role="img"
+      aria-label="Граф роя"
+    >
       <defs>
         <marker
           id="arrow"
@@ -25,17 +131,20 @@ const PAD = 20;
           <path d="M 0 0 L 10 5 L 0 10 z" fill="#5b6472" />
         </marker>
       </defs>
-      @for (edge of edges(); track $index) {
-        <line
-          [attr.x1]="edge.x1"
-          [attr.y1]="edge.y"
-          [attr.x2]="edge.x2"
-          [attr.y2]="edge.y"
+      @for (edge of edges(); track edge.key) {
+        <path
+          [attr.d]="edge.d"
+          fill="none"
           stroke="#5b6472"
           stroke-width="2"
           marker-end="url(#arrow)"
         />
-        <text [attr.x]="edge.labelX" [attr.y]="edge.y - 8" text-anchor="middle" class="edge-label">
+        <text
+          [attr.x]="edge.label.x"
+          [attr.y]="edge.label.y"
+          text-anchor="middle"
+          class="edge-label"
+        >
           {{ edge.messages }} сообщ.
         </text>
       }
@@ -46,15 +155,18 @@ const PAD = 20;
         >
           <rect
             width="150"
-            height="64"
+            height="80"
             rx="10"
             [attr.fill]="node.fill"
             stroke="#2b3240"
             stroke-width="1.5"
           />
-          <text x="75" y="26" text-anchor="middle" class="node-name">{{ node.name }}</text>
-          <text x="75" y="46" text-anchor="middle" class="node-status">
+          <text x="75" y="24" text-anchor="middle" class="node-name">{{ node.name }}</text>
+          <text x="75" y="44" text-anchor="middle" class="node-status">
             {{ node.id }} · {{ node.statusText }}
+          </text>
+          <text x="75" y="64" text-anchor="middle" class="node-status">
+            {{ node.model }} · шагов: {{ node.steps }}
           </text>
         </g>
       }
@@ -78,55 +190,51 @@ const PAD = 20;
         12px system-ui,
         sans-serif;
       fill: #374151;
+      paint-order: stroke;
+      stroke: #fff;
+      stroke-width: 4px;
     }
   `,
 })
 export class SwarmGraphComponent {
   readonly view = input.required<SwarmView>();
 
-  private readonly layout = computed(() => {
-    const view = this.view();
-    return view.agents.map((agent, i) => ({
+  protected readonly layout = computed(() => layoutNodes(this.view().agents.length));
+
+  protected readonly nodes = computed(() => {
+    const { centers } = this.layout();
+    return this.view().agents.map((agent, i) => ({
       id: agent.id,
       name: agent.name,
+      model: agent.model,
+      steps: agent.steps,
       status: agent.status,
       statusText: STATUS_TEXT[agent.status],
       fill: STATUS_FILL[agent.status],
-      x: PAD + i * (NODE_W + GAP),
-      y: PAD,
+      x: centers[i].x - NODE_W / 2,
+      y: centers[i].y - NODE_H / 2,
     }));
   });
 
-  protected readonly nodes = computed(() => this.layout());
-
   protected readonly edges = computed(() => {
     const view = this.view();
-    const positions = new Map(this.layout().map((n) => [n.id, n.x]));
+    const layout = this.layout();
+    const index = new Map(view.agents.map((agent, i) => [agent.id, i]));
+    const pairs = new Set(view.edges.map((edge) => `${edge.from}>${edge.to}`));
     return view.edges.flatMap((edge) => {
-      const fromX = positions.get(edge.from);
-      const toX = positions.get(edge.to);
-      if (fromX === undefined || toX === undefined) return [];
-      const x1 = fromX + NODE_W;
-      const x2 = toX;
+      const from = index.get(edge.from);
+      const to = index.get(edge.to);
+      if (from === undefined || to === undefined) return [];
+      const reciprocal = pairs.has(`${edge.to}>${edge.from}`);
       return [
         {
-          x1,
-          x2,
-          y: PAD + NODE_H / 2,
-          labelX: (x1 + x2) / 2,
+          key: `${edge.from}>${edge.to}`,
           messages: edge.messages,
+          ...edgePath(layout, from, to, reciprocal),
         },
       ];
     });
   });
-
-  protected readonly width = computed(
-    () =>
-      PAD * 2 +
-      this.view().agents.length * NODE_W +
-      Math.max(0, this.view().agents.length - 1) * GAP,
-  );
-  protected readonly height = PAD * 2 + NODE_H;
 }
 
 const STATUS_TEXT: Record<string, string> = {

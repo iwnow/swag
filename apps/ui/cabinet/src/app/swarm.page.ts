@@ -9,7 +9,7 @@ import {
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { PlatformEvent } from '@swag/contracts';
 import type { SwarmView } from '@swag/api-integration';
-import { formatLlmCall } from '@swag/ui-core';
+import { formatAgentStep, formatLlmCall } from '@swag/ui-core';
 import { SwarmGraphComponent } from './swarm-graph.ts';
 import { UI, errorText } from './ui.ts';
 
@@ -125,6 +125,8 @@ export class SwarmPageComponent implements OnDestroy {
         return event.data.result;
       case 'swarm.failed':
         return event.data.reason;
+      case 'agent.step':
+        return formatAgentStep(event.data);
       case 'llm.call':
         return formatLlmCall(event.data);
       default:

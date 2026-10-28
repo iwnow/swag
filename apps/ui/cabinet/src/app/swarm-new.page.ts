@@ -1,12 +1,16 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
+import { PlatformModel } from '@swag/contracts';
 import type { FormIssue } from '@swag/ui-core';
 import { UI, errorText } from './ui.ts';
 
 interface AgentField {
   name: string;
   role: string;
+  model: PlatformModel;
 }
+
+const DEFAULT_MODEL: PlatformModel = 'chat-small';
 
 @Component({
   selector: 'app-swarm-new-page',
@@ -22,7 +26,8 @@ interface AgentField {
 
       <h2>Агенты</h2>
       <p class="hint">
-        Порядок сверху вниз — порядок цепочки: каждый агент передаёт результат следующему.
+        Первый агент получает задачу от пользователя и завершает рой через finish; остальные
+        отвечают ему через send_message.
       </p>
       @for (agent of agents(); track $index; let i = $index) {
         <div class="agent-row">
@@ -33,6 +38,11 @@ interface AgentField {
             [value]="agent.role"
             (input)="setAgent(i, 'role', $event)"
           />
+          <select (change)="setModel(i, $event)" aria-label="Модель">
+            @for (model of models; track model) {
+              <option [value]="model" [selected]="model === agent.model">{{ model }}</option>
+            }
+          </select>
           <button type="button" (click)="removeAgent(i)" [disabled]="agents().length === 1">
             Удалить
           </button>
@@ -64,8 +74,9 @@ export class SwarmNewPageComponent {
   private readonly ui = inject(UI);
   private readonly router = inject(Router);
 
+  readonly models = PlatformModel.options;
   readonly task = signal('');
-  readonly agents = signal<AgentField[]>([{ name: '', role: '' }]);
+  readonly agents = signal<AgentField[]>([{ name: '', role: '', model: DEFAULT_MODEL }]);
   readonly issues = signal<FormIssue[]>([]);
   readonly serverError = signal<string | null>(null);
   readonly submitting = signal(false);
@@ -81,8 +92,15 @@ export class SwarmNewPageComponent {
     );
   }
 
+  setModel(index: number, event: Event): void {
+    const model = (event.target as HTMLSelectElement).value as PlatformModel;
+    this.agents.update((list) =>
+      list.map((agent, i) => (i === index ? { ...agent, model } : agent)),
+    );
+  }
+
   addAgent(): void {
-    this.agents.update((list) => [...list, { name: '', role: '' }]);
+    this.agents.update((list) => [...list, { name: '', role: '', model: DEFAULT_MODEL }]);
   }
 
   removeAgent(index: number): void {
