@@ -8,6 +8,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@swag/api-core": "0.0.0",
+    "@swag/api-integration": "0.0.0",
+    "@swag/contracts": "0.0.0",
     "node-pg-migrate": "9.0.0",
     "pg": "8.23.1"
   }
