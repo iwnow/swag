@@ -46,7 +46,7 @@
 - Адрес оркестратора — `ORCHESTRATOR_URL`; порт API публикуется только на `127.0.0.1` (compose).
 - Наблюдаемость (016): телеметрия поднимается до чтения остальной конфигурации, поэтому ошибка конфигурации или подключения к NATS — `error`-лог `LogRecord`, сброс телеметрии, выход с кодом 1. Fastify пишет тем же логгером (`loggerInstance`), ошибки 5xx — `error request failed` с `err`. HTTP-сервер — `tracedHttpServer`: каждый запрос, кроме `/health`, идёт в серверном спане с родителем из `traceparent`; невалидный заголовок — новый трейс, ответ не меняется. Заголовок `traceparent` в ответ не добавляется (4.5).
 - Сообщения NATS обрабатываются в спанах `consumer` адаптера: `bus.message` получает `traceId` сообщения агента.
-- `SIGTERM`/`SIGINT`: закрыть Fastify → NATS → сбросить телеметрию (не дольше `TELEMETRY_FLUSH_TIMEOUT_MS`) → `exit(0)`.
+- `SIGTERM`/`SIGINT`: закрыть Fastify → NATS → `pool.end()` → сбросить телеметрию (не дольше `TELEMETRY_FLUSH_TIMEOUT_MS`) → `exit(0)`.
 
 ## Спеки
 
