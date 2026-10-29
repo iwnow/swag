@@ -9,7 +9,7 @@ import {
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { PlatformEvent } from '@swag/contracts';
 import type { SwarmView } from '@swag/api-integration';
-import { formatAgentStep, formatLlmCall } from '@swag/ui-core';
+import { formatAgentStep, formatLlmCall, unreadMessageIds } from '@swag/ui-core';
 import { SwarmGraphComponent } from './swarm-graph.ts';
 import { UI, errorText } from './ui.ts';
 
@@ -77,6 +77,9 @@ const STATUS_LABEL: Record<string, string> = {
                 <span class="agent">{{ event.agentId }}</span>
               }
               <span class="detail">{{ detail(event) }}</span>
+              @if (unread().has(event.id)) {
+                <span class="unread"> · не прочитано</span>
+              }
               @if (traceUrl(event); as url) {
                 <a class="trace" [href]="url" target="_blank" rel="noopener">Трейс</a>
               }
@@ -100,6 +103,10 @@ export class SwarmPageComponent implements OnDestroy {
   readonly stoppable = computed(() => {
     const status = this.view()?.status;
     return status === 'starting' || status === 'running';
+  });
+  readonly unread = computed(() => {
+    const status = this.view()?.status;
+    return status === undefined ? new Set<string>() : unreadMessageIds(this.feed(), status);
   });
 
   private readonly page = this.ui.openSwarm(this.id);
