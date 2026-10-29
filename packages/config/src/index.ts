@@ -51,8 +51,16 @@ export type OrchestratorConfig = z.infer<typeof OrchestratorConfig>;
 export const UiConfig = z.object({ UI_PORT: Port });
 export type UiConfig = z.infer<typeof UiConfig>;
 
-// Спека 016, 4.11: порт Grafana на 127.0.0.1 — для infra:check.
-export const ObservabilityConfig = z.object({ GRAFANA_PORT: Port });
+// Спека 003, 4.7 и Q-5: срок хранения в часах; меньше 24 — нельзя (Loki удаляет суточными индексами). Без значения по умолчанию.
+const RetentionHours = z
+  .string()
+  .regex(/^[1-9][0-9]*h$/)
+  .refine((value) => Number.parseInt(value, 10) >= 24, 'срок хранения не меньше 24h');
+// Спека 016, 4.11: порт Grafana на 127.0.0.1 — для infra:check; спека 003, 4.7: срок хранения lgtm.
+export const ObservabilityConfig = z.object({
+  GRAFANA_PORT: Port,
+  TELEMETRY_RETENTION: RetentionHours,
+});
 export type ObservabilityConfig = z.infer<typeof ObservabilityConfig>;
 
 // Агент не нуждается в DATABASE_URL, поэтому без BaseConfig (4.9).

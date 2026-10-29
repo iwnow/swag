@@ -136,7 +136,10 @@ describe('loadConfig', () => {
       TELEMETRY_FLUSH_TIMEOUT_MS: 500,
     });
     expect(() => loadConfig(BaseConfig, { ...validEnv, LOG_LEVEL: 'trace' })).toThrow(/LOG_LEVEL/);
-    expect(loadConfig(ObservabilityConfig, { GRAFANA_PORT: '3300' }).GRAFANA_PORT).toBe(3300);
+    expect(
+      loadConfig(ObservabilityConfig, { GRAFANA_PORT: '3300', TELEMETRY_RETENTION: '24h' })
+        .GRAFANA_PORT,
+    ).toBe(3300);
 
     const agent = loadConfig(AgentConfig, {
       ...agentEnv,
@@ -150,6 +153,22 @@ describe('loadConfig', () => {
       OTEL_EXPORTER_OTLP_ENDPOINT: null,
       TELEMETRY_FLUSH_TIMEOUT_MS: 2000,
     });
+  });
+
+  it('AC-003-10: TELEMETRY_RETENTION — часы не меньше 24, без значения по умолчанию', () => {
+    const observability = { GRAFANA_PORT: '3300' };
+    for (const value of ['24h', '168h']) {
+      expect(
+        loadConfig(ObservabilityConfig, { ...observability, TELEMETRY_RETENTION: value })
+          .TELEMETRY_RETENTION,
+      ).toBe(value);
+    }
+    for (const value of ['12h', '1d', '24']) {
+      expect(() =>
+        loadConfig(ObservabilityConfig, { ...observability, TELEMETRY_RETENTION: value }),
+      ).toThrow(/TELEMETRY_RETENTION/);
+    }
+    expect(() => loadConfig(ObservabilityConfig, observability)).toThrow(/TELEMETRY_RETENTION/);
   });
 
   it('DOCKER_AGENT_OTLP_ENDPOINT необязательный: пусто или нет — null, иначе адрес', () => {

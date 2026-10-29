@@ -100,6 +100,7 @@ npm run infra:check
 - Трейс роя из UI: в ленте события ссылка «Трейс» открывает Explore с трейсом этого события.
 - Найти рой по `traceId` вручную: `traceId` есть в каждом событии (`GET /swarms/:id/events`). В Grafana → Explore → источник Tempo → запрос TraceQL — сам `traceId`. Логи трейса: из спана — кнопка «Related logs» в деталях спана, или Explore → Loki → `{service_name=~"api|orchestrator|agent"} | trace_id = "<traceId>"`. Из записи лога в Loki трейс открывается по полю `trace_id`.
 - Без Collector сервисы работают: пустой `OTEL_EXPORTER_OTLP_ENDPOINT` — логи только в stdout.
+- Срок хранения телеметрии — `TELEMETRY_RETENTION` в `.env`: часы, не меньше `24h` (спека 003, 4.7). Одно значение для Loki, Tempo и Prometheus в `lgtm`; конфиги Loki и Tempo — `infra/lgtm/`. Dev — `24h` (в `.env.example`), прод — `168h`. Переменная обязательна: без неё `npm run infra:check` падает с ошибкой конфигурации, а compose подставляет пустое значение.
 
 ## Ядро и оболочка
 
