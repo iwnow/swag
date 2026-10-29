@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { parseEnv } from 'node:util';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { readCatalog } from '../apps/llm-gateway/src/catalog.ts';
@@ -26,9 +27,11 @@ interface ComposeService {
   ports?: string[];
   networks?: string[];
   env_file?: string | string[];
+  environment?: Record<string, string>;
+  volumes?: string[];
 }
 type ComposeServiceName =
-  'api' | 'orchestrator' | 'ui' | 'agent' | 'litellm' | 'llm-fake' | 'llm-gateway';
+  'api' | 'orchestrator' | 'ui' | 'agent' | 'litellm' | 'llm-fake' | 'llm-gateway' | 'lgtm';
 interface ComposeFile {
   services: Record<ComposeServiceName, ComposeService>;
 }
@@ -114,5 +117,38 @@ describe('политики репозитория', () => {
     for (const profile of profiles) {
       expect(liteLlmText(profile), profile).not.toContain('database_url');
     }
+  });
+
+  it('AC-003-10: lgtm монтирует оба конфига, срок хранения передан и задан в Loki, Tempo и Prometheus; .env.example — 24h', () => {
+    const services = (parse(readFileSync(new URL('compose.yaml', root), 'utf8')) as ComposeFile)
+      .services;
+    const lgtm = services.lgtm;
+    expect(lgtm.volumes).toEqual(
+      expect.arrayContaining([
+        './infra/lgtm/loki-config.yaml:/otel-lgtm/loki-config.yaml:ro',
+        './infra/lgtm/tempo-config.yaml:/otel-lgtm/tempo-config.yaml:ro',
+      ]),
+    );
+    expect(lgtm.environment).toMatchObject({
+      TELEMETRY_RETENTION: '${TELEMETRY_RETENTION}',
+      LOKI_EXTRA_ARGS: '-config.expand-env=true',
+      TEMPO_EXTRA_ARGS: '-config.expand-env=true',
+      PROMETHEUS_EXTRA_ARGS: '--storage.tsdb.retention.time=${TELEMETRY_RETENTION}',
+    });
+
+    const loki = parse(readFileSync(new URL('infra/lgtm/loki-config.yaml', root), 'utf8')) as {
+      compactor: { retention_enabled: boolean };
+      limits_config: { retention_period: string };
+    };
+    expect(loki.compactor.retention_enabled).toBe(true);
+    expect(loki.limits_config.retention_period).toBe('${TELEMETRY_RETENTION}');
+
+    const tempo = parse(readFileSync(new URL('infra/lgtm/tempo-config.yaml', root), 'utf8')) as {
+      backend_worker: { compaction: { block_retention: string } };
+    };
+    expect(tempo.backend_worker.compaction.block_retention).toBe('${TELEMETRY_RETENTION}');
+
+    const example = parseEnv(readFileSync(new URL('.env.example', root), 'utf8'));
+    expect(example.TELEMETRY_RETENTION).toBe('24h');
   });
 });

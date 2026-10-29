@@ -231,7 +231,7 @@ drop table swarms;
 - [x] **T-7.** `apps/api/src/main.ts`: сборка по 4.5; тест AC-003-8 в `apps/api/test` (`POSTGRES_TEST_URL`); README `apps/api`. Закрывает: REQ-003-1, REQ-003-5, REQ-003-6, AC-003-8. Готово, когда: тесты оболочки зелёные, `npm run up` поднимает `api` с миграциями.
 - [x] **T-8.** `.github/workflows/ci.yml`: сервис Postgres и `POSTGRES_TEST_URL` (4.8); `.env.example` — `POSTGRES_TEST_URL` для локального запуска. Готово, когда: CI зелёный, тесты AC-003-1, -2, -3, -8 в CI не пропущены.
 - [x] **T-9.** `packages/config/src/index.ts`: `TELEMETRY_RETENTION` в `ObservabilityConfig`, тест части AC-003-10 в `packages/config/test`; `.env.example` — `TELEMETRY_RETENTION=24h`. Закрывает: часть REQ-003-9, AC-003-10 (конфиг). Готово, когда: тесты `config` зелёные.
-- [ ] **T-10.** (из N-15) `infra/lgtm/loki-config.yaml`, `infra/lgtm/tempo-config.yaml`, сервис `lgtm` в `compose.yaml` по 4.7; тест AC-003-10 в `scripts/repo.test.ts`; корневой README — переменная и значения для dev и прода. Закрывает: REQ-003-9, AC-003-10. Готово, когда: тест зелёный, `npm run up` поднимает `lgtm` healthy.
+- [x] **T-10.** (из N-15) `infra/lgtm/loki-config.yaml`, `infra/lgtm/tempo-config.yaml`, сервис `lgtm` в `compose.yaml` по 4.7; тест AC-003-10 в `scripts/repo.test.ts`; корневой README — переменная и значения для dev и прода. Закрывает: REQ-003-9, AC-003-10. Готово, когда: тест зелёный, `npm run up` поднимает `lgtm` healthy.
 - [ ] **T-11.** Ручные проверки AC-003-11, AC-003-12, замер NFR-003-2 в журнал; README всех затронутых пакетов сверены. Закрывает: AC-003-11, AC-003-12, NFR-003-2. Готово, когда: результаты в журнале.
 
 ## 9. Открытые вопросы
