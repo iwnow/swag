@@ -276,6 +276,72 @@ describe('agent loop', () => {
     expect(rec.steps).toEqual([]);
   });
 
+  it('AC-030-1: инструмент с yieldTurn — kind yielded, steps 1, модель вызвана один раз, messages = [input, assistant, tool]', async () => {
+    const yielding = tool('send', async () => ({ content: 'ok', yieldTurn: true }));
+    const { model, requests } = scripted([reply(null, [call('c1', 'send', '{}')])]);
+    const result = await runAgentLoop(
+      { model, onStep: recorder().onStep },
+      context({ tools: [yielding] }),
+    );
+
+    expect(result).toEqual({
+      kind: 'yielded',
+      steps: 1,
+      messages: [
+        { role: 'user', content: 'задача' },
+        { role: 'assistant', content: null, tool_calls: [call('c1', 'send', '{}')] },
+        { role: 'tool', tool_call_id: 'c1', content: 'ok' },
+      ],
+    });
+    expect(requests).toHaveLength(1);
+  });
+
+  it('AC-030-2: stop и yieldTurn в одном шаге — kind stopped, оба инструмента исполнены, role tool в порядке tool_calls', async () => {
+    const executed: string[] = [];
+    const yielding = tool('send', async () => {
+      executed.push('send');
+      return { content: 'S', yieldTurn: true };
+    });
+    const finish = tool('finish', async () => {
+      executed.push('finish');
+      return { content: 'F', stop: { result: 'итог' } };
+    });
+    const { model, requests } = scripted([
+      reply(null, [call('c1', 'send', '{}'), call('c2', 'finish', '{}')]),
+    ]);
+    const result = await runAgentLoop(
+      { model, onStep: recorder().onStep },
+      context({ tools: [yielding, finish] }),
+    );
+
+    expect(executed.sort()).toEqual(['finish', 'send']);
+    expect(result).toMatchObject({ kind: 'stopped', result: 'итог', steps: 1 });
+    expect(result.messages.filter((m) => m.role === 'tool')).toEqual([
+      { role: 'tool', tool_call_id: 'c1', content: 'S' },
+      { role: 'tool', tool_call_id: 'c2', content: 'F' },
+    ]);
+    expect(requests).toHaveLength(1);
+  });
+
+  it('AC-030-3: yieldTurn и обычный результат в одном шаге — kind yielded, role tool в порядке tool_calls, второго вызова модели нет', async () => {
+    const yielding = tool('send', async () => ({ content: 'S', yieldTurn: true }));
+    const plain = tool('plain', async () => ({ content: 'P' }));
+    const { model, requests } = scripted([
+      reply(null, [call('c1', 'plain', '{}'), call('c2', 'send', '{}')]),
+    ]);
+    const result = await runAgentLoop(
+      { model, onStep: recorder().onStep },
+      context({ tools: [plain, yielding] }),
+    );
+
+    expect(result).toMatchObject({ kind: 'yielded', steps: 1 });
+    expect(result.messages.filter((m) => m.role === 'tool')).toEqual([
+      { role: 'tool', tool_call_id: 'c1', content: 'P' },
+      { role: 'tool', tool_call_id: 'c2', content: 'S' },
+    ]);
+    expect(requests).toHaveLength(1);
+  });
+
   it('AC-022-11: loop.ts импортирует только import type из @swag/contracts', () => {
     const file = fileURLToPath(new URL('../src/loop.ts', import.meta.url));
     const source = ts.createSourceFile(
