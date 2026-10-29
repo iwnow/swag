@@ -16,7 +16,10 @@ const BAD_REQUEST = 'bad request: unsupported tool_choice';
 const body = { model: 'chat-small', messages: [{ role: 'user', content: 'привет' }] };
 
 // Апстрим тратит LATENCY_MS на отказ: задержка считается по monotonicMs и попадает в событие.
-function setup(failure: UpstreamFailure, options: { publishFails?: boolean } = {}) {
+function setup(
+  failure: UpstreamFailure | { kind: 'aborted' },
+  options: { publishFails?: boolean } = {},
+) {
   const made = fakeDeps({ upstream: { complete: { ok: false, failure } }, ...options });
   const { deps, upstream, clock } = made;
   deps.upstream = {
@@ -153,5 +156,47 @@ describe('complete без потока: ошибки апстрима (табл�
       }),
     );
     expect(log.entries).toContainEqual(expect.objectContaining({ level: 'warn', msg: 'llm call' }));
+  });
+});
+
+// Спека 030, 4.5 (AC-030-8): обрыв клиентом у обычного вызова — aborted, не error.
+describe('complete без потока: обрыв клиентом (спека 030, 4.5)', () => {
+  it('AC-030-8: aborted → llm.call status aborted, usage null, без errorCode; лог info; клиенту 502 upstream_error', async () => {
+    const { core, events, log } = setup({ kind: 'aborted' });
+    const result = await core.complete(caller, body, signal);
+
+    expect(result).toEqual({
+      kind: 'error',
+      status: 502,
+      error: { message: 'Upstream error', code: 'upstream_error' },
+    });
+
+    expect(events.published).toHaveLength(1);
+    const [event] = events.published;
+    expect(PlatformEventInput.safeParse(event).success).toBe(true);
+    expect(event).toMatchObject({
+      data: {
+        callId: CALL_ID,
+        model: 'chat-small',
+        stream: false,
+        status: 'aborted',
+        usage: null,
+        costMicroUsd: null,
+        providerCostMicroUsd: null,
+        latencyMs: 1235,
+      },
+    });
+    expect(event).not.toHaveProperty('data.errorCode');
+
+    expect(log.entries.find((item) => item.msg === 'llm call')).toMatchObject({ level: 'info' });
+  });
+
+  it('AC-030-8: network → по-прежнему status error и errorCode upstream_error', async () => {
+    const { core, events } = setup({ kind: 'network' });
+    await core.complete(caller, body, signal);
+
+    expect(events.published[0]).toMatchObject({
+      data: { status: 'error', errorCode: 'upstream_error' },
+    });
   });
 });
