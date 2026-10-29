@@ -182,4 +182,54 @@ describe('createOpenAiChatModel', () => {
 
     expect(result).toMatchObject({ ok: false, error: { code: 'invalid_response' } });
   });
+
+  it('AC-022-19: finish_reason length с непустым content — max_tokens, текст не отдаётся как ответ', async () => {
+    const baseUrl = await stubGateway(200, {
+      id: 'x',
+      object: 'chat.completion',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'length',
+          message: { role: 'assistant', content: 'недописанная мысль' },
+        },
+      ],
+    });
+    const model = createOpenAiChatModel(optionsFor(baseUrl));
+
+    const result = await model.complete(request('привет'));
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'max_tokens' } });
+    expect(result.ok === false && result.error.message).toContain('max_tokens');
+    expect(result.ok === false && result.error.message).toContain('256');
+  });
+
+  it('AC-022-19: finish_reason length с tool_calls — max_tokens, вызов не отдаётся', async () => {
+    const baseUrl = await stubGateway(200, {
+      id: 'x',
+      object: 'chat.completion',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'length',
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call_1',
+                type: 'function',
+                function: { name: 'send_message', arguments: '{"to":"agent-2"}' },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const model = createOpenAiChatModel(optionsFor(baseUrl));
+
+    const result = await model.complete(request('привет'));
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'max_tokens' } });
+  });
 });

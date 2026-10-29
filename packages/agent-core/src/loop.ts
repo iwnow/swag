@@ -25,7 +25,8 @@ export interface ChatModelRequest {
   tools: ToolDefinition[]; // пустой — поле tools в запрос не идёт
   maxTokens: number;
 }
-export type ChatModelErrorCode = GatewayErrorCode | 'network' | 'timeout' | 'invalid_response';
+export type ChatModelErrorCode =
+  GatewayErrorCode | 'network' | 'timeout' | 'invalid_response' | 'max_tokens';
 export type ChatModelResult =
   | { ok: true; message: { content: string | null; tool_calls: ToolCall[] } } // tool_calls пустой, если их нет
   | { ok: false; error: { code: ChatModelErrorCode; message: string } };

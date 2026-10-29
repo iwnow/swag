@@ -271,6 +271,19 @@ describe('agent-core', () => {
     expect(events).toHaveLength(3);
   });
 
+  it('AC-022-16: ошибка модели max_tokens — agent.failed model_error:max_tokens, шагов нет', async () => {
+    const { core, events, deliver } = setup({}, [
+      { ok: false, error: { code: 'max_tokens', message: 'обрезан' } },
+    ]);
+    await core.start();
+    await deliver(inbox('T'));
+    expect(events.slice(1).map((e) => e.type)).toEqual(['agent.working', 'agent.failed']);
+    expect(events.at(-1)).toMatchObject({
+      type: 'agent.failed',
+      data: { reason: 'model_error:max_tokens' },
+    });
+  });
+
   it('AC-016-6: agent.started, agent.working, agent.step и agent.result несут traceId порта; логи agent started и turn finished', async () => {
     const { core, events, entries, deliver } = setup({}, [toolCall('finish', { result: 'итог' })]);
     await core.start();
@@ -391,5 +404,50 @@ describe('agent-core', () => {
     await deliver(inbox('правь', 'agent-1', 'agent-2', MSG));
     expect(requests).toHaveLength(1);
     expect(events.at(-1)).toMatchObject({ type: 'agent.idle' });
+  });
+
+  it('AC-022-28: после напоминания send_message к agent-2 и текст — agent.idle без agent.result; ответ agent-2 не отбрасывается', async () => {
+    const { core, events, entries, requests, deliver } = setup({}, [
+      reply('черновик'),
+      toolCall('send_message', { to: 'agent-2', text: 'проверь' }),
+      reply('жду правку'),
+      reply('спасибо'),
+      reply('итог'),
+    ]);
+    await core.start();
+    await deliver(inbox('T'));
+    expect(events.at(-1)).toMatchObject({ type: 'agent.idle' });
+    expect(events.some((e) => e.type === 'agent.result')).toBe(false);
+
+    await deliver(inbox('правка', 'agent-2', 'agent-1', MSG2));
+    expect(entries.some((e) => e.msg === 'message dropped')).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: 'agent.result', data: { text: 'итог' } });
+    expect(requests).toHaveLength(5);
+  });
+
+  it('AC-022-28: после напоминания текст null — agent.failed empty_result, agent.result нет', async () => {
+    const { core, events, deliver } = setup({}, [
+      reply('черновик'),
+      { ok: true, message: { content: null, tool_calls: [] } },
+    ]);
+    await core.start();
+    await deliver(inbox('T'));
+    expect(events.at(-1)).toMatchObject({
+      type: 'agent.failed',
+      agentId: 'agent-1',
+      data: { reason: 'empty_result' },
+    });
+    expect(events.some((e) => e.type === 'agent.result')).toBe(false);
+  });
+
+  it('AC-022-28: после напоминания текст из одних пробелов — agent.failed empty_result', async () => {
+    const { core, events, deliver } = setup({}, [reply('черновик'), reply('  ')]);
+    await core.start();
+    await deliver(inbox('T'));
+    expect(events.at(-1)).toMatchObject({
+      type: 'agent.failed',
+      data: { reason: 'empty_result' },
+    });
+    expect(events.some((e) => e.type === 'agent.result')).toBe(false);
   });
 });

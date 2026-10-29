@@ -76,6 +76,9 @@ export interface AgentCoreDeps {
   config: AgentConfigCore;
 }
 
+// Итог хода для публикации: `empty_result` — локальный, цикл о нём не знает (4.4, шаг 5).
+type TurnOutcome = AgentLoopResult | { kind: 'empty_result' };
+
 export interface AgentCore {
   info(): ServiceInfo;
   start(): Promise<void>; // подписка на inbox, затем agent.started
@@ -121,10 +124,18 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
     });
   };
 
-  async function publishOutcome(messageId: string, loop: AgentLoopResult): Promise<void> {
+  async function publishOutcome(messageId: string, loop: TurnOutcome): Promise<void> {
     switch (loop.kind) {
       case 'text':
         await bus.publishEvent({ ...envelope(), type: 'agent.idle', data: { messageId } });
+        return;
+      case 'empty_result':
+        finished = true;
+        await bus.publishEvent({
+          ...envelope(),
+          type: 'agent.failed',
+          data: { reason: 'empty_result' },
+        });
         return;
       case 'stopped':
         finished = true;
@@ -185,32 +196,33 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
           limits: { maxSteps: config.maxSteps - stepsDone, maxTokens: config.maxTokens },
         },
       );
-    let loop = await runLoop(
+    const first = await runLoop(
       inboxMessage({ from: message.from, text: message.text }, config.peers),
     );
-    history.push(...loop.messages);
-    stepsDone += loop.steps;
+    history.push(...first.messages);
+    stepsDone += first.steps;
+    let outcome: TurnOutcome = first;
     // Шаг 5 алгоритма 4.4: напоминание агенту-входу — один раз за ход, без ожидаемых ответов.
-    if (loop.kind === 'text' && isEntry && awaiting.size === 0) {
-      loop = await runLoop({ role: 'user', content: ENTRY_REMINDER });
-      history.push(...loop.messages);
-      stepsDone += loop.steps;
-      if (loop.kind === 'text') {
-        loop = {
-          messages: loop.messages,
-          steps: loop.steps,
-          kind: 'stopped',
-          result: loop.text ?? '',
-        };
-      }
+    if (first.kind === 'text' && isEntry && awaiting.size === 0) {
+      const reminded = await runLoop({ role: 'user', content: ENTRY_REMINDER });
+      history.push(...reminded.messages);
+      stepsDone += reminded.steps;
+      outcome = afterReminder(reminded);
     }
-    await publishOutcome(message.id, loop);
+    await publishOutcome(message.id, outcome);
     log.debug('turn finished', {
       ...ctx,
       messageId: message.id,
-      kind: loop.kind,
+      kind: outcome.kind,
       steps: stepsDone - stepsAtStart,
     });
+  }
+
+  // Итог повторного текста агента-входа (4.4, шаг 5, D-82, D-85).
+  function afterReminder(loop: AgentLoopResult): TurnOutcome {
+    if (loop.kind !== 'text' || awaiting.size > 0) return loop;
+    if (loop.text === null || loop.text.trim() === '') return { kind: 'empty_result' };
+    return { messages: loop.messages, steps: loop.steps, kind: 'stopped', result: loop.text };
   }
 
   async function handle(raw: unknown): Promise<void> {
