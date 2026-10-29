@@ -1,7 +1,7 @@
 ---
 id: "030"
 title: Диалог агентов роя
-status: review
+status: done
 roadmap_stage: 2
 depends_on: ["022"]
 superseded_by: null
@@ -194,6 +194,7 @@ export type UpstreamResponse =
 | 2026-10-29 | `spec/030-t7`, PR #77 / `24a531b` | T-7, T-8: обрыв клиентом обычного вызова — `llm.call` со статусом `aborted` и `info`-логом в `llm-gateway-core`; адаптер LiteLLM отдаёт `aborted` (`transportFailure`, `withoutAborted`), тест оболочки gateway «клиент ушёл» ждёт `aborted` без `errorCode` | Спека 030 заменила трактовку D-58 (обрыв клиентом — `upstream_error`) на `aborted` по REQ-030-7 |
 | 2026-10-29 | `spec/030-t6`, PR #78 / `bf1c2aa` | T-6: сквозной тест диалога агентов (AC-030-6) в `apps/api` | — |
 | 2026-10-29 | `spec/030-t9` | T-9: тексты 022 (4.2, 4.4, 4.5, AC-022-13), 002 (4.4) и глоссарий; ручные AC-030-10, AC-030-11 | В 002 исправлен и 4.5 (адаптер: обрыв клиентом — `aborted`), хотя «Меняет 002» называет только 4.4: без правки 4.5 противоречил бы 4.4 и коду T-8 |
+| 2026-10-29 | `spec/030-done` | Приёмка: `npm run check` зелёный (`spec:check` — у всех критериев есть тесты). AC-030-10 (`LLM_PROFILE=test`, задача-скрипт из T-9): рой `completed`, «не прочитано» — ровно у `bus.message` без `agent.working` с их `messageId`, в API (`unreadMessageIds`) и в ленте кабинета; пока рой шёл, отметок не было. AC-030-11 (`LLM_PROFILE=dev`, S-3, 3 прогона): `0f34f80f` и `4781c01e` — `completed`, цепочка `agent-1 → agent-2` → `agent.idle` у `agent-1` → `agent-2 → agent-1` → `agent.working` `agent-1` с его `messageId` → `finish`, по 3 `llm.call`, все `ok`; `151a94af` — `failed` `swarm_timeout`: `agent-2` ответил текстом без `send_message` (модель не вызвала инструмент), оба агента в `idle` до таймаута. Во всех трёх «не прочитано» нет, `llm.call` после `agent.result` нет. | `151a94af` — не нарушение AC-030-11 (условия критерия выполнены: `agent-1` уступил ход и ждал), а пробел 022 4.4 для участника — заметка N-17 |
 
 **AC-030-10** (`LLM_PROFILE=test`, `npm run up`). Задача роя собрана `JSON.stringify` — `agent-1` в одном шаге шлёт `agent-2` и вызывает `finish`, `agent-2` по тексту сообщения отвечает `agent-1`:
 
