@@ -1,11 +1,11 @@
 ---
 id: "022"
 title: Агентный цикл
-status: review
+status: in-progress
 roadmap_stage: 2
 depends_on: ["001", "002", "016"]
 superseded_by: null
-updated: 2026-10-28
+updated: 2026-10-29
 ---
 
 # 022. Агентный цикл
@@ -19,7 +19,7 @@ updated: 2026-10-28
 > - **Ключевые решения.**
 >   - Пишет кто угодно кому угодно внутри роя; ограничения рёбрами `link` — спека 009.
 >   - Рой завершается, когда агент-вход (`agent-1`) вызывает `finish`. Падение любого агента (лимит шагов, ошибка модели) валит рой с причиной `agent_failed`.
->   - Если агент-вход закончил ход текстом, не ждёт ответов участников, — агент один раз напоминает модели про `finish`; повторный текст становится результатом роя (Q-7).
+>   - Если агент-вход закончил ход текстом, не ждёт ответов участников, — агент один раз напоминает модели про `finish`; повторный текст становится результатом роя (Q-7); пустой повторный текст валит агента `empty_result`, а если после напоминания вход написал участникам — он ждёт их ответов. Ответ, обрезанный по `max_tokens`, — ошибка модели `max_tokens` (приёмка, D-82, D-85).
 >   - История агента — в памяти процесса; Postgres — 003, журнал инструментов и возобновление — 008, бюджеты — 004.
 > - **Меняет спеку 001:** эстафета (4.7.2), `AGENT_NEXT` и `AGENT_STEP_DELAY_MS` удаляются, завершение роя — по `agent-1`, а не по последнему агенту. Тексты и тесты AC-001-11, -15, -19, -20, -26, -27 переписываются под цикл с сохранением id (Q-6).
 > - **Из бэклога:** D-13 → Q-1 (модель трейса), D-19 → Q-2 (асинхронный обработчик NATS).
@@ -83,7 +83,7 @@ updated: 2026-10-28
 | REQ-022-16 | Лента роя в UI MUST показывать `agent.step` по формату 4.10; граф MUST рисовать рёбра из `SwarmView.edges`, включая обратные и непоследовательные. | MUST |
 | REQ-022-17 | `npm run check` и CI MUST проходить без ключей провайдеров: сквозные тесты — на скриптовом `ChatModel` и фейковом провайдере. | MUST |
 | REQ-022-18 | Рой из двух агентов на профиле `dev` SHOULD решать простую задачу (AC-022-26) за время меньше `SWARM_TIMEOUT_MS`. | SHOULD |
-| REQ-022-19 | Агент-вход, закончивший ход итогом `text` без ожидаемых ответов (4.4), MUST один раз за ход продолжить цикл с напоминанием 4.5; если и после него итог `text` — MUST завершиться как по `finish` с этим текстом. При ожидаемых ответах MUST публиковать `agent.idle` без напоминания (по Q-7). | MUST |
+| REQ-022-19 | Агент-вход, закончивший ход итогом `text` без ожидаемых ответов (4.4), MUST один раз за ход продолжить цикл с напоминанием 4.5; если и после него итог `text` — MUST: при ожидаемых ответах — публиковать `agent.idle`; при пустом или `null` тексте — `agent.failed` `empty_result`; иначе — завершиться как по `finish` с этим текстом. При ожидаемых ответах до напоминания MUST публиковать `agent.idle` без напоминания (по Q-7; приёмка — D-82, D-85). | MUST |
 
 ## 4. Контракты
 
@@ -121,7 +121,7 @@ z.strictObject({ ...Envelope, type: z.literal('agent.step'), data: z.strictObjec
 z.strictObject({ ...Envelope, type: z.literal('agent.idle'), data: z.strictObject({ messageId: z.uuid() }) }),
 ```
 
-`swarm.failed.data.reason` дополняется `'agent_failed'`. `agent.failed` теперь публикует и агент (`source: 'agent'`), `data.reason` — `max_steps` или `model_error:<code>` (`code` — 4.3).
+`swarm.failed.data.reason` дополняется `'agent_failed'`. `agent.failed` теперь публикует и агент (`source: 'agent'`), `data.reason` — `max_steps`, `model_error:<code>` (`code` — 4.3) или `empty_result` (4.4, шаг 5).
 
 ### 4.2. Порт модели и цикл — `packages/agent-core/src/loop.ts`
 
@@ -145,7 +145,7 @@ export interface ChatModelRequest {
 export type ChatModelResult =
   | { ok: true; message: { content: string | null; tool_calls: ToolCall[] } } // tool_calls пустой, если их нет
   | { ok: false; error: { code: ChatModelErrorCode; message: string } };
-export type ChatModelErrorCode = GatewayErrorCode | 'network' | 'timeout' | 'invalid_response';
+export type ChatModelErrorCode = GatewayErrorCode | 'network' | 'timeout' | 'invalid_response' | 'max_tokens';
 
 export interface ChatModel {
   complete(request: ChatModelRequest): Promise<ChatModelResult>; // не бросает: любая ошибка — ok: false
@@ -205,8 +205,8 @@ export function createOpenAiChatModel(options: OpenAiChatModelOptions): ChatMode
 
 - Пакет `openai` — последняя стабильная версия, опубликованная не позже чем за 2 недели до реализации; версия — в README пакета и журнале.
 - Запрос: `client.chat.completions.create({ model, messages, tools?: [{ type: 'function', function: definition }], max_tokens, stream: false })`, заголовки — через `defaultHeaders` и `headers` запроса (`traceparent` на каждый вызов).
-- Ответ: `choices[0].message` → `{ content, tool_calls }`; нет `choices[0]` — `invalid_response`.
-- Ошибки SDK: `APIError` с телом gateway — `code` из `error.code`, если он в `GatewayErrorCode`, иначе `upstream_error`; `APIConnectionTimeoutError` — `timeout`; `APIConnectionError` — `network`. `message` — из ошибки, без токена (заменить вхождения `token` на `***`).
+- Ответ: `choices[0].message` → `{ content, tool_calls }`; нет `choices[0]` — `invalid_response`; `choices[0].finish_reason === 'length'` — ошибка `max_tokens` с `message` про лимит `max_tokens`, даже если в ответе есть текст или вызовы: обрезанный ответ неполон (приёмка, D-85).
+- Ошибки SDK: `APIError` с телом gateway — `code` из `error.code`, если он в `GatewayErrorCode`, иначе по статусу: `429` — `rate_limited`, прочее — `upstream_error` (приёмка, D-80); `APIConnectionTimeoutError` — `timeout`; `APIConnectionError` — `network`. `message` — из ошибки, без токена (заменить вхождения `token` на `***`).
 
 ### 4.4. Агент роя — `packages/agent-core/src/index.ts`
 
@@ -236,8 +236,8 @@ export interface AgentBus {
 2. `agent.working`.
 3. `runAgentLoop` с `history` агента, `input` по 4.5, инструментами по 4.5, `maxSteps = config.maxSteps − уже сделанные шаги`; `onStep` публикует `agent.step` со сквозным `stepIndex`.
 4. История агента += `result.messages`.
-5. Только у агента-входа (по Q-7). Агент держит множество `awaiting` — id участников, которым он отправил `send_message` и от которых с тех пор не приходило сообщения: отправка добавляет `to`, входящее от участника убирает `from`. Если `kind: text`, `awaiting` пусто и в этом ходе напоминания ещё не было — история += напоминание 4.5 (`role: user`), снова шаг 3 с оставшимися шагами. Если после напоминания снова `text` — итог считается `stopped` с `result = text`.
-6. По `kind`: `text` → `agent.idle`; `stopped` → `agent.result` с `text = result`, агент `done`; `max_steps` → `agent.failed` `max_steps`; `model_error` → `agent.failed` `model_error:<code>`, агент `failed`.
+5. Только у агента-входа (по Q-7). Агент держит множество `awaiting` — id участников, которым он отправил `send_message` и от которых с тех пор не приходило сообщения: отправка добавляет `to`, входящее от участника убирает `from`. Если `kind: text`, `awaiting` пусто и в этом ходе напоминания ещё не было — история += напоминание 4.5 (`role: user`), снова шаг 3 с оставшимися шагами. Если после напоминания снова `text`: `awaiting` не пусто — итог остаётся `text` (агент ждёт участников, D-82); текст `null` или из одних пробелов — итог `empty_result`; иначе — `stopped` с `result = text` (приёмка, D-85).
+6. По `kind`: `text` → `agent.idle`; `stopped` → `agent.result` с `text = result`, агент `done`; `max_steps` → `agent.failed` `max_steps`; `model_error` → `agent.failed` `model_error:<code>`; `empty_result` → `agent.failed` `empty_result`; после `agent.failed` агент `failed`.
 7. Лог `debug` `turn finished` с `messageId`, `kind`, `steps`.
 
 ### 4.5. Промпт, сообщения и инструменты
@@ -297,7 +297,7 @@ export interface AgentBus {
 | Условие | Ответ |
 |---|---|
 | последнее сообщение `role: 'tool'` | `content: 'fake reply'` без `tool_calls`, `usage` по умолчанию |
-| текст последнего сообщения содержит `__tool_calls__` | всё после маркера — JSON `[{ name: string, arguments: object }]` → `message: { content: null, tool_calls: [{ id: 'call_<i>', type: 'function', function: { name, arguments: JSON.stringify(arguments) } }] }`, `finish_reason: 'tool_calls'`, `usage` по умолчанию; невалидный JSON — правило не срабатывает |
+| текст последнего сообщения содержит `__tool_calls__` | всё после маркера — JSON `[{ name: string, arguments: object }]` → `message: { content: null, tool_calls: [{ id: 'call_<i>', type: 'function', function: { name, arguments: JSON.stringify(arguments) } }] }`, `finish_reason: 'tool_calls'`, `usage` по умолчанию; невалидный JSON или JSON не той формы (не массив, `name` не строка, `arguments` не объект) — правило не срабатывает (приёмка, D-78) |
 
 ### 4.8. Env агента
 
@@ -307,7 +307,8 @@ export interface AgentBus {
 |---|---|---|---|
 | `NATS_URL`, `OTEL_EXPORTER_OTLP_ENDPOINT` | `adapter-docker` | — | как в 001 и 016 |
 | `LLM_GATEWAY_URL` | `adapter-docker` из `DOCKER_AGENT_LLM_GATEWAY_URL` | `http://llm-gateway:3002/v1` | gateway изнутри песочницы |
-| `TRACEPARENT`, `TELEMETRY_FLUSH_TIMEOUT_MS` | ядро | — | как в 016 |
+| `TELEMETRY_FLUSH_TIMEOUT_MS` | ядро | — | как в 016 |
+| `TRACEPARENT` | `adapter-docker` | — | как в 016 (AC-016-10): порт `TraceContext` отдаёт только `traceId`, ядро `TRACEPARENT` не ставит (приёмка, D-83) |
 | `SWARM_ID`, `AGENT_ID`, `AGENT_NAME`, `AGENT_ROLE` | ядро | — | как в 001 |
 | `AGENT_MODEL` | ядро | `chat-small` | `AgentSpec.model` |
 | `AGENT_PEERS` | ядро | `[{"id":"agent-2","name":"Редактор","role":"…"}]` | JSON `AgentPeer[]`: остальные агенты роя |
@@ -373,10 +374,10 @@ DOCKER_AGENT_LLM_GATEWAY_URL=http://llm-gateway:3002/v1
 - **AC-022-14** — *Given* модель вызывает `send_message` к себе, к `user` и к несуществующему `agent-9`, *When* ход, *Then* `BusMessage` не публикуется, модель получает три `error: …`.
 - **AC-022-15** — *Given* агент-вход, модель вызывает `finish`, *When* ход, затем новое сообщение, *Then* `agent.result` с текстом результата, второе сообщение отброшено с `warn` `reason: agent_finished`, модель больше не вызывалась.
 - **AC-022-16** — *Given* `AGENT_MAX_STEPS=3` и модель, всегда вызывающая инструмент, *When* ход, *Then* 3 шага и `agent.failed` `max_steps`; *Given* модель с ошибкой `upstream_timeout`, *Then* `agent.failed` `model_error:upstream_timeout`; дальше сообщения отбрасываются.
-- **AC-022-28** — *Given* агент-вход со скриптовой моделью, *When* ход по задаче пользователя и модель отвечает текстом, затем после напоминания снова текстом «итог», *Then* в истории ровно одно напоминание по шаблону 4.5, `agent.result` с `text: "итог"`, агент `done`; *When* модель после напоминания вызывает `finish`, *Then* `agent.result` с результатом `finish`; *Given* агент-вход отправил `send_message` к `agent-2` и `agent-3`, *When* пришёл ответ только от `agent-2` и модель ответила текстом, *Then* напоминания нет, `agent.idle`; *When* затем пришёл ответ `agent-3` и модель ответила текстом, *Then* напоминание есть. Агент не-вход при итоге `text` напоминания не получает.
+- **AC-022-28** — *Given* агент-вход со скриптовой моделью, *When* ход по задаче пользователя и модель отвечает текстом, затем после напоминания снова текстом «итог», *Then* в истории ровно одно напоминание по шаблону 4.5, `agent.result` с `text: "итог"`, агент `done`; *When* модель после напоминания вызывает `finish`, *Then* `agent.result` с результатом `finish`; *Given* агент-вход отправил `send_message` к `agent-2` и `agent-3`, *When* пришёл ответ только от `agent-2` и модель ответила текстом, *Then* напоминания нет, `agent.idle`; *When* затем пришёл ответ `agent-3` и модель ответила текстом, *Then* напоминание есть. Агент не-вход при итоге `text` напоминания не получает. *Given* агент-вход без ожидаемых ответов, *When* после напоминания модель вызывает `send_message` к `agent-2` и отвечает текстом, *Then* `agent.idle`, агент не `done`; *When* после напоминания модель отвечает `content: null` или `"  "`, *Then* `agent.failed` `empty_result`, `agent.result` нет (приёмка, D-82, D-85).
 - **AC-022-17** — *Given* `orchestrator-core` с фейковым провайдером песочниц, *When* `launch` с тремя агентами, *Then* env каждой песочницы — ровно ключи 4.8, которые ставит ядро; `AGENT_PEERS` без самого агента, `AGENT_ENTRY=agent-1`, `AGENT_MODEL` из плана; ни одного ключа `*_API_KEY`, `LITELLM_MASTER_KEY`, `AGENT_NEXT`. *Given* `adapter-docker`, *Then* у контейнера есть `LLM_GATEWAY_URL` из `DOCKER_AGENT_LLM_GATEWAY_URL`.
 - **AC-022-18** — *Given* рой в `running`, *When* `agent.result` от `agent-2`, *Then* рой остаётся `running`; *When* `agent.result` от `agent-1`, *Then* уборка и `swarm.completed`; *Given* другой рой, *When* `agent.failed` `max_steps` от `agent-3`, *Then* уборка и `swarm.failed` `agent_failed`, `detail: "agent-3: max_steps"`.
-- **AC-022-19** — *Given* фейковый провайдер в процессе (`startFakeProvider`) на месте gateway, *When* `createOpenAiChatModel(...).complete` с инструментами и маркером `__tool_calls__`, *Then* при `baseUrl = <url фейка>/v1` в `requests` — путь `/v1/chat/completions`, `authorization: Bearer <token>`, оба заголовка вызывающего, `traceparent`, тело с `model`, `tools`, `max_tokens`, `stream: false`; результат — `tool_calls` из маркера. С `__fail_429__` и `maxRetries: 0` — `rate_limited`; с ответом gateway `400 {error:{code:'model_not_found'}}` — `model_not_found`; без сервера — `network`.
+- **AC-022-19** — *Given* фейковый провайдер в процессе (`startFakeProvider`) на месте gateway, *When* `createOpenAiChatModel(...).complete` с инструментами и маркером `__tool_calls__`, *Then* при `baseUrl = <url фейка>/v1` в `requests` — путь `/v1/chat/completions`, `authorization: Bearer <token>`, оба заголовка вызывающего, `traceparent`, тело с `model`, `tools`, `max_tokens`, `stream: false`; результат — `tool_calls` из маркера. Ответ с `finish_reason: 'length'` — ошибка `max_tokens` и при непустом `content`, и при `tool_calls` (подставной HTTP-сервер). С `__fail_429__` и `maxRetries: 0` — `rate_limited`; с ответом gateway `400 {error:{code:'model_not_found'}}` — `model_not_found`; без сервера — `network`.
 - **AC-022-20** — *Given* фейковый провайдер, *When* последнее сообщение `role: tool` при наличии `tools`, *Then* ответ — текст без `tool_calls`; *When* маркер `__tool_calls__` с двумя вызовами, *Then* два `tool_calls` с `call_0`, `call_1`; невалидный JSON после маркера — ответ по умолчанию 002.
 - **AC-022-21** — *Given* `api-core`, `orchestrator-core` и три `agent-core` в одном процессе: шина в памяти, фейковый провайдер песочниц, скриптовый `ChatModel` на агента (`agent-1`: `send_message` → `agent-2`, после ответа — `finish`; `agent-2`: `send_message` → `agent-3`; `agent-3`: `send_message` → `agent-1`), *When* `createSwarm`, *Then* рой `completed` с `result` из `finish`, рёбра `1→2`, `2→3`, `3→1` по 1 сообщению, песочниц 0, `seq` непрерывны. Сквозной тест без Docker и сети.
 - **AC-022-22** — *Given* `adapter-nats` с экспортом спанов в память и NATS, *When* обработчик возвращает `Promise`, который завершается через 200 мс, и второй — отказом, *Then* длительность спана `process …` ≥ 200 мс, у второго спана статус `ERROR`; второе сообщение подписки начало обрабатываться после конца первого.
@@ -425,10 +426,22 @@ DOCKER_AGENT_LLM_GATEWAY_URL=http://llm-gateway:3002/v1
 - [x] **T-15.** `apps/ui/cabinet`: выбор модели в форме, строка шага в ленте, граф по 4.10. Закрывает: REQ-022-16. Готово, когда: сборка UI зелёная, ручная проверка в AC-022-25.
 - [x] **T-16.** Спека 001 по Q-6: тексты 4.7.1, 4.7.2 и AC-001-11, -15, -19, -20, -26, -27 со ссылкой «изменено спекой 022»; README `agent-core`, `apps/agent`, `orchestrator-core`, `adapter-docker`, `adapter-nats`, `api-integration`, `ui-core`, `cabinet`, `contracts`, `config`, фейкового провайдера и корневой. Готово, когда: `npm run check` зелёный.
 - [x] **T-17.** Ручные проверки AC-022-25…27 и замер NFR-022-2, сценарий S-3 — статус `ручной`. Закрывает: REQ-022-18, AC-022-25…27, NFR-022-2. Готово, когда: результаты в журнале.
+- [ ] **T-18.** Решения приёмки D-82, D-85: `adapter-openai` — `finish_reason: 'length'` → `max_tokens` (4.3); `agent-core` — `max_tokens` в `ChatModelErrorCode` (4.2), шаг 5 алгоритма 4.4 (`awaiting` после напоминания, `empty_result`). Закрывает: REQ-022-19, AC-022-19, AC-022-28. Готово, когда: тесты пакетов зелёные, README и глоссарий обновлены.
+- [ ] **T-19.** Тексты 016 и 001 по решениям приёмки D-81 и D-84. Готово, когда: `npm run check` зелёный.
 
 ## 9. Открытые вопросы
 
 Все вопросы решены.
+
+**Решения приёмки (человек, 2026-10-29)** — вопросы D-78…D-85 из `questions.md`:
+- D-78 — JSON не той формы после `__tool_calls__` — «правило не срабатывает» (4.7), как сделано.
+- D-79 — промпт агента без участников и пустое имя неизвестного отправителя — оставить, как сделано.
+- D-80 — `429` без `error.code` → `rate_limited` (4.3), как сделано.
+- D-81 — текст 016 (таблица 4.8, AC-016-6) переходит на лог `turn finished` с пометкой «изменено спекой 022» → T-19.
+- D-82 — текст после напоминания при непустом `awaiting` — `agent.idle` (4.4, шаг 5) → T-18.
+- D-83 — `TRACEPARENT` ставит адаптер Docker, как в 016 (4.8), как сделано.
+- D-84 — «б»: в 001 переписать REQ-001-1, REQ-001-11, правила рёбер 4.4, таблицу env 4.9 и граф 4.8 с пометкой «изменено спекой 022»; задачи и вопросы 001 — история → T-19.
+- D-85 — воспроизведено на `dev` (6 роёв, 2026-10-29): в 4 из них ответ модели обрезан по `max_tokens` (`finish_reason: length`: рассуждения съели все 2048 токенов, у части провайдеров рассуждения ещё и в `content`, и агент принимал их за ответ). Решение: обрезанный ответ — ошибка модели `max_tokens` (4.3), пустой повторный текст входа — `empty_result` (4.4, шаг 5) → T-18. Профиль `dev` — N-14.
 
 - [x] **Q-1. Модель трейса для долгих роёв** (из D-13). *(Claude, 2026-10-28)*
   В 016 рой — один трейс. Варианты: **(а)** оставить «рой = трейс» в 022; **(б)** ход агента — свой трейс со span link на трейс-родителя; **(в)** таймер оркестратора — свой трейс со ссылкой на трейс запуска.
