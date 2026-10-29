@@ -10,7 +10,7 @@ const swarmFailed = (reason: string) => ({
   ts: '2026-10-29T10:00:00.000Z',
   agentId: null,
   traceId: null,
-  source: 'orchestrator',
+  source: 'api',
   type: 'swarm.failed',
   data: { reason },
 });
