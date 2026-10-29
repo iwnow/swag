@@ -29,19 +29,8 @@ export async function runMigrations(
 export function createPostgresSwarmStore(pool: Pool): SwarmStore {
   return {
     async appendEvent(event: PlatformEvent): Promise<void> {
-      const client = await pool.connect();
-      try {
-        await client.query('begin');
-        try {
-          await writeEvent(client, event);
-          await client.query('commit');
-        } catch (error) {
-          await client.query('rollback');
-          throw error;
-        }
-      } finally {
-        client.release();
-      }
+      // Гонка двух swarm.created одного роя: проигравший откатывается и повторяет запись один раз.
+      if (!(await writeOnce(pool, event))) await writeOnce(pool, event);
     },
 
     async events(swarmId: string, afterSeq: number): Promise<PlatformEvent[]> {
@@ -69,8 +58,30 @@ export function createPostgresSwarmStore(pool: Pool): SwarmStore {
   };
 }
 
-// Одна транзакция: блокировка проекции роя, проверка применимости, запись проекции и события.
-async function writeEvent(client: PoolClient, event: PlatformEvent): Promise<void> {
+// Одна транзакция. Возвращает false, если строку роя за это время создал параллельный swarm.created:
+// транзакция откатана, запись нужно повторить. Сбой rollback не скрывает исходную ошибку, клиент уходит из пула.
+async function writeOnce(pool: Pool, event: PlatformEvent): Promise<boolean> {
+  const client = await pool.connect();
+  let broken = false;
+  try {
+    await client.query('begin');
+    const written = await writeEvent(client, event);
+    await client.query(written ? 'commit' : 'rollback');
+    return written;
+  } catch (error) {
+    try {
+      await client.query('rollback');
+    } catch {
+      broken = true;
+    }
+    throw error;
+  } finally {
+    client.release(broken);
+  }
+}
+
+// Блокировка проекции роя, проверка применимости, запись проекции и события.
+async function writeEvent(client: PoolClient, event: PlatformEvent): Promise<boolean> {
   const current =
     (
       await client.query<{ view: SwarmView }>('select view from swarms where id = $1 for update', [
@@ -78,13 +89,14 @@ async function writeEvent(client: PoolClient, event: PlatformEvent): Promise<voi
       ])
     ).rows[0]?.view ?? null;
   const next = applyEvent(current, event);
-  if (next === current) return; // повтор seq — уже учтено, ничего не пишем
+  if (next === current) return true; // повтор seq — уже учтено, ничего не пишем
 
   if (event.type === 'swarm.created') {
-    await client.query(
-      'insert into swarms (id, status, created_at, last_seq, view) values ($1, $2, $3, $4, $5)',
+    const inserted = await client.query(
+      'insert into swarms (id, status, created_at, last_seq, view) values ($1, $2, $3, $4, $5) on conflict (id) do nothing returning id',
       [next.id, next.status, next.createdAt, next.lastSeq, JSON.stringify(next)],
     );
+    if (inserted.rowCount === 0) return false;
   } else {
     await client.query('update swarms set status = $2, last_seq = $3, view = $4 where id = $1', [
       next.id,
@@ -98,4 +110,5 @@ async function writeEvent(client: PoolClient, event: PlatformEvent): Promise<voi
     event.seq,
     JSON.stringify(event),
   ]);
+  return true;
 }

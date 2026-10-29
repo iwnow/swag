@@ -121,4 +121,22 @@ describe.skipIf(!url)('adapter-postgres хранилище роёв', () => {
     expect((await reader.views()).map((view) => view.id)).toContain(swarmId);
     expect(await reader.events(swarmId, 0)).toEqual(events);
   });
+
+  it('параллельный swarm.created одного роя не падает', async () => {
+    const store = createPostgresSwarmStore(newPool());
+    const swarmId = randomUUID();
+    const event = withSeq(created(swarmId), 1);
+
+    await expect(
+      Promise.all([store.appendEvent(event), store.appendEvent(event)]),
+    ).resolves.toEqual([undefined, undefined]);
+
+    const rows = await admin.query<{ n: number }>(
+      `select count(*)::int as n from ${schema}.swarm_events where swarm_id = $1`,
+      [swarmId],
+    );
+    expect(rows.rows[0]?.n).toBe(1);
+    expect(await store.events(swarmId, 0)).toEqual([event]);
+    expect(await store.view(swarmId)).toEqual(projectSwarm([event]));
+  });
 });

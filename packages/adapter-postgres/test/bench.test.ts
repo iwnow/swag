@@ -24,9 +24,9 @@ describe.skipIf(!url || process.env['POSTGRES_BENCH'] !== '1')('adapter-postgres
   });
 
   afterAll(async () => {
-    await pool.end();
-    await admin.query(`drop schema ${schema} cascade`);
-    await admin.end();
+    await pool?.end();
+    await admin?.query(`drop schema if exists ${schema} cascade`);
+    await admin?.end();
   });
 
   it('NFR-003-2: 1000 событий одного роя, замер appendEvent (p50, p95)', async () => {
