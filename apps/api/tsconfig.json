@@ -9,9 +9,9 @@
   "include": ["src"],
   "references": [
     { "path": "../../packages/api-core" },
-    { "path": "../../packages/adapter-memory" },
     { "path": "../../packages/adapter-nats" },
     { "path": "../../packages/adapter-orchestrator-http" },
+    { "path": "../../packages/adapter-postgres" },
     { "path": "../../packages/adapter-telemetry" },
     { "path": "../../packages/config" },
     { "path": "../../packages/contracts" }
