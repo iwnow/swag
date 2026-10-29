@@ -6,12 +6,12 @@
 
 - `createOpenAiChatModel(options)` — `ChatModel` с методом `complete`: собирает запрос из `ChatModelRequest` (`tools` идут в запрос только если непустые, `max_tokens`, `stream: false`), возвращает `ChatModelResult`.
 - Заголовки: `x-swag-swarm-id` и `x-swag-agent-id` из `caller` (через `defaultHeaders`), `traceparent` на каждый вызов из `options.traceparent()` (если `null` — заголовка нет).
-- Ошибки: все отказы возвращаются как `ok: false`, `complete` не бросает. Коды — по 4.3: `timeout`, `network`, код шлюза из тела, `invalid_response` при пустом `choices`.
+- Ошибки: все отказы возвращаются как `ok: false`, `complete` не бросает. Коды — по 4.3: `timeout`, `network`, код шлюза из тела, `invalid_response` при пустом `choices`, `max_tokens` при `finish_reason: 'length'`.
 
 ## Что внутри сейчас
 
 - `src/index.ts` — `OpenAiChatModelOptions`, `createOpenAiChatModel`; внутри — `toolCalls` (ответ → `ToolCall[]`), `errorCode` (ошибка SDK → `ChatModelErrorCode`), `redact` (токен в `message` заменяется на `***`).
-- `test/chat-model.test.ts` — AC-022-19 и ветки кодов: запрос к `startFakeProvider` (путь, `authorization`, заголовки вызывающего, `traceparent`, тело, `tool_calls` из маркера), без `traceparent`, `rate_limited`, `model_not_found` с редактированием токена, `network`, `timeout`, `upstream_error`, `invalid_response`.
+- `test/chat-model.test.ts` — AC-022-19 и ветки кодов: запрос к `startFakeProvider` (путь, `authorization`, заголовки вызывающего, `traceparent`, тело, `tool_calls` из маркера), без `traceparent`, `rate_limited`, `model_not_found` с редактированием токена, `network`, `timeout`, `upstream_error`, `invalid_response`, `max_tokens` (обрезка с `content` и с `tool_calls`, подставной HTTP-сервер).
 
 ## Ключевые решения
 
@@ -23,6 +23,7 @@
 - Исключение, не похожее на ошибку SDK (например, сбой разбора ответа), переводится в `invalid_response`, чтобы `complete` не бросал.
 - Токен не попадает в `message`: все вхождения заменяются на `***`; пустой токен не редактируется (иначе `***` вставлялся бы между всеми символами).
 - Тест `model_not_found` идёт на подставной HTTP-сервер в самом тесте: фейк кодов в теле не отдаёт.
+- `finish_reason: 'length'` — ошибка `max_tokens` до разбора содержимого: обрезанный ответ неполон и с текстом, и с `tool_calls`, поэтому ни текст, ни вызовы не отдаются в цикл (решение приёмки D-85, 4.3). Сообщение называет лимит `request.maxTokens`.
 
 ## Ограничения
 

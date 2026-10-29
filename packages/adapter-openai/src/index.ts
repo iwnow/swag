@@ -62,6 +62,13 @@ export function createOpenAiChatModel(options: OpenAiChatModelOptions): ChatMode
         if (choice === undefined) {
           return fail('invalid_response', 'В ответе нет choices[0]');
         }
+        // Обрезанный ответ неполон даже с текстом или вызовами (4.3, D-85).
+        if (choice.finish_reason === 'length') {
+          return fail(
+            'max_tokens',
+            `Ответ обрезан по лимиту max_tokens (${String(request.maxTokens)}): модель не уложилась в лимит`,
+          );
+        }
         return {
           ok: true,
           message: {
