@@ -9,7 +9,7 @@ import {
   type SwarmLaunch,
   type SwarmSummary,
 } from '@swag/contracts';
-import type { SwarmView } from '@swag/api-integration';
+import { FINAL_SWARM_STATUSES, type SwarmView } from '@swag/api-integration';
 
 // Спека 001, 4.5.4. Порты объявляет ядро; адаптеры передаёт оболочка.
 
@@ -38,11 +38,12 @@ export interface TraceContext {
   currentTraceId(): string | null; // null — вне трейса
 }
 
+// Спека 003, 4.2. Адаптер асинхронный: reject — отказ хранилища или недопустимое событие.
 export interface SwarmStore {
-  appendEvent(event: PlatformEvent): void; // seq уже назначен ядром; бросает ошибку на недопустимое событие
-  events(swarmId: string, afterSeq: number): PlatformEvent[];
-  view(swarmId: string): SwarmView | null;
-  views(): SwarmView[];
+  appendEvent(event: PlatformEvent): Promise<void>; // seq назначен ядром; событие и проекция — атомарно; отказ на недопустимое событие — reject
+  events(swarmId: string, afterSeq: number): Promise<PlatformEvent[]>; // по возрастанию seq
+  view(swarmId: string): Promise<SwarmView | null>;
+  views(): Promise<SwarmView[]>; // порядок не задан, сортирует ядро
 }
 
 export interface OrchestratorClient {
@@ -72,20 +73,28 @@ export type Result<T> = { ok: true; value: T } | { ok: false; error: ApiError };
 export interface ApiCore {
   info(): ServiceInfo;
   createSwarm(body: unknown): Promise<Result<SwarmView>>;
-  listSwarms(): SwarmSummary[];
-  getSwarm(id: string): Result<SwarmView>;
-  getEvents(id: string, after: number): Result<PlatformEvent[]>;
+  listSwarms(): Promise<SwarmSummary[]>;
+  getSwarm(id: string): Promise<Result<SwarmView>>;
+  getEvents(id: string, after: number): Promise<Result<PlatformEvent[]>>;
   stopSwarm(id: string): Promise<Result<void>>;
-  ingestEvent(raw: unknown): void; // из swarm.*.events
-  ingestMessage(raw: unknown): void; // из swarm.*.agent.*.inbox → bus.message
+  ingestEvent(raw: unknown): Promise<void>; // из swarm.*.events
+  ingestMessage(raw: unknown): Promise<void>; // из swarm.*.agent.*.inbox → bus.message
   subscribe(
     swarmId: string,
     after: number,
     listener: (e: PlatformEvent) => void,
-  ): Result<() => void>;
+  ): Promise<Result<() => void>>;
+  closeInterrupted(): Promise<number>; // REQ-003-6; число закрытых роёв
 }
 
-const FINISHED = new Set(['completed', 'stopped', 'failed']);
+// Подписчик роя: пока читается история, события копятся в buffer; потом уходят напрямую.
+interface Subscriber {
+  listener: (e: PlatformEvent) => void;
+  reading: boolean;
+  buffer: PlatformEvent[];
+  last: number; // последний отданный seq
+  closed: boolean;
+}
 
 const ok = <T>(value: T): Result<T> => ({ ok: true, value });
 const fail = <T>(code: string, message: string, issues?: ApiError['issues']): Result<T> =>
@@ -95,25 +104,53 @@ const fail = <T>(code: string, message: string, issues?: ApiError['issues']): Re
 
 export function createApiCore(deps: ApiCoreDeps): ApiCore {
   const { store, orchestrator, clock, ids, log, trace } = deps;
-  const listeners = new Map<string, Set<(e: PlatformEvent) => void>>();
+  const subscribers = new Map<string, Set<Subscriber>>();
+  // Очередь записи (REQ-003-3): записи одного роя идут цепочкой, разных роёв — параллельно.
+  const queues = new Map<string, Promise<unknown>>();
+  // Лимит MAX_ACTIVE_SWARMS: рои, для которых createSwarm уже резервирует место до записи swarm.created.
+  let reserving = 0;
+
+  function deliver(swarmId: string, sub: Subscriber, event: PlatformEvent): void {
+    if (sub.closed || event.seq <= sub.last) return;
+    sub.last = event.seq;
+    try {
+      sub.listener(event);
+    } catch (error) {
+      log.warn('listener failed', { swarmId, err: error });
+    }
+  }
 
   // Единственная точка записи события роя: номер назначает ядро, рассылка — подписчикам.
-  function commit(swarmId: string, input: PlatformEventInput): PlatformEvent | null {
-    const seq = (store.view(swarmId)?.lastSeq ?? 0) + 1;
-    const event = { ...input, seq } as PlatformEvent;
-    try {
-      store.appendEvent(event);
-    } catch (error) {
-      log.warn(input.type === 'bus.message' ? 'message dropped' : 'event dropped', {
-        swarmId,
-        type: input.type,
-        reason: 'not_applicable',
-        err: error,
-      });
-      return null;
-    }
-    for (const listener of listeners.get(swarmId) ?? []) listener(event);
-    return event;
+  function commit(swarmId: string, input: PlatformEventInput): Promise<PlatformEvent | null> {
+    const write = async (): Promise<PlatformEvent | null> => {
+      let event: PlatformEvent;
+      try {
+        const seq = ((await store.view(swarmId))?.lastSeq ?? 0) + 1;
+        event = { ...input, seq } as PlatformEvent;
+        await store.appendEvent(event);
+      } catch (error) {
+        log.warn(input.type === 'bus.message' ? 'message dropped' : 'event dropped', {
+          swarmId,
+          type: input.type,
+          reason: 'not_applicable',
+          err: error,
+        });
+        return null;
+      }
+      // Рассылка вне try записи: сбой слушателя не должен попасть в «event dropped».
+      for (const sub of subscribers.get(swarmId) ?? []) {
+        if (sub.reading) sub.buffer.push(event);
+        else deliver(swarmId, sub, event);
+      }
+      return event;
+    };
+    const written = (queues.get(swarmId) ?? Promise.resolve()).then(write);
+    // Цепочка не копит отказы: write ловит всё внутри, это страховка.
+    queues.set(
+      swarmId,
+      written.catch(() => undefined),
+    );
+    return written;
   }
 
   return {
@@ -131,14 +168,15 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
           })),
         );
       }
-      const views = store.views();
+      const views = await store.views();
       const active = views.filter((v) => v.status === 'starting' || v.status === 'running').length;
-      if (active >= deps.limits.maxActiveSwarms) {
+      if (active + reserving >= deps.limits.maxActiveSwarms) {
         return fail(
           'too_many_active_swarms',
           `Активных роёв не больше ${deps.limits.maxActiveSwarms}`,
         );
       }
+      reserving += 1;
 
       const swarmId = ids.uuid();
       const agents: AgentSpec[] = parsed.data.agents.map((draft, i) => ({
@@ -146,23 +184,28 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         id: `agent-${i + 1}` as AgentId,
       }));
       const ts = clock.now();
-      commit(swarmId, {
-        id: ids.uuid(),
-        swarmId,
-        ts,
-        source: 'api',
-        agentId: null,
-        traceId: trace.currentTraceId(),
-        type: 'swarm.created',
-        data: { task: parsed.data.task, agents },
-      });
+      try {
+        const created = await commit(swarmId, {
+          id: ids.uuid(),
+          swarmId,
+          ts,
+          source: 'api',
+          agentId: null,
+          traceId: trace.currentTraceId(),
+          type: 'swarm.created',
+          data: { task: parsed.data.task, agents },
+        });
+        if (created === null) throw new Error('swarm.created не записан');
+      } finally {
+        reserving -= 1;
+      }
       log.info('swarm created', { swarmId, agents: agents.length });
 
       try {
         await orchestrator.launch({ swarmId, task: parsed.data.task, agents });
       } catch (error) {
         log.error('orchestrator unavailable', { swarmId, err: error });
-        commit(swarmId, {
+        await commit(swarmId, {
           id: ids.uuid(),
           swarmId,
           ts: clock.now(),
@@ -176,12 +219,11 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
           },
         });
       }
-      return ok(store.view(swarmId) as SwarmView);
+      return ok((await store.view(swarmId)) as SwarmView);
     },
 
-    listSwarms() {
-      return store
-        .views()
+    async listSwarms() {
+      return (await store.views())
         .map((v) => ({
           id: v.id,
           task: v.task,
@@ -192,25 +234,27 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
     },
 
-    getSwarm(id) {
-      const view = store.view(id);
+    async getSwarm(id) {
+      const view = await store.view(id);
       return view ? ok(view) : fail('not_found', `Рой ${id} не найден`);
     },
 
-    getEvents(id, after) {
-      if (!store.view(id)) return fail('not_found', `Рой ${id} не найден`);
-      return ok(store.events(id, after));
+    async getEvents(id, after) {
+      if (!(await store.view(id))) return fail('not_found', `Рой ${id} не найден`);
+      return ok(await store.events(id, after));
     },
 
     async stopSwarm(id) {
-      const view = store.view(id);
+      const view = await store.view(id);
       if (!view) return fail('not_found', `Рой ${id} не найден`);
-      if (FINISHED.has(view.status)) return fail('swarm_finished', `Рой уже ${view.status}`);
+      if (FINAL_SWARM_STATUSES.includes(view.status)) {
+        return fail('swarm_finished', `Рой уже ${view.status}`);
+      }
       await orchestrator.stop(id);
       return ok(undefined);
     },
 
-    ingestEvent(raw) {
+    async ingestEvent(raw) {
       const parsed = PlatformEventInput.safeParse(raw);
       if (!parsed.success) {
         log.warn('event dropped', { reason: 'invalid_schema', issues: parsed.error.issues.length });
@@ -222,7 +266,7 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         log.warn('event dropped', { swarmId: event.swarmId, reason: 'created_from_bus' });
         return;
       }
-      if (!store.view(event.swarmId)) {
+      if (!(await store.view(event.swarmId))) {
         log.warn('event dropped', {
           swarmId: event.swarmId,
           type: event.type,
@@ -230,10 +274,10 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         });
         return;
       }
-      commit(event.swarmId, event);
+      await commit(event.swarmId, event);
     },
 
-    ingestMessage(raw) {
+    async ingestMessage(raw) {
       const parsed = BusMessage.safeParse(raw);
       if (!parsed.success) {
         log.warn('message dropped', {
@@ -243,11 +287,11 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         return;
       }
       const message = parsed.data;
-      if (!store.view(message.swarmId)) {
+      if (!(await store.view(message.swarmId))) {
         log.warn('message dropped', { swarmId: message.swarmId, reason: 'unknown_swarm' });
         return;
       }
-      commit(message.swarmId, {
+      await commit(message.swarmId, {
         id: ids.uuid(),
         swarmId: message.swarmId,
         ts: message.ts,
@@ -259,20 +303,57 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
       });
     },
 
-    subscribe(swarmId, after, listener) {
-      if (!store.view(swarmId)) return fail('not_found', `Рой ${swarmId} не найден`);
-      // Синхронно: сначала догоняем хвост, затем регистрируемся — между ними событий не потеряется.
-      for (const event of store.events(swarmId, after)) listener(event);
-      let set = listeners.get(swarmId);
+    async subscribe(swarmId, after, listener) {
+      if (!(await store.view(swarmId))) return fail('not_found', `Рой ${swarmId} не найден`);
+      // Регистрация до чтения истории: события, записанные во время чтения, попадут в буфер (REQ-003-4).
+      const sub: Subscriber = { listener, reading: true, buffer: [], last: after, closed: false };
+      let set = subscribers.get(swarmId);
       if (!set) {
         set = new Set();
-        listeners.set(swarmId, set);
+        subscribers.set(swarmId, set);
       }
-      set.add(listener);
       const registered = set;
-      return ok(() => {
-        registered.delete(listener);
-      });
+      registered.add(sub);
+      const unsubscribe = () => {
+        sub.closed = true;
+        registered.delete(sub);
+      };
+      try {
+        for (const event of await store.events(swarmId, after)) deliver(swarmId, sub, event);
+        sub.reading = false;
+        for (const event of sub.buffer) deliver(swarmId, sub, event);
+        sub.buffer = [];
+      } catch (error) {
+        unsubscribe();
+        throw error;
+      }
+      return ok(unsubscribe);
+    },
+
+    async closeInterrupted() {
+      let closed = 0;
+      for (const view of await store.views()) {
+        if (view.status !== 'starting' && view.status !== 'running') continue;
+        const id = view.id;
+        try {
+          await orchestrator.stop(id);
+        } catch (error) {
+          log.warn('interrupted stop failed', { swarmId: id, err: error });
+        }
+        const event = await commit(id, {
+          id: ids.uuid(),
+          swarmId: id,
+          ts: clock.now(),
+          source: 'api',
+          agentId: null,
+          traceId: null,
+          type: 'swarm.failed',
+          data: { reason: 'api_restarted' },
+        });
+        if (event !== null) closed += 1;
+      }
+      log.info('interrupted swarms closed', { count: closed });
+      return closed;
     },
   };
 }

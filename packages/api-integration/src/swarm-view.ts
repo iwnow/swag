@@ -30,6 +30,7 @@ export interface SwarmView {
 }
 
 const FINAL_AGENT_STATUSES: readonly AgentStatus[] = ['done', 'failed', 'stopped'];
+export const FINAL_SWARM_STATUSES: readonly SwarmStatus[] = ['completed', 'stopped', 'failed'];
 
 export function applyEvent(view: SwarmView | null, event: PlatformEvent): SwarmView {
   if (view !== null && event.seq <= view.lastSeq) return view; // повтор или устаревший номер — состояние не меняем
@@ -42,6 +43,8 @@ export function applyEvent(view: SwarmView | null, event: PlatformEvent): SwarmV
   if (event.type === 'swarm.created') {
     throw new Error(`повторный swarm.created для роя ${event.swarmId}`);
   }
+  // Итоговый статус окончателен (003, 4.3): событие двигает только lastSeq.
+  if (FINAL_SWARM_STATUSES.includes(view.status)) return { ...view, lastSeq: event.seq };
   return updateView(view, event);
 }
 

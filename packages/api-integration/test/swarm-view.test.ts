@@ -200,3 +200,86 @@ describe('projectSwarm, правила 022 (4.6)', () => {
     expect(view.agents[0]).toMatchObject({ status: 'done' });
   });
 });
+
+describe('projectSwarm, итоговый статус роя (003, 4.3)', () => {
+  it('AC-003-7: поздние swarm.stopped и agent.stopped двигают lastSeq, статус и failure не меняют', () => {
+    n = 0;
+    const created = ev({
+      ...base(null, 'api'),
+      type: 'swarm.created',
+      data: { task: 'T', agents: [{ id: A1, name: 'A', role: 'r1', model: 'chat-small' }] },
+    });
+    const started = ev({ ...base(null, 'orchestrator'), type: 'swarm.started', data: {} });
+    const agentStarted = ev({ ...base(A1), type: 'agent.started', data: {} });
+    const failed = ev({
+      ...base(null, 'api'),
+      type: 'swarm.failed',
+      data: { reason: 'api_restarted' },
+    });
+    const swarmStopped = ev({
+      ...base(null, 'orchestrator'),
+      type: 'swarm.stopped',
+      data: { reason: 'user' },
+    });
+    const agentStopped = ev({ ...base(A1), type: 'agent.stopped', data: {} });
+
+    const before = projectSwarm([created, started, agentStarted, failed]);
+    const after = projectSwarm([
+      created,
+      started,
+      agentStarted,
+      failed,
+      swarmStopped,
+      agentStopped,
+    ]);
+    expect(after.lastSeq).toBe(agentStopped.seq);
+    expect(after.status).toBe('failed');
+    expect(after.failure).toEqual({ reason: 'api_restarted' });
+    expect(after.agents[0]).toMatchObject({ status: before.agents[0]?.status });
+    expect(after.agents[0]?.status).toBe('idle');
+  });
+
+  it('AC-003-7: swarm.completed после итогового статуса не меняет result', () => {
+    n = 0;
+    const created = ev({
+      ...base(null, 'api'),
+      type: 'swarm.created',
+      data: { task: 'T', agents: [{ id: A1, name: 'A', role: 'r1', model: 'chat-small' }] },
+    });
+    const stopped = ev({
+      ...base(null, 'orchestrator'),
+      type: 'swarm.stopped',
+      data: { reason: 'user' },
+    });
+    const completed = ev({
+      ...base(null, 'orchestrator'),
+      type: 'swarm.completed',
+      data: { result: 'R' },
+    });
+    const view = projectSwarm([created, stopped, completed]);
+    expect(view.status).toBe('stopped');
+    expect(view.result).toBeNull();
+    expect(view.lastSeq).toBe(completed.seq);
+  });
+
+  it('AC-003-7: повторный swarm.created после итогового статуса по-прежнему бросает', () => {
+    n = 0;
+    const created = ev({
+      ...base(null, 'api'),
+      type: 'swarm.created',
+      data: { task: 'T', agents: [{ id: A1, name: 'A', role: 'r1', model: 'chat-small' }] },
+    });
+    const failed = ev({
+      ...base(null, 'api'),
+      type: 'swarm.failed',
+      data: { reason: 'api_restarted' },
+    });
+    const again = ev({
+      ...base(null, 'api'),
+      type: 'swarm.created',
+      data: { task: 'T', agents: [{ id: A1, name: 'A', role: 'r1', model: 'chat-small' }] },
+    });
+    const view = projectSwarm([created, failed]);
+    expect(() => applyEvent(view, again)).toThrow('повторный swarm.created');
+  });
+});

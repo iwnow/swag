@@ -47,13 +47,13 @@ export async function buildApp(
   app.get('/swarms', async () => core.listSwarms());
 
   app.get<{ Params: { id: string } }>('/swarms/:id', async (request, reply) =>
-    send(reply, core.getSwarm(request.params.id), 200),
+    send(reply, await core.getSwarm(request.params.id), 200),
   );
 
   app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
     '/swarms/:id/events',
     async (request, reply) =>
-      send(reply, core.getEvents(request.params.id, parseAfter(request.query.after)), 200),
+      send(reply, await core.getEvents(request.params.id, parseAfter(request.query.after)), 200),
   );
 
   app.post<{ Params: { id: string } }>('/swarms/:id/stop', async (request, reply) => {
@@ -64,7 +64,7 @@ export async function buildApp(
   app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
     '/swarms/:id/stream',
     { websocket: true },
-    (socket, request) => {
+    async (socket, request) => {
       const subscribed = core.subscribe(
         request.params.id,
         parseAfter(request.query.after),
@@ -72,12 +72,17 @@ export async function buildApp(
           socket.send(JSON.stringify(event));
         },
       );
-      if (!subscribed.ok) {
-        socket.close(4404, subscribed.error.code);
-        return;
-      }
-      const unsubscribe = subscribed.value;
-      socket.on('close', () => unsubscribe());
+      // Сокет может закрыться раньше, чем подписка установится: тогда отписываемся сразу после её получения.
+      socket.on('close', () => {
+        void subscribed.then(
+          (result) => {
+            if (result.ok) result.value();
+          },
+          () => undefined,
+        );
+      });
+      const result = await subscribed;
+      if (!result.ok) socket.close(4404, result.error.code);
     },
   );
 

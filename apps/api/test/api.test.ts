@@ -57,14 +57,14 @@ describe('REST api', () => {
     const stop = vi.fn(async () => undefined);
     const { core, app } = await started({ launch: async () => undefined, stop });
     const created = (await app.inject({ method: 'POST', url: '/swarms', payload: body(1) })).json();
-    core.ingestEvent(
+    await core.ingestEvent(
       ev(created.id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
     );
     const response = await app.inject({ method: 'POST', url: `/swarms/${created.id}/stop` });
     expect(response.statusCode).toBe(202);
     expect(stop).toHaveBeenCalledWith(created.id);
 
-    core.ingestEvent(
+    await core.ingestEvent(
       ev(created.id, 2, {
         type: 'swarm.completed',
         source: 'orchestrator',
@@ -86,7 +86,7 @@ describe('REST api', () => {
   it('GET /swarms/:id/events?after=1 отдаёт события с seq больше 1', async () => {
     const { core, app } = await started();
     const created = (await app.inject({ method: 'POST', url: '/swarms', payload: body(1) })).json();
-    core.ingestEvent(
+    await core.ingestEvent(
       ev(created.id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
     );
     const response = await app.inject({
@@ -104,12 +104,11 @@ describe('WebSocket /swarms/:id/stream', () => {
     const address = app.server.address();
     const port = typeof address === 'object' && address ? address.port : 0;
 
-    const created = core.createSwarm(body(1));
-    const swarm = await created;
+    const swarm = await core.createSwarm(body(1));
     if (!swarm.ok) throw new Error('не создан');
     const id = swarm.value.id;
     for (let n = 1; n <= 4; n += 1) {
-      core.ingestEvent(
+      await core.ingestEvent(
         ev(id, n, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
       );
     }
@@ -120,7 +119,7 @@ describe('WebSocket /swarms/:id/stream', () => {
       received.push((JSON.parse(String(message.data)) as { seq: number }).seq);
     });
     await vi.waitFor(() => expect(received).toEqual([3, 4, 5]));
-    core.ingestEvent(
+    await core.ingestEvent(
       ev(id, 10, {
         type: 'swarm.stopped',
         source: 'orchestrator',
@@ -128,7 +127,7 @@ describe('WebSocket /swarms/:id/stream', () => {
         data: { reason: 'user' },
       }),
     );
-    core.ingestEvent(
+    await core.ingestEvent(
       ev(id, 11, {
         type: 'swarm.failed',
         source: 'orchestrator',

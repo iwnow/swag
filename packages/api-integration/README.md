@@ -9,8 +9,8 @@
 
 ## Что внутри сейчас
 
-- `src/swarm-view.ts` — тип `SwarmView` (агенты с `model` и `steps`), `applyEvent`, `projectSwarm`. Правила — спека 022, 4.6 (с 022 заменяют таблицу 4.4 спеки 001 в части `bus.message`, `agent.step`, `agent.idle`).
-- `test/swarm-view.test.ts` — AC-001-2 (таблица 4.4 с правками 4.6, рёбра при создании пустые) и AC-022-2 (`steps`, рёбра по сообщениям, `bus.message` не меняет статус, `agent.idle` и `done`).
+- `src/swarm-view.ts` — тип `SwarmView` (агенты с `model` и `steps`), `applyEvent`, `projectSwarm`, `FINAL_SWARM_STATUSES` (итоговые статусы роя `completed`, `stopped`, `failed`; используются ядром `api-core`). Правила — спека 022, 4.6 (с 022 заменяют таблицу 4.4 спеки 001 в части `bus.message`, `agent.step`, `agent.idle`).
+- `test/swarm-view.test.ts` — AC-001-2 (таблица 4.4 с правками 4.6, рёбра при создании пустые), AC-022-2 (`steps`, рёбра по сообщениям, `bus.message` не меняет статус, `agent.idle` и `done`) и AC-003-7 (итоговый статус роя окончателен).
 
 ## Правила проекции (022, 4.6)
 
@@ -18,6 +18,7 @@
 - `bus.message` — `messagesIn + 1` у `to`; если `from` — агент, то `messagesOut + 1` у него и ребро `from → to` (создаётся с `messages: 1` или увеличивается). Статус агентов не меняет.
 - `agent.step` — `steps + 1` у агента.
 - `agent.idle` — статус `idle`, если агент не `done`, `failed`, `stopped`.
+- Итоговый статус роя (`completed`, `stopped`, `failed`) окончательный (003, REQ-003-7, 4.3): после него событие двигает только `lastSeq`, статус роя, `result` и `failure` не меняются.
 
 ## Ограничения
 
@@ -38,6 +39,7 @@
 
 - Состояние роя — не хранимая сущность, а свёртка событий: `projectSwarm` = `reduce(applyEvent)`. Так `api` и `ui` получают одинаковый результат из одних и тех же событий (001, 4.4, T-3).
 - `applyEvent` возвращает тот же объект при повторном `seq` (идемпотентность по `seq`), бросает ошибку на событие до `swarm.created` и на повторный `swarm.created`.
+- Итоговый статус окончателен (003, 4.3), потому что оркестратор шлёт события асинхронно: поздний `swarm.stopped` или `agent.stopped` после `failed` с `api_restarted` (закрытие прерванных роёв при старте API) не должен переписать причину сбоя. Проверка `seq` и `swarm.created` идёт раньше, поэтому повторный `swarm.created` после итогового статуса по-прежнему бросает.
 - Зависимость от `zod` объявлена (белый список ядер, REQ-001-18), но прямых импортов `zod` в коде нет — типы берутся из `@swag/contracts`.
 - `packages/api-integration` проверяется `arch:check` как ядро (T-2, Q-5).
 
