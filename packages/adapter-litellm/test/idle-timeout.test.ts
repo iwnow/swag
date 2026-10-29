@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { chatRequest, signal, upstreamFor, useFake } from './helpers.ts';
+import { STUB_URL, chatRequest, signal, upstreamFor, useFake } from './helpers.ts';
 
 // Спека 002, 4.5: таймаут простоя и внешний abort. Тесты без AC-id: AC-002-16 описывает 504 шлюза (T-16, T-20).
 
@@ -92,32 +92,73 @@ describe('complete: таймаут простоя (спека 002, 4.5, REQ-002-
     expect(result).toEqual({ ok: false, failure: { kind: 'network' } });
   });
 
-  it('внешний abort через 50 мс — network быстро, не timeout', async () => {
+  it('внешний abort через 50 мс — aborted быстро, не timeout (спека 030, 4.5)', async () => {
     const controller = new AbortController();
     const started = performance.now();
     setTimeout(() => controller.abort(), 50);
 
     const result = await upstreamFor(fake.current.url).complete(hang, controller.signal);
 
-    expect(result).toEqual({ ok: false, failure: { kind: 'network' } });
+    expect(result).toEqual({ ok: false, failure: { kind: 'aborted' } });
     expect(performance.now() - started).toBeLessThan(1000);
   });
 
-  it('уже прерванный внешний signal — network', async () => {
+  it('уже прерванный внешний signal — aborted (спека 030, 4.5)', async () => {
     const controller = new AbortController();
     controller.abort();
 
     const result = await upstreamFor(fake.current.url).complete(hang, controller.signal);
 
-    expect(result).toEqual({ ok: false, failure: { kind: 'network' } });
+    expect(result).toEqual({ ok: false, failure: { kind: 'aborted' } });
   });
 
-  it('внешний abort во время чтения тела — network', async () => {
+  it('внешний abort во время чтения тела — aborted (спека 030, 4.5)', async () => {
     const url = await trickleServer(300, ['{"object":', '"chat.completion"}']);
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 150);
 
     const result = await upstreamFor(url).complete(hang, controller.signal);
+
+    expect(result).toEqual({ ok: false, failure: { kind: 'aborted' } });
+  });
+});
+
+// Подставной fetch: ждёт сигнала запроса и отклоняется, когда тот оборван (таймер или внешний abort).
+const waitingFetch = ((_url: string | URL | Request, init?: RequestInit) =>
+  new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+  })) as typeof fetch;
+
+describe('complete: обрыв клиентом и таймер через подставной fetch (спека 030, 4.5)', () => {
+  it('AC-030-9: внешний signal оборван во время complete — aborted', async () => {
+    const controller = new AbortController();
+    const pending = upstreamFor(STUB_URL, { fetch: waitingFetch }).complete(
+      chatRequest('привет'),
+      controller.signal,
+    );
+    controller.abort();
+
+    expect(await pending).toEqual({ ok: false, failure: { kind: 'aborted' } });
+  });
+
+  it('AC-030-9: сработал таймер простоя — timeout, не aborted', async () => {
+    const result = await upstreamFor(STUB_URL, { fetch: waitingFetch, idleTimeoutMs: 50 }).complete(
+      chatRequest('привет'),
+      signal(),
+    );
+
+    expect(result).toEqual({ ok: false, failure: { kind: 'timeout' } });
+  });
+
+  it('AC-030-9: fetch отклонён без обрыва сигнала — network', async () => {
+    const failingFetch = (async () => {
+      throw new TypeError('fetch failed');
+    }) as typeof fetch;
+
+    const result = await upstreamFor(STUB_URL, { fetch: failingFetch }).complete(
+      chatRequest('привет'),
+      signal(),
+    );
 
     expect(result).toEqual({ ok: false, failure: { kind: 'network' } });
   });
