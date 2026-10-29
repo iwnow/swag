@@ -62,31 +62,27 @@ function fakeGateway(failing: boolean) {
         res.end(JSON.stringify({ error: { message: `сбой ${REPLY_MARKER} ${TOKEN}` } }));
         return;
       }
-      const request = JSON.parse(body) as { messages: { role: string }[] };
-      const afterTool = request.messages.at(-1)?.role === 'tool';
-      const message = afterTool
-        ? { role: 'assistant', content: 'готово' }
-        : {
-            role: 'assistant',
-            content: `ответ ${REPLY_MARKER}`,
-            tool_calls: [
-              {
-                id: 'call_1',
-                type: 'function',
-                function: {
-                  name: 'send_message',
-                  arguments: JSON.stringify({ to: 'agent-2', text: `передать ${SEND_MARKER}` }),
-                },
-              },
-            ],
-          };
+      const message = {
+        role: 'assistant',
+        content: `ответ ${REPLY_MARKER}`,
+        tool_calls: [
+          {
+            id: 'call_1',
+            type: 'function',
+            function: {
+              name: 'send_message',
+              arguments: JSON.stringify({ to: 'agent-2', text: `передать ${SEND_MARKER}` }),
+            },
+          },
+        ],
+      };
       res.end(
         JSON.stringify({
           id: 'chatcmpl-1',
           object: 'chat.completion',
           created: 0,
           model: 'chat-small',
-          choices: [{ index: 0, finish_reason: afterTool ? 'stop' : 'tool_calls', message }],
+          choices: [{ index: 0, finish_reason: 'tool_calls', message }],
         }),
       );
     });
