@@ -228,7 +228,7 @@ export function startTelemetry(options: TelemetryOptions): Telemetry;
 | `orchestrator-core` | рой завершён | `info` | `swarm finished` | `swarmId`, `status` |
 | `orchestrator-core` | ошибка `remove` при уборке | `warn` | `sandbox remove failed` | `swarmId`, `agentId`, `err` |
 | `agent-core` | старт | `info` | `agent started` | `swarmId`, `agentId` |
-| `agent-core` | сообщение обработано | `debug` | `message handled` | `swarmId`, `agentId`, `messageId`, `from` |
+| `agent-core` | ход агента завершён | `debug` | `turn finished` *(изменено спекой 022, D-81)* | `swarmId`, `agentId`, `messageId`, `kind`, `steps` |
 
 Текст задачи, ролей, сообщений и результата в контекст не попадает (рекомендация Q-4). Остальные логи — на усмотрение агента, по тем же правилам.
 
@@ -303,7 +303,7 @@ export function startTelemetry(options: TelemetryOptions): Telemetry;
 
   *Then* `swarm.created` и `swarm.failed` несут `T1`, `bus.message` — `T2`, сохранённое событие — `T3`, даже если текущий контекст другой.
 - **AC-016-5** — *Given* `orchestrator-core` с фейковым `TraceContext`, *When* `launch`, затем таймаут старта (ручные таймеры), *Then* все опубликованные события (`agent.launched`, `agent.stopped`, `swarm.failed`) несут `traceId` из порта. В лог ушли `info swarm launch` и `error agent start timeout` с `missing`.
-- **AC-016-6** — *Given* `agent-core` с фейковым `TraceContext`, *When* старт и сообщение, *Then* `agent.started`, `agent.working` и `agent.result` несут `traceId` из порта. Записаны `info agent started` и `debug message handled` с `messageId`.
+- **AC-016-6** — *Изменено спекой 022 (D-81): лог `turn finished` вместо `message handled`.* *Given* `agent-core` с фейковым `TraceContext`, *When* старт и сообщение, *Then* `agent.started`, `agent.working` и `agent.result` несут `traceId` из порта. Записаны `info agent started` и `debug turn finished` с `messageId`.
 - **AC-016-7** — *Given* ядра с фейковым логгером, *When* сценарии таблицы 4.8 (рой создан, оркестратор недоступен, отброшенное событие, ошибка `create`, таймауты, завершение, ошибка `remove`), *Then* по каждой строке таблицы есть запись с указанными уровнем, `msg` и ключами контекста. Ошибки переданы в `err`.
 - **AC-016-8** — *Given* NATS и `adapter-telemetry` с экспортом спанов в память, *When*:
   - адаптер публикует сообщение внутри спана с `traceId: T`;

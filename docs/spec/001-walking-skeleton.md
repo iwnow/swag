@@ -79,7 +79,7 @@ updated: 2026-10-28
 
 | ID | Требование | Приоритет |
 |---|---|---|
-| REQ-001-1 | Пользователь MUST создать рой из UI: задача и упорядоченный список агентов (имя, роль). Порядок списка задаёт цепочку: агент `agent-k` передаёт результат `agent-(k+1)`, последний отдаёт результат роя. | MUST |
+| REQ-001-1 | Пользователь MUST создать рой из UI: задача и упорядоченный список агентов (имя, роль). *Изменено спекой 022 (D-84).* Цепочки больше нет: агент-вход `agent-1` получает задачу от пользователя и завершает рой через `finish`; остальные агенты — участники, пишут любому агенту роя через `send_message` (022, 4.4). | MUST |
 | REQ-001-2 | `api` MUST проверять запрос на рой схемой `SwarmCreateRequest` и лимитами из 4.9 и отвечать по контракту 4.5, ошибки — в формате 4.5.3. | MUST |
 | REQ-001-3 | `api` MUST хранить рои и их события в памяти через порт хранилища `SwarmStore`. Замена на Postgres в 003 — новый адаптер, без правки `api-core`. | MUST |
 | REQ-001-4 | `api` MUST собирать все события роя из NATS (`swarm.*.events`) и все сообщения агентов (`swarm.*.agent.*.inbox`), присваивать событиям сквозной номер `seq` внутри роя (1, 2, 3… без пропусков) и превращать каждое сообщение шины в событие `bus.message`. | MUST |
@@ -89,7 +89,7 @@ updated: 2026-10-28
 | REQ-001-8 | `orchestrator` MUST дождаться `agent.started` от всех агентов роя и только после этого отправить задачу первому агенту сообщением от `user` и опубликовать `swarm.started`. Если не все стартовали за `AGENT_START_TIMEOUT_MS` — `swarm.failed` (`agent_start_timeout`) и уборка. | MUST |
 | REQ-001-9 | `orchestrator` MUST завершать рой: по `agent.result` — `swarm.completed` с текстом результата; по команде «Стоп» — `swarm.stopped`; по истечении `SWARM_TIMEOUT_MS` от создания — `swarm.failed` (`swarm_timeout`). В каждом случае остановить и удалить все песочницы роя, опубликовать `agent.stopped` по каждому агенту, затем событие роя. | MUST |
 | REQ-001-10 | `orchestrator` MUST при старте удалять все песочницы платформы (с метаданными `swag.kind`), оставшиеся от прошлого запуска: состояние оркестратора в памяти, и без этой уборки они бы висели. | MUST |
-| REQ-001-11 | Агент MUST подписаться на свои входящие, опубликовать `agent.started` и на каждое сообщение выполнить «эстафету» из 4.7.2. | MUST |
+| REQ-001-11 | Агент MUST подписаться на свои входящие, опубликовать `agent.started` и на каждое сообщение выполнить ход агента из 4.7.2. *Изменено спекой 022 (D-84): ход — агентный цикл модели, а не «эстафета». Рой завершается по `agent.result` агента-входа `agent-1`, `agent.failed` любого агента валит рой как `swarm.failed` `agent_failed` (REQ-022-11).* | MUST |
 | REQ-001-12 | UI MUST показывать список роёв, форму нового роя и страницу роя. На странице роя — граф (агенты со статусом, связи цепочки с числом сообщений), лента событий, результат или причина ошибки, кнопка «Стоп» для активного роя. Обновление — из WebSocket, без перезагрузки страницы. | MUST |
 | REQ-001-13 | Логика UI (валидация формы, состояние роя из событий, переподключение потока) MUST быть в `packages/ui-core` по правилам ядра; Angular-компоненты только рисуют и передают действия. | MUST |
 | REQ-001-14 | `npm run up` MUST собирать образ агента и поднимать `ui` вместе с остальными сервисами; `npm run infra:check` MUST проверять и `ui`. | MUST |
@@ -213,7 +213,7 @@ export interface SwarmView {
   status: SwarmStatus;
   createdAt: string;                  // ts события swarm.created
   agents: { id: AgentId; name: string; role: string; status: AgentStatus; messagesIn: number; messagesOut: number }[];
-  edges: { from: AgentId; to: AgentId; messages: number }[]; // цепочка agent-1 → agent-2 → …
+  edges: { from: AgentId; to: AgentId; messages: number }[]; // рёбра по фактическим сообщениям (изменено спекой 022, 4.6)
   result: string | null;
   failure: { reason: string; detail?: string } | null;
   lastSeq: number;
@@ -222,15 +222,15 @@ export function applyEvent(view: SwarmView | null, event: PlatformEvent): SwarmV
 export function projectSwarm(events: PlatformEvent[]): SwarmView; // = events.reduce(applyEvent, null)
 ```
 
-Правила:
+Правила. *Изменено спекой 022 (D-84):* рёбер по порядку списка нет, рёбра появляются по фактическим сообщениям. Полные правила проекции — с полями `steps` и `model`, событиями `agent.step` и `agent.idle` — в 022, 4.6.
 
 | Событие | Рой | Агент |
 |---|---|---|
-| `swarm.created` | создаётся, `starting`; агенты из `data.agents`, все `starting`; рёбра цепочки с `messages: 0` | — |
+| `swarm.created` | создаётся, `starting`; агенты из `data.agents`, все `starting`; `edges` пуст | — |
 | `swarm.started` | `running` | — |
 | `agent.started` | — | `idle` |
 | `agent.working` | — | `working` |
-| `bus.message` | `to` — `messagesIn + 1`; если `from` — агент: его `messagesOut + 1`, статус `idle`, ребро `from → to` — `messages + 1` | — |
+| `bus.message` | `to` — `messagesIn + 1`; если `from` — агент: `messagesOut + 1`, ребро `from → to` создаётся с `messages: 1` или увеличивается; статус не меняется (изменено спекой 022, 4.6) | — |
 | `agent.result` | — | `done` |
 | `agent.stopped` | — | `stopped`, если не `done` и не `failed` |
 | `agent.failed` | — | `failed` |
@@ -429,8 +429,8 @@ Docker-адаптер (`packages/adapter-docker`) переводит это в �
 - Адреса: UI ходит в API относительным путём `/api/...` (REST и WebSocket), прокси снимает префикс `/api` и отправляет в `api`. Как отдаётся UI — Q-4.
 - Экраны:
   - `/` — список роёв: задача, статус, число агентов, время; кнопка «Новый рой»;
-  - `/swarms/new` — форма: задача; агенты — имя и роль, добавить и удалить, порядок сверху вниз = порядок цепочки; «Запустить» → переход на страницу роя;
-  - `/swarms/:id` — граф: узлы-агенты в порядке цепочки, цвет по статусу, на рёбрах число сообщений; лента событий с текстом сообщений; результат или причина ошибки; «Стоп», пока рой `starting` или `running`.
+  - `/swarms/new` — форма: задача; агенты — имя и роль, добавить и удалить; первый агент — агент-вход (`agent-1`), порядок не задаёт цепочку (*изменено спекой 022, D-84*); «Запустить» → переход на страницу роя;
+  - `/swarms/:id` — граф: агенты по кругу в порядке id, цвет по статусу, рёбра `from → to` по фактическим сообщениям с числом сообщений; лента событий с текстом сообщений; результат или причина ошибки; «Стоп», пока рой `starting` или `running` (*изменено спекой 022, D-84*: граф — 022, 4.10).
 - Граф рисуется своим SVG-компонентом, без библиотеки (Q-4).
 - Пользовательский текст (задача, роли, сообщения) выводится только интерполяцией Angular, без `innerHTML`.
 
@@ -443,10 +443,11 @@ Docker-адаптер (`packages/adapter-docker`) переводит это в �
 | `AGENT_TEMPLATE` | `orchestrator` | `swag-agent:dev` | окружение агента для провайдера песочниц; для Docker — тег образа |
 | `DOCKER_AGENT_NETWORK` | `orchestrator` (Docker-адаптер) | `swag_default` | сеть compose для контейнеров агентов |
 | `DOCKER_AGENT_NATS_URL` | `orchestrator` (Docker-адаптер) | `nats://nats:4222` | адрес NATS изнутри контейнера агента |
-| `AGENT_STEP_DELAY_MS` | `orchestrator` → агент | `1000` | пауза эстафеты |
 | `AGENT_START_TIMEOUT_MS` | `orchestrator` | `30000` | ожидание `agent.started` от всех |
 | `SWARM_TIMEOUT_MS` | `orchestrator` | `300000` | предельное время роя |
 | `UI_PORT` | `ui` | `4200` | порт UI на `127.0.0.1` |
+
+*Изменено спекой 022 (D-84).* Строка `AGENT_STEP_DELAY_MS` удалена: пауза эстафеты больше не нужна, ход агента не ждёт таймера (022, 4.8). Лимиты агента — в 022, 4.8.
 
 Схемы: `ApiConfig` и `OrchestratorConfig` расширяются, `AgentConfig` — новая, без `BaseConfig`: агенту не нужен `DATABASE_URL`. Значения лимитов и таймаутов — Q-3.
 
