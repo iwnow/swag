@@ -1,7 +1,7 @@
 ---
 id: "003"
 title: История роёв
-status: ready
+status: in-progress
 roadmap_stage: 3
 depends_on: ["001", "016", "022"]
 superseded_by: null
