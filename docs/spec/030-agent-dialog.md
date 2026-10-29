@@ -161,7 +161,7 @@ export type UpstreamResponse =
 Выполняются по порядку. После каждой задачи — коммит.
 
 - [x] **T-1.** `packages/agent-core/src/loop.ts` и его тест: `yieldTurn`, итог `yielded` по 4.1. Закрывает: REQ-030-1, REQ-030-2, AC-030-1…3. Готово, когда: тесты AC-030-1…3 и все прежние тесты `loop` зелёные.
-- [ ] **T-2.** `packages/agent-core/src/prompt.ts` и его тест: результат `send_message` по 4.2. Закрывает: REQ-030-3, AC-030-4. Готово, когда: тест AC-030-4 зелёный, AC-022-14 зелёный.
+- [x] **T-2.** `packages/agent-core/src/prompt.ts` и его тест: результат `send_message` по 4.2. Закрывает: REQ-030-3, AC-030-4. Готово, когда: тест AC-030-4 зелёный, AC-022-14 зелёный.
 - [ ] **T-3.** `packages/agent-core/src/index.ts` и его тест: `yielded` → `agent.idle` по 4.3; тест AC-030-5; тест AC-022-13 переписан под один `agent.step` на ход (`stepIndex` 1 и 2). Закрывает: REQ-030-4, REQ-030-5, AC-030-5. Готово, когда: тесты `agent-core` зелёные; README `agent-core` — раздел про ход агента.
 - [ ] **T-4.** `packages/ui-core`: `unreadMessageIds` по 4.4 и тест AC-030-7; экспорт из индекса. Закрывает: REQ-030-6, AC-030-7. Готово, когда: тест зелёный, README `ui-core` обновлён.
 - [ ] **T-5.** `apps/ui/cabinet/src/app/swarm.page.ts` (и его шаблон): отметка «не прочитано» по 4.4. Закрывает: REQ-030-6. Готово, когда: `npm run build` зелёный, README кабинета обновлён. Ручная проверка — в T-9.

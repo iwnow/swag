@@ -162,8 +162,26 @@ describe('промпт и инструменты агента роя (спека
     const send = vi.fn(async () => {});
     const [sendTool] = swarmTools(entry, send);
     const outcome = await sendTool?.execute({ to: 'agent-3', text: 'цифры' });
-    expect(outcome).toEqual({ content: 'ok: отправлено agent-3' });
+    expect(outcome).toEqual({
+      content: 'ok: отправлено agent-3. Ответ придёт отдельным сообщением.',
+      yieldTurn: true,
+    });
     expect(send).toHaveBeenCalledWith('agent-3', 'цифры');
+  });
+
+  it('AC-030-4: send_message успешный — yieldTurn и колбэк; неверный адресат — error без yieldTurn, колбэк не вызван', async () => {
+    const send = vi.fn(async () => {});
+    const [sendTool] = swarmTools(entry, send);
+    expect(await sendTool?.execute({ to: 'agent-2', text: 'x' })).toEqual({
+      content: 'ok: отправлено agent-2. Ответ придёт отдельным сообщением.',
+      yieldTurn: true,
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+
+    const rejected = await sendTool?.execute({ to: 'agent-9', text: 'x' });
+    expect(rejected?.content).toMatch(/^error: /);
+    expect(rejected).not.toHaveProperty('yieldTurn');
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   it('AC-022-12: finish возвращает stop с результатом, пустой текст и лишние поля — ошибка', async () => {
