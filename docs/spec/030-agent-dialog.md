@@ -1,7 +1,7 @@
 ---
 id: "030"
 title: Диалог агентов роя
-status: in-progress
+status: review
 roadmap_stage: 2
 depends_on: ["022"]
 superseded_by: null
@@ -168,7 +168,7 @@ export type UpstreamResponse =
 - [x] **T-6.** `apps/api/test/e2e.test.ts`: тест AC-030-6; `apps/api/package.json` — `@swag/agent-core`, `@swag/orchestrator-core` и `@swag/ui-core` в `devDependencies`, при необходимости `references` в tsconfig (из N-13). Закрывает: REQ-030-5, AC-030-6. Готово, когда: тест зелёный, `npm run arch:check` зелёный.
 - [x] **T-7.** `packages/llm-gateway-core/src/index.ts` и его тест: `UpstreamResponse` с `aborted`, публикация по 4.5. Закрывает: REQ-030-7, AC-030-8. Готово, когда: тесты gateway зелёные, README `llm-gateway-core` обновлён.
 - [x] **T-8.** `packages/adapter-litellm/src/index.ts` и его тест: `complete` возвращает `aborted` по 4.5. Закрывает: REQ-030-7, AC-030-9. Готово, когда: тест AC-030-9 и прежние тесты адаптера зелёные, README адаптера обновлён.
-- [ ] **T-9.** Тексты и ручные проверки: 022 — 4.2, 4.4 (шаг 6), 4.5 (таблица инструментов), AC-022-13; 002 — 4.4 (обычный вызов, обрыв клиентом); пометка «изменено спекой 030», запись в журналы 022 и 002; глоссарий — строки «Итог цикла» и «Инструмент агента» дополнить `yielded` и `yieldTurn` (новые строки 4.6 уже добавлены); ручные AC-030-10, AC-030-11; `npm run check`. Закрывает: AC-030-10, AC-030-11. Готово, когда: проверки в журнале, `npm run check` зелёный, статус `review`.
+- [x] **T-9.** Тексты и ручные проверки: 022 — 4.2, 4.4 (шаг 6), 4.5 (таблица инструментов), AC-022-13; 002 — 4.4 (обычный вызов, обрыв клиентом); пометка «изменено спекой 030», запись в журналы 022 и 002; глоссарий — строки «Итог цикла» и «Инструмент агента» дополнить `yielded` и `yieldTurn` (новые строки 4.6 уже добавлены); ручные AC-030-10, AC-030-11; `npm run check`. Закрывает: AC-030-10, AC-030-11. Готово, когда: проверки в журнале, `npm run check` зелёный, статус `review`.
 
 ## 9. Открытые вопросы
 
@@ -189,3 +189,67 @@ export type UpstreamResponse =
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+| 2026-10-29 | `spec/030-t1`, PR #75 / `464b56d` | T-1–T-3: `ToolOutcome.yieldTurn`, итог цикла `yielded` (stop важнее yieldTurn), `send_message` уступает ход с текстом `ok: отправлено {to}. Ответ придёт отдельным сообщением.`, по `yielded` — `agent.idle`. Тесты `apps/agent` и `apps/api` переведены на уступку хода: подставной шлюз отвечает только `send_message`, `team()` в e2e — без ответа после `send_message` | AC-022-28 «после напоминания»: при непустом ожидании ветка напоминания после `send_message` недостижима, тест проверяет уступку хода вместо напоминания — заметка N-16 |
+| 2026-10-29 | `spec/030-t4`, PR #76 / `4ac391e` | T-4, T-5: `unreadMessageIds(feed, status)` в `ui-core`, отметка « · не прочитано» в ленте кабинета | — |
+| 2026-10-29 | `spec/030-t7`, PR #77 / `24a531b` | T-7, T-8: обрыв клиентом обычного вызова — `llm.call` со статусом `aborted` и `info`-логом в `llm-gateway-core`; адаптер LiteLLM отдаёт `aborted` (`transportFailure`, `withoutAborted`), тест оболочки gateway «клиент ушёл» ждёт `aborted` без `errorCode` | Спека 030 заменила трактовку D-58 (обрыв клиентом — `upstream_error`) на `aborted` по REQ-030-7 |
+| 2026-10-29 | `spec/030-t6`, PR #78 / `bf1c2aa` | T-6: сквозной тест диалога агентов (AC-030-6) в `apps/api` | — |
+| 2026-10-29 | `spec/030-t9` | T-9: тексты 022 (4.2, 4.4, 4.5, AC-022-13), 002 (4.4) и глоссарий; ручные AC-030-10, AC-030-11 | В 002 исправлен и 4.5 (адаптер: обрыв клиентом — `aborted`), хотя «Меняет 002» называет только 4.4: без правки 4.5 противоречил бы 4.4 и коду T-8 |
+
+**AC-030-10** (`LLM_PROFILE=test`, `npm run up`). Задача роя собрана `JSON.stringify` — `agent-1` в одном шаге шлёт `agent-2` и вызывает `finish`, `agent-2` по тексту сообщения отвечает `agent-1`:
+
+```
+__tool_calls__[{"name":"send_message","arguments":{"to":"agent-2","text":"ответ агенту-1 __tool_calls__[{\"name\":\"send_message\",\"arguments\":{\"to\":\"agent-1\",\"text\":\"ответ агента-2\"}}]"}},{"name":"finish","arguments":{"result":"итог роя"}}]
+```
+
+Рой `1ba61f22-8630-4c6a-b84d-02c1a0804bbf`, `completed`. Лента (отметка — как в UI):
+
+```
+#6  bus.message user→agent-1            mid=fb8f91bc
+#8  agent.working agent-1               mid=fb8f91bc
+#9  llm.call agent-1 ok
+#10 agent.step agent-1
+#11 bus.message agent-1→agent-2         mid=03fde3ea
+#12 agent.result agent-1
+#13 agent.working agent-2               mid=03fde3ea
+#14 llm.call agent-2 ok
+#15 agent.step agent-2
+#16 bus.message agent-2→agent-1 · не прочитано   mid=8c7a6bd5
+#17 agent.idle agent-2
+#18 agent.stopped agent-1
+#19 agent.stopped agent-2
+#20 swarm.completed
+```
+
+«Не прочитано» — только у #16: у #6 и #11 есть `agent.working` (#8, #13). Пока шёл рой `714a6bfa-4a7d-4ad0-b162-1be784e89914` (статус «работает», лента до #18 `agent.idle`), отметок в UI не было; затем рой остановлен. Результат: пройдено.
+
+**AC-030-11** (`LLM_PROFILE=dev`, S-3: «четверостишие про осень», «Автор» и «Редактор» на `chat-small`), три прогона:
+
+```
+прогон 1 fc563692-…: swarm_timeout
+#11 bus.message agent-1→agent-2 mid=69cc1d1d
+#12 agent.idle agent-1
+#13 agent.working agent-2 mid=69cc1d1d
+#16 bus.message agent-2→agent-1 mid=a8a7a176
+#17 agent.idle agent-2
+#18 agent.working agent-1 mid=a8a7a176
+#21 bus.message agent-1→agent-2 mid=44d3fc04
+#22 agent.idle agent-1
+#23 agent.working agent-2 mid=44d3fc04
+#25 agent.step agent-2 2 (без инструментов)
+#26 agent.idle agent-2
+#29 swarm.failed swarm_timeout
+непрочитано: нет
+
+прогон 2 6a40d0d5-…: agent-1 — agent.failed model_error:max_tokens на первом шаге, agent-2 не писал
+
+прогон 3 e453b605-…: swarm_timeout
+#11 bus.message agent-1→agent-2 mid=ce962d1f
+#12 agent.idle agent-1
+#13 agent.working agent-2 mid=ce962d1f
+#15 agent.step agent-2 1 (без инструментов)
+#16 agent.idle agent-2
+#19 swarm.failed swarm_timeout
+непрочитано: нет
+```
+
+В прогонах 1 и 3, где `agent-1` писал `agent-2`: после каждого такого `bus.message` у `agent-1` — `agent.idle`; ответ `agent-2` (прогон 1, #16) обработан ходом `agent-1` (#18 с его `messageId`); непрочитанных сообщений нет. Ни один прогон не дошёл до `agent.result`: бесплатные модели заканчивали шаг `agent-2` без инструментов, рой падал по `swarm_timeout`, — поэтому условие «`llm.call` после `agent.result` — только `ok` или `aborted`» на живых моделях не проверено; путь `aborted` закрыт тестами AC-030-8 и AC-030-9. Результат: пройдено в проверяемой части, итог роёв — не 030 (поведение моделей).
