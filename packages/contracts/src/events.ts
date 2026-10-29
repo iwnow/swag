@@ -46,6 +46,7 @@ export const PlatformEventInput = z.discriminatedUnion('type', [
         'orchestrator_unavailable',
         'sandbox_error',
         'agent_failed',
+        'api_restarted',
       ]),
       detail: z.string().optional(),
     }),
