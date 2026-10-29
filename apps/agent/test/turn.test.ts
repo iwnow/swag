@@ -248,8 +248,8 @@ describe('ход агента', () => {
     expect(run.memory.logRecords.length).toBe(run.logsBeforeTurn);
     expect(run.memory.finishedSpans.some((s) => s.name === 'agent.start')).toBe(true);
 
-    // Два запроса к шлюзу (до и после результата инструмента), заголовки и трассировка.
-    expect(run.requests).toHaveLength(2);
+    // Один запрос к шлюзу: send_message уступает ход (030), второго вызова модели в ходе нет. Заголовки и трассировка.
+    expect(run.requests).toHaveLength(1);
     for (const request of run.requests) {
       expect(request.headers['x-swag-swarm-id']).toBe(SWARM);
       expect(request.headers['x-swag-agent-id']).toBe(AGENT);
