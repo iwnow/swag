@@ -1,8 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { SwarmCreateRequest } from '../src/index.ts';
+import { PlatformEventInput, SwarmCreateRequest } from '../src/index.ts';
 
 const agent = (i: number, role = 'роль') => ({ name: `Агент ${i}`, role });
 const request = (agents: unknown[], task = 'Задача') => ({ task, agents });
+const SWARM = '0b6f6d2e-6a4c-4c3e-9f5e-111111111111';
+const swarmFailed = (reason: string) => ({
+  id: '0b6f6d2e-6a4c-4c3e-9f5e-333333333333',
+  swarmId: SWARM,
+  ts: '2026-10-29T10:00:00.000Z',
+  agentId: null,
+  traceId: null,
+  source: 'api',
+  type: 'swarm.failed',
+  data: { reason },
+});
+
+describe('swarm.failed', () => {
+  it('REQ-003-6: swarm.failed принимает причину api_restarted', () => {
+    expect(PlatformEventInput.safeParse(swarmFailed('api_restarted')).success).toBe(true);
+  });
+
+  it('REQ-003-6: swarm.failed отклоняет неизвестную причину', () => {
+    expect(PlatformEventInput.safeParse(swarmFailed('unknown_reason')).success).toBe(false);
+  });
+});
 
 describe('SwarmCreateRequest', () => {
   it('AC-001-1: принимает запрос с 1 и с 8 агентами', () => {

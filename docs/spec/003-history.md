@@ -1,7 +1,7 @@
 ---
 id: "003"
 title: История роёв
-status: ready
+status: in-progress
 roadmap_stage: 3
 depends_on: ["001", "016", "022"]
 superseded_by: null
@@ -222,7 +222,7 @@ drop table swarms;
 
 Выполняются по порядку. После каждой задачи — коммит. T-2…T-4 ломают сборку по отдельности, поэтому идут через промежуточную фича-ветку `spec/003-store` (правило [implement-spec](../../.claude/skills/implement-spec/SKILL.md#ветка-на-этап)).
 
-- [ ] **T-1.** `packages/contracts/src/events.ts`: `api_restarted` в `swarm.failed.reason` (4.1); тест разбора в `packages/contracts/test`; глоссарий. Закрывает: часть REQ-003-6. Готово, когда: тесты `contracts` зелёные.
+- [x] **T-1.** `packages/contracts/src/events.ts`: `api_restarted` в `swarm.failed.reason` (4.1); тест разбора в `packages/contracts/test`; глоссарий. Закрывает: часть REQ-003-6. Готово, когда: тесты `contracts` зелёные.
 - [ ] **T-2.** `packages/api-integration/src/swarm-view.ts`: окончательный итоговый статус (4.3), тест AC-003-7 в `packages/api-integration/test`. Закрывает: REQ-003-7, AC-003-7. Готово, когда: тесты пакета зелёные.
 - [ ] **T-3.** `packages/api-core/src/index.ts`: асинхронный `SwarmStore` и `ApiCore` по 4.2 — очередь записи, подписка с буфером; `packages/adapter-memory/src/index.ts` на асинхронный порт; `apps/api/src/app.ts` ждёт `Promise`; существующие тесты `api-core` и `apps/api` — `await` без изменения ожиданий; тесты AC-003-4, AC-003-5 в `packages/api-core/test`. Закрывает: REQ-003-3, REQ-003-4, REQ-003-10, AC-003-4, AC-003-5, AC-003-9. Готово, когда: `npm run check` зелёный.
 - [ ] **T-4.** `packages/api-core/src/index.ts`: `closeInterrupted` (4.2), тест AC-003-6. Закрывает: REQ-003-6 (ядро), AC-003-6. Готово, когда: тесты `api-core` зелёные.
