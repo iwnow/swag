@@ -127,6 +127,7 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
   async function publishOutcome(messageId: string, loop: TurnOutcome): Promise<void> {
     switch (loop.kind) {
       case 'text':
+      case 'yielded':
         await bus.publishEvent({ ...envelope(), type: 'agent.idle', data: { messageId } });
         return;
       case 'empty_result':
