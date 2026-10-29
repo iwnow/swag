@@ -15,6 +15,11 @@
     "@swag/contracts": "0.0.0",
     "fastify": "5.12.7"
   },
+  "devDependencies": {
+    "@swag/agent-core": "0.0.0",
+    "@swag/orchestrator-core": "0.0.0",
+    "@swag/ui-core": "0.0.0"
+  },
   "scripts": {
     "start": "node src/main.ts"
   }
