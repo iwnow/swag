@@ -9,7 +9,7 @@
 
 ## Что внутри сейчас
 
-- `src/swarm-view.ts` — тип `SwarmView` (агенты с `model` и `steps`), `applyEvent`, `projectSwarm`. Правила — спека 022, 4.6 (с 022 заменяют таблицу 4.4 спеки 001 в части `bus.message`, `agent.step`, `agent.idle`).
+- `src/swarm-view.ts` — тип `SwarmView` (агенты с `model` и `steps`), `applyEvent`, `projectSwarm`, `FINAL_SWARM_STATUSES` (итоговые статусы роя `completed`, `stopped`, `failed`; используются ядром `api-core`). Правила — спека 022, 4.6 (с 022 заменяют таблицу 4.4 спеки 001 в части `bus.message`, `agent.step`, `agent.idle`).
 - `test/swarm-view.test.ts` — AC-001-2 (таблица 4.4 с правками 4.6, рёбра при создании пустые), AC-022-2 (`steps`, рёбра по сообщениям, `bus.message` не меняет статус, `agent.idle` и `done`) и AC-003-7 (итоговый статус роя окончателен).
 
 ## Правила проекции (022, 4.6)

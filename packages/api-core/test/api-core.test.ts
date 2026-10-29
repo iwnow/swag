@@ -495,4 +495,41 @@ describe('api-core', () => {
     const unknown = await core.subscribe(uuid(4242), 0, () => undefined);
     expect(unknown.ok === false && unknown.error.code).toBe('not_found');
   });
+
+  it('лимит активных роёв держится при параллельных createSwarm (MAX_ACTIVE_SWARMS)', async () => {
+    const { core } = setup({
+      maxActiveSwarms: 1,
+      store: slowStore(createMemorySwarmStore(), () => 1),
+    });
+    const results = await Promise.all([core.createSwarm(body(1)), core.createSwarm(body(1))]);
+    const codes = results.map((r) => (r.ok ? 'ok' : r.error.code)).sort();
+    expect(codes).toEqual(['ok', 'too_many_active_swarms']);
+  });
+
+  it('сбой записи swarm.created: createSwarm отклоняется, оркестратор не вызывается', async () => {
+    const store: SwarmStore = {
+      ...createMemorySwarmStore(),
+      appendEvent: () => Promise.reject(new Error('запись отклонена')),
+    };
+    const { core, launches } = setup({ store });
+    await expect(core.createSwarm(body(1))).rejects.toThrow('swarm.created не записан');
+    expect(launches).toHaveLength(0);
+  });
+
+  it('сбой слушателя не мешает остальным подписчикам роя', async () => {
+    const { core, logs } = setup();
+    const created = await core.createSwarm(body(1));
+    if (!created.ok) throw new Error('не создан');
+    const id = created.value.id;
+    const seen: number[] = [];
+    await core.subscribe(id, 1, () => {
+      throw new Error('слушатель сломан');
+    });
+    await core.subscribe(id, 1, (e) => seen.push(e.seq));
+    await core.ingestEvent(
+      sys(id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
+    );
+    expect(seen).toEqual([2]);
+    expect(logs).toContain('listener failed');
+  });
 });

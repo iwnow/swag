@@ -120,7 +120,7 @@ describe('трассировка HTTP api → orchestrator', () => {
     expect(response.status).toBe(201);
     const swarm = (await response.json()) as { id: string };
 
-    await vi.waitFor(async () =>
+    await vi.waitFor(() =>
       expect(
         memory.finishedSpans.filter(
           (s) => s.spanContext().traceId === TRACE && s.kind === SpanKind.SERVER,
@@ -163,7 +163,7 @@ describe('трассировка HTTP api → orchestrator', () => {
       agents: [{ name: 'A', role: `роль ${marker}` }],
     });
     expect(response.status).toBe(201);
-    await vi.waitFor(async () =>
+    await vi.waitFor(() =>
       expect(memory.finishedSpans.filter((s) => s.kind === SpanKind.SERVER)).toHaveLength(2),
     );
 

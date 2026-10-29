@@ -104,8 +104,7 @@ describe('WebSocket /swarms/:id/stream', () => {
     const address = app.server.address();
     const port = typeof address === 'object' && address ? address.port : 0;
 
-    const created = await core.createSwarm(body(1));
-    const swarm = await created;
+    const swarm = await core.createSwarm(body(1));
     if (!swarm.ok) throw new Error('не создан');
     const id = swarm.value.id;
     for (let n = 1; n <= 4; n += 1) {

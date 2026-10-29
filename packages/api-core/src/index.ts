@@ -106,25 +106,27 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
   const subscribers = new Map<string, Set<Subscriber>>();
   // Очередь записи (REQ-003-3): записи одного роя идут цепочкой, разных роёв — параллельно.
   const queues = new Map<string, Promise<unknown>>();
+  // Лимит MAX_ACTIVE_SWARMS: рои, для которых createSwarm уже резервирует место до записи swarm.created.
+  let reserving = 0;
 
-  function deliver(sub: Subscriber, event: PlatformEvent): void {
+  function deliver(swarmId: string, sub: Subscriber, event: PlatformEvent): void {
     if (sub.closed || event.seq <= sub.last) return;
     sub.last = event.seq;
-    sub.listener(event);
+    try {
+      sub.listener(event);
+    } catch (error) {
+      log.warn('listener failed', { swarmId, err: error });
+    }
   }
 
   // Единственная точка записи события роя: номер назначает ядро, рассылка — подписчикам.
   function commit(swarmId: string, input: PlatformEventInput): Promise<PlatformEvent | null> {
     const write = async (): Promise<PlatformEvent | null> => {
+      let event: PlatformEvent;
       try {
         const seq = ((await store.view(swarmId))?.lastSeq ?? 0) + 1;
-        const event = { ...input, seq } as PlatformEvent;
+        event = { ...input, seq } as PlatformEvent;
         await store.appendEvent(event);
-        for (const sub of subscribers.get(swarmId) ?? []) {
-          if (sub.reading) sub.buffer.push(event);
-          else deliver(sub, event);
-        }
-        return event;
       } catch (error) {
         log.warn(input.type === 'bus.message' ? 'message dropped' : 'event dropped', {
           swarmId,
@@ -134,6 +136,12 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         });
         return null;
       }
+      // Рассылка вне try записи: сбой слушателя не должен попасть в «event dropped».
+      for (const sub of subscribers.get(swarmId) ?? []) {
+        if (sub.reading) sub.buffer.push(event);
+        else deliver(swarmId, sub, event);
+      }
+      return event;
     };
     const written = (queues.get(swarmId) ?? Promise.resolve()).then(write);
     // Цепочка не копит отказы: write ловит всё внутри, это страховка.
@@ -161,12 +169,13 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
       }
       const views = await store.views();
       const active = views.filter((v) => v.status === 'starting' || v.status === 'running').length;
-      if (active >= deps.limits.maxActiveSwarms) {
+      if (active + reserving >= deps.limits.maxActiveSwarms) {
         return fail(
           'too_many_active_swarms',
           `Активных роёв не больше ${deps.limits.maxActiveSwarms}`,
         );
       }
+      reserving += 1;
 
       const swarmId = ids.uuid();
       const agents: AgentSpec[] = parsed.data.agents.map((draft, i) => ({
@@ -174,16 +183,21 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         id: `agent-${i + 1}` as AgentId,
       }));
       const ts = clock.now();
-      await commit(swarmId, {
-        id: ids.uuid(),
-        swarmId,
-        ts,
-        source: 'api',
-        agentId: null,
-        traceId: trace.currentTraceId(),
-        type: 'swarm.created',
-        data: { task: parsed.data.task, agents },
-      });
+      try {
+        const created = await commit(swarmId, {
+          id: ids.uuid(),
+          swarmId,
+          ts,
+          source: 'api',
+          agentId: null,
+          traceId: trace.currentTraceId(),
+          type: 'swarm.created',
+          data: { task: parsed.data.task, agents },
+        });
+        if (created === null) throw new Error('swarm.created не записан');
+      } finally {
+        reserving -= 1;
+      }
       log.info('swarm created', { swarmId, agents: agents.length });
 
       try {
@@ -304,9 +318,9 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         registered.delete(sub);
       };
       try {
-        for (const event of await store.events(swarmId, after)) deliver(sub, event);
+        for (const event of await store.events(swarmId, after)) deliver(swarmId, sub, event);
         sub.reading = false;
-        for (const event of sub.buffer) deliver(sub, event);
+        for (const event of sub.buffer) deliver(swarmId, sub, event);
         sub.buffer = [];
       } catch (error) {
         unsubscribe();
