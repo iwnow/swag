@@ -13,16 +13,10 @@ import {
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import pg from 'pg';
+import { onHost } from './host-url.ts';
 
 const TIMEOUT_MS = 5000;
 const execFileAsync = promisify(execFile);
-
-/** Адрес из сети compose → адрес на хосте: имя сервиса заменяется на 127.0.0.1, порт тот же. */
-function onHost(url: string): string {
-  const parsed = new URL(url);
-  parsed.hostname = '127.0.0.1';
-  return parsed.toString();
-}
 
 function readConfig() {
   try {

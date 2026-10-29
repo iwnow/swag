@@ -29,6 +29,7 @@
     "dev": "docker compose -f compose.yaml -f compose.dev.yaml up --build --watch",
     "down": "docker compose down",
     "infra:check": "node --env-file-if-exists=.env scripts/infra-check.ts",
+    "db:migrate": "node --env-file-if-exists=.env scripts/db-migrate.ts",
     "llm:ping": "node --env-file-if-exists=.env scripts/llm-ping.ts"
   },
   "devDependencies": {
