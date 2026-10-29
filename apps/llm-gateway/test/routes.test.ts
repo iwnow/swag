@@ -339,7 +339,7 @@ describe('оболочка llm-gateway: ответ JSON и отмена (спе�
     expect(gateway.events).toMatchObject([{ data: { status: 'ok' } }]);
   });
 
-  it('клиент ушёл до ответа — вызов апстрима отменён: фейк видит закрытие, событие error upstream_error по D-58 (без AC-id)', async () => {
+  it('клиент ушёл до ответа — вызов апстрима отменён: фейк видит закрытие, событие aborted без errorCode (спека 030, REQ-030-7; без AC-id)', async () => {
     const gateway = await openGateway();
     const base = await listenUrl(gateway.app);
     const request = http.request(`${base}/v1/chat/completions`, {
@@ -356,9 +356,8 @@ describe('оболочка llm-gateway: ответ JSON и отмена (спе�
       () => gateway.fake.requests[0]?.closedByClient === true && gateway.events.length === 1,
       3000,
     );
-    expect(gateway.events).toMatchObject([
-      { data: { status: 'error', errorCode: 'upstream_error' } },
-    ]);
+    expect(gateway.events).toMatchObject([{ data: { status: 'aborted' } }]);
+    expect(gateway.events[0]?.data).not.toHaveProperty('errorCode');
   });
 });
 
