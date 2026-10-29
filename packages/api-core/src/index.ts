@@ -84,6 +84,7 @@ export interface ApiCore {
     after: number,
     listener: (e: PlatformEvent) => void,
   ): Promise<Result<() => void>>;
+  closeInterrupted(): Promise<number>; // REQ-003-6; число закрытых роёв
 }
 
 // Подписчик роя: пока читается история, события копятся в buffer; потом уходят напрямую.
@@ -327,6 +328,32 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         throw error;
       }
       return ok(unsubscribe);
+    },
+
+    async closeInterrupted() {
+      let closed = 0;
+      for (const view of await store.views()) {
+        if (view.status !== 'starting' && view.status !== 'running') continue;
+        const id = view.id;
+        try {
+          await orchestrator.stop(id);
+        } catch (error) {
+          log.warn('interrupted stop failed', { swarmId: id, err: error });
+        }
+        const event = await commit(id, {
+          id: ids.uuid(),
+          swarmId: id,
+          ts: clock.now(),
+          source: 'api',
+          agentId: null,
+          traceId: null,
+          type: 'swarm.failed',
+          data: { reason: 'api_restarted' },
+        });
+        if (event !== null) closed += 1;
+      }
+      log.info('interrupted swarms closed', { count: closed });
+      return closed;
     },
   };
 }
