@@ -1,7 +1,7 @@
 ---
 id: "003"
 title: История роёв
-status: review
+status: done
 roadmap_stage: 3
 depends_on: ["001", "016", "022"]
 superseded_by: null
@@ -179,7 +179,7 @@ drop table swarms;
   limits_config:
     retention_period: ${TELEMETRY_RETENTION}
   ```
-- `infra/lgtm/tempo-config.yaml` — копия `/otel-lgtm/tempo-config.yaml` плюс `compactor: { compaction: { block_retention: ${TELEMETRY_RETENTION} } }`.
+- `infra/lgtm/tempo-config.yaml` — копия `/otel-lgtm/tempo-config.yaml` плюс `backend_worker: { compaction: { block_retention: ${TELEMETRY_RETENTION} } }` (в Tempo 3.x секции `compactor` нет; удаление по сроку выполняет backend-worker — D-87).
 - Сервис `lgtm`: тома `./infra/lgtm/loki-config.yaml:/otel-lgtm/loki-config.yaml:ro` и `./infra/lgtm/tempo-config.yaml:/otel-lgtm/tempo-config.yaml:ro`; env `TELEMETRY_RETENTION: ${TELEMETRY_RETENTION}`, `LOKI_EXTRA_ARGS: -config.expand-env=true`, `TEMPO_EXTRA_ARGS: -config.expand-env=true`, `PROMETHEUS_EXTRA_ARGS: --storage.tsdb.retention.time=${TELEMETRY_RETENTION}`.
 - `ObservabilityConfig` в `packages/config`: `TELEMETRY_RETENTION: z.string().regex(/^[1-9][0-9]*h$/)` с проверкой `>= 24` часов.
 
@@ -271,6 +271,7 @@ drop table swarms;
 | 2026-10-29 | spec/003-t7 | T-7: `main.ts` собирает `api` на Postgres по 4.5; общий `startApiCore` (`apps/api/src/start.ts`) для `main.ts` и теста AC-003-8; compose ждёт `postgres` в состоянии `service_healthy` | Параметр `schema` у `startApiCore` — только для изоляции тестов (`search_path` и схема миграций); в `main.ts` не передаётся, схема `public`. При ошибке миграций две строки лога: `migrations failed` (по спеке, с причиной) и `startup failed` из `main.ts` (код 1). `@swag/adapter-memory` перенесён в `devDependencies` `apps/api`: нужен только тестам. |
 | 2026-10-29 | spec/003-t9 | T-9: `TELEMETRY_RETENTION` в `ObservabilityConfig` (формат `<целое>h`, не меньше `24h`, без значения по умолчанию), тест AC-003-10 (конфиг), `.env.example` — `24h`. T-10: `infra/lgtm/loki-config.yaml` и `tempo-config.yaml` — копии из `grafana/otel-lgtm:0.37.0` со сроком хранения, сервис `lgtm` в compose по 4.7, тест AC-003-10 в `scripts/repo.test.ts`, README — значения dev `24h` и прод `168h` | В Tempo 3.1.0 из образа нет секции `compactor` (Tempo не стартует: `field compactor not found`), поэтому срок задан ключом `backend_worker.compaction.block_retention: ${TELEMETRY_RETENTION}`. По исходникам v3.1.0 удаление по сроку выполняет backend-worker (`processRetentionJob` → `RetainTenantWithConfig` с `backend_worker.compaction`, перекрывается только per-tenant `overrides.defaults.compaction.block_retention`, у нас не задан); `backend_scheduler…block_retention` (336h в `/status/config`) не читается. Эффективные значения в контейнере при `24h`: Loki `retention_period: 1d`, Prometheus `storage.tsdb.retention.time: 1d`, Tempo `backend_worker.compaction.block_retention: 24h0m0s`. Заметки N-15 в `notes.md` уже нет: удалена при создании спеки. |
 | 2026-10-29 | spec/003-t11 | T-11: ручные проверки на `npm run up` (Windows, Docker Desktop, `LLM_PROFILE=test`, `TELEMETRY_RETENTION=24h` в окружении команды). **AC-003-12 — прошла**: Loki `retention_enabled: true`, `retention_period: 1d` (= 24h); Tempo `backend_worker…block_retention: 24h0m0s`; Prometheus `storage.tsdb.retention.time: 1d`; свежие данные есть в Loki и Tempo (раздел 7). **AC-003-11 — прошла**: первый рой `completed` (24 события, результат «итог роя»), второй («по кругу») `running` → `docker compose restart api` → `failed` `api_restarted` (29 событий), оба в `GET /swarms`, `docker ps -a --filter label=swag.kind` пуст; страницы UI после обновления показывают оба роя. **NFR-003-2**: 3 прогона, p50 2,77 / 2,77 / 2,79 мс, p95 3,75 / 3,72 / 3,67 мс. README `contracts`, `api-integration`, `apps/api` и корневой сверены с кодом, `api-core`, `adapter-memory`, `adapter-postgres`, `config` — без расхождений. Вывод проверок — в подразделе «Ручные проверки» ниже | (1) В локальном `.env` нет `TELEMETRY_RETENTION` и стоит `LLM_PROFILE=dev`: обе переменные переданы в окружении команд compose, `.env` не менялся. (2) Скриншоты не сняты: текст страниц UI получен встроенным браузером (`get_page_text`, `innerText`). (3) Loki и Prometheus показывают срок как `1d` — это 24h в другой записи. (4) README: в `apps/api` порядок остановки дополнен `pool.end()`; в `contracts` и `api-integration` в «Спеки» добавлена 003; в корневом README — Postgres среди адаптеров, `db-migrate` среди скриптов, `POSTGRES_TEST_URL` и команда замера. |
+| 2026-10-29 | `spec/003-done` | Приёмка: человек принял по рекомендациям. D-86 — «а»: сбой записи `swarm.created` — HTTP 500 `internal_error`, отдельного кода нет. D-87 — «а»: 4.7 поправлен под Tempo 3.x (`backend_worker.compaction.block_retention`). `npm run check` зелёный. | — |
 
 ### Ручные проверки (T-11)
 
