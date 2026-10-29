@@ -49,7 +49,12 @@ function slowStore(inner: SwarmStore, delay: () => number): SwarmStore {
 }
 
 function setup(
-  options: { launch?: () => Promise<void>; maxActiveSwarms?: number; store?: SwarmStore } = {},
+  options: {
+    launch?: () => Promise<void>;
+    stop?: (id: string) => Promise<void>;
+    maxActiveSwarms?: number;
+    store?: SwarmStore;
+  } = {},
 ) {
   let counter = 0;
   const launches: SwarmLaunch[] = [];
@@ -76,6 +81,7 @@ function setup(
     }),
     stop: vi.fn(async (id: string) => {
       stops.push(id);
+      if (options.stop) await options.stop(id);
     }),
   };
   const core = createApiCore({
@@ -504,6 +510,70 @@ describe('api-core', () => {
     const results = await Promise.all([core.createSwarm(body(1)), core.createSwarm(body(1))]);
     const codes = results.map((r) => (r.ok ? 'ok' : r.error.code)).sort();
     expect(codes).toEqual(['ok', 'too_many_active_swarms']);
+  });
+
+  it('AC-003-6: closeInterrupted закрывает starting и running, completed не трогает, ошибка stop не мешает, лимит освобождается', async () => {
+    let brokenId = '';
+    const { core, stops, logs, entries } = setup({
+      maxActiveSwarms: 2,
+      stop: async (id) => {
+        if (id === brokenId) throw new Error('оркестратор недоступен');
+      },
+    });
+    const created = async () => {
+      const result = await core.createSwarm(body(1));
+      if (!result.ok) throw new Error('не создан');
+      return result.value.id;
+    };
+    const started = (id: string) =>
+      core.ingestEvent(
+        sys(id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
+      );
+
+    const done = await created();
+    await started(done);
+    await core.ingestEvent(
+      sys(done, 2, {
+        type: 'swarm.completed',
+        source: 'orchestrator',
+        agentId: null,
+        data: { result: 'R' },
+      }),
+    );
+    const runningId = await created();
+    await started(runningId);
+    brokenId = runningId;
+    const startingId = await created();
+    expect((await core.createSwarm(body(1))).ok).toBe(false);
+
+    const doneEventsBefore = await core.getEvents(done, 0);
+    const closed = await core.closeInterrupted();
+
+    expect(closed).toBe(2);
+    expect(stops).toHaveLength(2);
+    expect(stops).toEqual(expect.arrayContaining([runningId, startingId]));
+    expect(stops).not.toContain(done);
+    expect(logs).toContain('interrupted stop failed');
+    expect(entries.find((e) => e.msg === 'interrupted swarms closed')?.ctx).toEqual({ count: 2 });
+
+    for (const id of [runningId, startingId]) {
+      const view = await core.getSwarm(id);
+      expect(view.ok && view.value.status).toBe('failed');
+      const events = await core.getEvents(id, 0);
+      expect(events.ok && events.value.at(-1)).toMatchObject({
+        type: 'swarm.failed',
+        source: 'api',
+        agentId: null,
+        traceId: null,
+        data: { reason: 'api_restarted' },
+      });
+    }
+
+    const doneView = await core.getSwarm(done);
+    expect(doneView.ok && doneView.value.status).toBe('completed');
+    expect(await core.getEvents(done, 0)).toEqual(doneEventsBefore);
+
+    expect((await core.createSwarm(body(1))).ok).toBe(true);
   });
 
   it('сбой записи swarm.created: createSwarm отклоняется, оркестратор не вызывается', async () => {
