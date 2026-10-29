@@ -1,1 +1,1 @@
-export { applyEvent, projectSwarm, type SwarmView } from './swarm-view.ts';
+export { applyEvent, FINAL_SWARM_STATUSES, projectSwarm, type SwarmView } from './swarm-view.ts';

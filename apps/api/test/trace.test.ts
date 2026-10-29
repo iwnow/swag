@@ -120,7 +120,7 @@ describe('трассировка HTTP api → orchestrator', () => {
     expect(response.status).toBe(201);
     const swarm = (await response.json()) as { id: string };
 
-    await vi.waitFor(() =>
+    await vi.waitFor(async () =>
       expect(
         memory.finishedSpans.filter(
           (s) => s.spanContext().traceId === TRACE && s.kind === SpanKind.SERVER,
@@ -138,7 +138,7 @@ describe('трассировка HTTP api → orchestrator', () => {
     expect(orchestratorServer?.parentSpanContext?.spanId).toBe(client?.spanContext().spanId);
     expect(orchestratorServer?.attributes['http.response.status_code']).toBe(202);
 
-    const events = api.getEvents(swarm.id, 0);
+    const events = await api.getEvents(swarm.id, 0);
     expect(events.ok && events.value.find((e) => e.type === 'swarm.created')?.traceId).toBe(TRACE);
     const launched = published.filter((e) => e.type === 'agent.launched');
     expect(launched).toHaveLength(2);
@@ -147,7 +147,7 @@ describe('трассировка HTTP api → orchestrator', () => {
     const invalid = await post('00-garbage-zzzz-01');
     expect(invalid.status).toBe(201);
     const other = (await invalid.json()) as { id: string };
-    const otherEvents = api.getEvents(other.id, 0);
+    const otherEvents = await api.getEvents(other.id, 0);
     const created = otherEvents.ok
       ? otherEvents.value.find((e) => e.type === 'swarm.created')
       : undefined;
@@ -163,7 +163,7 @@ describe('трассировка HTTP api → orchestrator', () => {
       agents: [{ name: 'A', role: `роль ${marker}` }],
     });
     expect(response.status).toBe(201);
-    await vi.waitFor(() =>
+    await vi.waitFor(async () =>
       expect(memory.finishedSpans.filter((s) => s.kind === SpanKind.SERVER)).toHaveLength(2),
     );
 
