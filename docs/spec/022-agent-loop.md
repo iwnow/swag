@@ -155,7 +155,8 @@ export interface AgentTool {
   definition: ToolDefinition;
   execute(args: unknown): Promise<ToolOutcome>; // args — уже JSON.parse; проверку схемы делает инструмент
 }
-export type ToolOutcome = { content: string; stop?: { result: string } };
+// yieldTurn — инструмент уступает ход: цикл заканчивается после этого шага (030, REQ-030-1).
+export type ToolOutcome = { content: string; stop?: { result: string }; yieldTurn?: true };
 
 export interface AgentCallContext {
   model: ModelId;
@@ -169,6 +170,7 @@ export interface AgentStep { stepIndex: number; text: string | null; toolCalls: 
 export type AgentLoopResult = { messages: ChatMessage[]; steps: number } & ( // messages — input и всё добавленное после
   | { kind: 'text'; text: string | null }
   | { kind: 'stopped'; result: string }
+  | { kind: 'yielded' }
   | { kind: 'max_steps' }
   | { kind: 'model_error'; error: { code: ChatModelErrorCode; message: string } });
 
@@ -185,7 +187,7 @@ export function runAgentLoop(
 4. Добавить `{ role: 'assistant', content, tool_calls }` (`tool_calls` — только если не пустой), вызвать `onStep`.
 5. Нет `tool_calls` → `text`.
 6. Все `tool_calls` исполняются через `Promise.all`. Для каждого: инструмент по имени (нет — `error: unknown tool <name>`), `JSON.parse(arguments)` (ошибка — `error: invalid JSON arguments`), `execute` (исключение — `error: <message>`). Результаты добавляются как `role: tool` в порядке `tool_calls`.
-7. Хоть один результат со `stop` → `stopped` с `result` первого такого. Иначе — шаг 2.
+7. Хоть один результат со `stop` → `stopped` с `result` первого такого. *Изменено спекой [030](030-agent-dialog.md).* Иначе, хоть один с `yieldTurn` → `yielded` без следующего вызова модели (REQ-030-2: `stop` приоритетнее). Иначе — шаг 2.
 
 `ModelId` и `GatewayErrorCode` — типы из `@swag/contracts`; других импортов у `loop.ts` нет.
 
@@ -236,8 +238,8 @@ export interface AgentBus {
 2. `agent.working`.
 3. `runAgentLoop` с `history` агента, `input` по 4.5, инструментами по 4.5, `maxSteps = config.maxSteps − уже сделанные шаги`; `onStep` публикует `agent.step` со сквозным `stepIndex`.
 4. История агента += `result.messages`.
-5. Только у агента-входа (по Q-7). Агент держит множество `awaiting` — id участников, которым он отправил `send_message` и от которых с тех пор не приходило сообщения: отправка добавляет `to`, входящее от участника убирает `from`. Если `kind: text`, `awaiting` пусто и в этом ходе напоминания ещё не было — история += напоминание 4.5 (`role: user`), снова шаг 3 с оставшимися шагами. Если после напоминания снова `text`: `awaiting` не пусто — итог остаётся `text` (агент ждёт участников, D-82); текст `null` или из одних пробелов — итог `empty_result`; иначе — `stopped` с `result = text` (приёмка, D-85).
-6. По `kind`: `text` → `agent.idle`; `stopped` → `agent.result` с `text = result`, агент `done`; `max_steps` → `agent.failed` `max_steps`; `model_error` → `agent.failed` `model_error:<code>`; `empty_result` → `agent.failed` `empty_result`; после `agent.failed` агент `failed`.
+5. Только у агента-входа (по Q-7). Агент держит множество `awaiting` — id участников, которым он отправил `send_message` и от которых с тех пор не приходило сообщения: отправка добавляет `to`, входящее от участника убирает `from`. *Изменено спекой [030](030-agent-dialog.md).* Напоминание — только на `kind: text` (`yielded` его не вызывает, REQ-030-4): если `awaiting` пусто и в этом ходе напоминания ещё не было — история += напоминание 4.5 (`role: user`), снова шаг 3 с оставшимися шагами. Если после напоминания снова `text`: `awaiting` не пусто — итог остаётся `text` (агент ждёт участников, D-82); текст `null` или из одних пробелов — итог `empty_result`; иначе — `stopped` с `result = text` (приёмка, D-85).
+6. По `kind`: `text` → `agent.idle`; *изменено спекой [030](030-agent-dialog.md)*: `yielded` → `agent.idle` (REQ-030-4); `stopped` → `agent.result` с `text = result`, агент `done`; `max_steps` → `agent.failed` `max_steps`; `model_error` → `agent.failed` `model_error:<code>`; `empty_result` → `agent.failed` `empty_result`; после `agent.failed` агент `failed`.
 7. Лог `debug` `turn finished` с `messageId`, `kind`, `steps`.
 
 ### 4.5. Промпт, сообщения и инструменты
@@ -269,11 +271,11 @@ export interface AgentBus {
 
 Напоминание агенту-входу (4.4, шаг 5): `Ты ответил текстом без инструмента, пользователь его не увидит. Если задача решена — вызови finish с итоговым результатом. Если нужна работа участников — напиши им через send_message.`
 
-Инструменты:
+Инструменты. *Изменено спекой [030](030-agent-dialog.md): результат `send_message` при успехе.*
 
 | Имя | Кому | `parameters` | Исполнение | Результат |
 |---|---|---|---|---|
-| `send_message` | есть `peers` | `{ type: 'object', properties: { to: { type: 'string', enum: [id участников] }, text: { type: 'string', minLength: 1 } }, required: ['to', 'text'], additionalProperties: false }` | проверка Zod; `BusMessage` от себя к `to` | `ok: отправлено {to}`; ошибка — `error: <path>: <message>` |
+| `send_message` | есть `peers` | `{ type: 'object', properties: { to: { type: 'string', enum: [id участников] }, text: { type: 'string', minLength: 1 } }, required: ['to', 'text'], additionalProperties: false }` | проверка Zod; `BusMessage` от себя к `to` | `ok: отправлено {to}. Ответ придёт отдельным сообщением.`, `yieldTurn: true`; ошибка — `error: <path>: <message>`, без `yieldTurn` |
 | `finish` | агент-вход | `{ type: 'object', properties: { result: { type: 'string', minLength: 1 } }, required: ['result'], additionalProperties: false }` | проверка Zod | `ok` и `stop: { result }` |
 
 Описания: `send_message` — `Отправить сообщение участнику команды`, `finish` — `Завершить задачу и вернуть итог пользователю`.
@@ -370,7 +372,7 @@ DOCKER_AGENT_LLM_GATEWAY_URL=http://llm-gateway:3002/v1
 - **AC-022-10** — *Given* модель с `ok: false, code: rate_limited`, *When* цикл, *Then* `kind: model_error` с этим кодом.
 - **AC-022-11** — *Given* исходник `packages/agent-core/src/loop.ts`, *When* тест разбирает его импорты, *Then* есть только `import type` из `@swag/contracts`.
 - **AC-022-12** — *Given* `agent-core` агента-входа с двумя участниками и агента без участников, *When* первый ход, *Then* системный промпт и `input` совпадают с шаблонами 4.5 посимвольно; у входа инструменты `send_message` (с `enum` из id участников) и `finish`; у агента без участников и не входа — инструментов нет.
-- **AC-022-13** — *Given* `agent-core` `agent-2` со скриптовой моделью «`send_message` к `agent-1`», затем «текст», *When* два входящих сообщения подряд, *Then* по каждому: `agent.working`, `agent.step` ×2 (`stepIndex` 1, 2 и 3, 4), `BusMessage` к `agent-1`, `agent.idle`; второй ход получил историю первого; второй ход начался после конца первого.
+- **AC-022-13** — *Изменено спекой [030](030-agent-dialog.md).* *Given* `agent-core` `agent-2` со скриптовой моделью, где каждый ход — вызов «`send_message` к `agent-1`», *When* два входящих сообщения подряд, *Then* по каждому: `agent.working`, один `agent.step` (`stepIndex` 1, затем 2, сквозной), `BusMessage` к `agent-1`, `agent.idle`, один вызов модели; второй ход получил историю первого (результат инструмента — `ok: отправлено agent-1. Ответ придёт отдельным сообщением.`); второй ход начался после конца первого.
 - **AC-022-14** — *Given* модель вызывает `send_message` к себе, к `user` и к несуществующему `agent-9`, *When* ход, *Then* `BusMessage` не публикуется, модель получает три `error: …`.
 - **AC-022-15** — *Given* агент-вход, модель вызывает `finish`, *When* ход, затем новое сообщение, *Then* `agent.result` с текстом результата, второе сообщение отброшено с `warn` `reason: agent_finished`, модель больше не вызывалась.
 - **AC-022-16** — *Given* `AGENT_MAX_STEPS=3` и модель, всегда вызывающая инструмент, *When* ход, *Then* 3 шага и `agent.failed` `max_steps`; *Given* модель с ошибкой `upstream_timeout`, *Then* `agent.failed` `model_error:upstream_timeout`; *Given* модель с ошибкой `max_tokens`, *Then* `agent.failed` `model_error:max_tokens` (приёмка, D-85); дальше сообщения отбрасываются.
@@ -502,3 +504,4 @@ DOCKER_AGENT_LLM_GATEWAY_URL=http://llm-gateway:3002/v1
 | 2026-10-29 | `spec/022-acceptance` | T-18: `ChatModelErrorCode` + `max_tokens` (4.2); `adapter-openai` — `finish_reason: 'length'` → `max_tokens` даже с текстом или `tool_calls` (4.3, D-85); агент-вход после напоминания по шагу 5 4.4: при непустом `awaiting` — `agent.idle` (D-82), при пустом или `null` тексте — `agent.failed` `empty_result` (D-85), иначе `agent.result`; локальный `TurnOutcome` в `index.ts`, `loop.ts` не менялся; `agent.failed.reason` в `contracts` — свободная строка, схема не менялась; тесты AC-022-19 (2 новых), AC-022-16 (`max_tokens`), AC-022-28 (3 новых); README обоих пакетов, глоссарий | Отклонений от буквы 4.4 нет. Локальный тип `TurnOutcome` и функция `afterReminder` в `index.ts` — вариант, который 4.4 разрешает; `AgentLoopResult` не менялся. Вместо `text: null → result: ''` (T-7a, пункт 4) пустой итог теперь `empty_result`. |
 | 2026-10-29 | `spec/022-acceptance` | T-19: тексты по решениям приёмки. D-81: 016, таблица 4.8 и AC-016-6 — лог `turn finished` (`messageId`, `kind`, `steps`) вместо `message handled`, пометка «изменено спекой 022»; других упоминаний в 016 нет, id и тесты не менялись. D-84 «б»: 001 — REQ-001-1 и REQ-001-11 (агент-вход, участники, ход вместо эстафеты, завершение и падение по REQ-022-11), правило рёбер 4.4 (рёбра по фактическим сообщениям, `edges` пуст при создании, статус агента при `bus.message` не меняется), граф и форма 4.8, строка `AGENT_STEP_DELAY_MS` удалена из таблицы 4.9; `.env.example` и `packages/config` ключа не содержат. Разделы 1–2, 6–7, задачи, вопросы и журнал 001 не менялись | Отклонений от букв D-81 и D-84 нет. REQ-001-9 дополнен завершением по агенту-входу и падением `agent_failed`; REQ-001-8 (задача первому агенту) верен и не менялся. |
 | 2026-10-29 | `spec/022-acceptance` | Приёмка: после T-18 и T-19 стенд пересобран (`LLM_PROFILE=dev`), 6 роёв S-3 через API: 4 `completed` с непустым результатом, 2 `failed` `agent_failed` с `detail` `agent-1: model_error:max_tokens` (прогон за 49 с вместо `swarm_timeout`); пустых результатов нет. Граф в браузере на рое из 5 агентов (вход и 4 участника): встречные дуги `agent-1 ↔ agent-4` идут внутрь круга на разную глубину, подписи «1 сообщ.» не перекрывают узлы. `npm run check` зелёный (375 тестов). Статус `done` по команде человека | Наблюдение для S-3: модели входа часто вызывают `finish` сразу после `send_message`, не дождавшись ответа участника, — поведение модели на `dev`, код не меняется; профиль `dev` — N-14 |
+| 2026-10-29 | `spec/030-t9` | Спека 030, T-9: тексты по спеке 030 — 4.2 (`yieldTurn` в `ToolOutcome`, итог `yielded`, правило конца шага), 4.4 (шаг 5 — напоминание только на `text`; шаг 6 — `yielded` → `agent.idle`), 4.5 (результат `send_message` при успехе с `yieldTurn` и таблица инструментов), AC-022-13 переписан под один `agent.step` на ход (`stepIndex` сквозной 1 и 2, как в тесте AC-022-13). Правки помечены «изменено спекой 030». | Статус 022 не менялся (`done`). Поведение — из 030, код в T-1…T-3; правка только в объёме 030 |
