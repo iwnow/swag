@@ -19,7 +19,12 @@ export async function startApiCore(
     connectionString: databaseUrl,
     options: schema === undefined ? undefined : `-c search_path=${schema}`,
   });
-  const core = createApiCore({ ...deps, store: createPostgresSwarmStore(pool) });
-  await core.closeInterrupted();
-  return { core, pool };
+  try {
+    const core = createApiCore({ ...deps, store: createPostgresSwarmStore(pool) });
+    await core.closeInterrupted();
+    return { core, pool };
+  } catch (error) {
+    await pool.end();
+    throw error;
+  }
 }

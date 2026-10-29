@@ -11,7 +11,7 @@
 ## Что внутри сейчас
 
 - `src/app.ts` — маршруты и перевод результатов ядра в HTTP-ответы (`STATUS` по кодам ошибок).
-- `src/start.ts` — `startApiCore`: миграции → пул Postgres → `SwarmStore` → ядро → `closeInterrupted` (спека 003, 4.5). Одна функция для `main.ts` и для теста AC-003-8; при ошибке миграций пишет `error` `migrations failed` и пробрасывает ошибку.
+- `src/start.ts` — `startApiCore`: миграции → пул Postgres → `SwarmStore` → ядро → `closeInterrupted` (спека 003, 4.5). Одна функция для `main.ts` и для теста AC-003-8; при ошибке миграций пишет `error` `migrations failed` и пробрасывает ошибку; если ошибка после создания пула (ядро, `closeInterrupted`), пул закрывается (`pool.end()`) до проброса.
 - `src/main.ts` — телеметрия (`adapter-telemetry`), конфигурация (`ApiConfig`), `startApiCore`, NATS, запуск. Остановка по сигналу: закрыть Fastify → NATS → `pool.end()` → сброс телеметрии → `exit(0)`. Слушает `0.0.0.0` внутри контейнера; наружу порт публикуется только на `127.0.0.1`.
 - Тесты: `test/history.test.ts` (AC-003-8 — перезапуск на той же схеме; нужен `POSTGRES_TEST_URL`, без него пропускается), `test/health.test.ts` (AC-000-4), `test/api.test.ts` (AC-001-3, 4, 9, 10), `test/e2e.test.ts` (AC-022-21 и AC-001-20 — сквозной без Docker по сообщениям роя; AC-016-12, AC-016-13 — он же с настоящим `TraceContext`: один `traceId` на рой, нет утечки текста в логи и спаны; AC-030-6 — диалог двух агентов: ответ обработан отдельным ходом агента-входа, `unreadMessageIds` пуст), `test/trace.test.ts` (AC-016-9 — HTTP-цепочка `api` → `orchestrator` с настоящими серверами).
 
