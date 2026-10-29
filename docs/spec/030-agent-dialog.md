@@ -1,7 +1,7 @@
 ---
 id: "030"
 title: Диалог агентов роя
-status: ready
+status: in-progress
 roadmap_stage: 2
 depends_on: ["022"]
 superseded_by: null
