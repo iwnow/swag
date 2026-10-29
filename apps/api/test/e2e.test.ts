@@ -18,6 +18,7 @@ import {
   type SandboxProvider,
   type SandboxSpec,
 } from '@swag/orchestrator-core';
+import { unreadMessageIds } from '@swag/ui-core';
 import { createMemorySwarmStore } from '@swag/adapter-memory';
 import { createMemoryExporters, startTelemetry, type Telemetry } from '@swag/adapter-telemetry';
 import { AgentConfig, loadConfig } from '@swag/config';
@@ -101,17 +102,34 @@ function team(agentId: string): ChatModelResult[] {
   }
 }
 
+// Сценарий AC-030-6: agent-1 пишет agent-2 и уступает ход; ответ обрабатывается отдельным ходом, затем finish.
+function dialog(agentId: string): ChatModelResult[] {
+  switch (agentId) {
+    case 'agent-1':
+      return [
+        toolCall('send_message', { to: 'agent-2', text: 'Привет' }),
+        toolCall('finish', { result: 'Диалог завершён' }),
+      ];
+    case 'agent-2':
+      return [toolCall('send_message', { to: 'agent-1', text: 'Ответ' })];
+    default:
+      return [];
+  }
+}
+
+type Script = (agentId: string) => ChatModelResult[];
+
 // Агент без участников не отвечает: одиночный рой из AC-016-12 ждёт остановки, а не завершения.
-const modelFor = (config: AgentConfigCore): ChatModel =>
+const modelFor = (config: AgentConfigCore, script: Script): ChatModel =>
   config.peers.length === 0
     ? { complete: () => new Promise<ChatModelResult>(() => undefined) }
-    : scripted(team(config.agentId));
+    : scripted(script(config.agentId));
 
 const threeAgents = (role: (n: number) => string) =>
   ['A', 'B', 'C'].map((name, i) => ({ name, role: role(i + 1) }));
 
 // Весь рой в одном процессе: api-core, orchestrator-core, agent-core на каждую «песочницу».
-function world(log: Logger, trace: TraceContext) {
+function world(log: Logger, trace: TraceContext, script: Script = team) {
   const hub = createHub();
   let counter = 0;
   const ids = { uuid: () => uuid(++counter) };
@@ -156,7 +174,7 @@ function world(log: Logger, trace: TraceContext) {
         ids,
         log,
         trace,
-        model: modelFor(config),
+        model: modelFor(config, script),
         config,
       });
       await agent.start();
@@ -273,6 +291,53 @@ describe('сквозной скелет без Docker', () => {
     const events = api.getEvents(id, 0);
     if (!events.ok) throw new Error('нет событий');
     expect(events.value.map((e) => e.seq)).toEqual(events.value.map((_, i) => i + 1));
+    expect(logs).toEqual([]);
+  });
+
+  it('AC-030-6: send_message уступает ход — ответ обработан отдельным ходом агента-входа, непрочитанных нет', async () => {
+    const logs: string[] = [];
+    const { api } = world(
+      {
+        debug: () => undefined,
+        info: () => undefined,
+        warn: (message: string) => logs.push(message),
+        error: (message: string) => logs.push(message),
+      },
+      { currentTraceId: () => null },
+      dialog,
+    );
+
+    const created = await api.createSwarm({
+      task: 'T',
+      agents: [
+        { name: 'A', role: 'r1' },
+        { name: 'B', role: 'r2' },
+      ],
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const id = created.value.id;
+
+    await vi.waitFor(
+      () => expect(api.getSwarm(id)).toMatchObject({ ok: true, value: { status: 'completed' } }),
+      { timeout: 5000 },
+    );
+
+    const events = api.getEvents(id, 0);
+    if (!events.ok) throw new Error('нет событий');
+    const feed = events.value;
+    const message = feed.findIndex(
+      (e) => e.type === 'bus.message' && e.data.from === 'agent-2' && e.data.to === 'agent-1',
+    );
+    expect(message).toBeGreaterThanOrEqual(0);
+    const sent = feed[message];
+    const messageId = sent?.type === 'bus.message' ? sent.data.messageId : null;
+    const working = feed.findIndex(
+      (e) =>
+        e.type === 'agent.working' && e.agentId === 'agent-1' && e.data.messageId === messageId,
+    );
+    expect(working).toBeGreaterThan(message);
+    expect(unreadMessageIds(feed, 'completed').size).toBe(0);
     expect(logs).toEqual([]);
   });
 });
