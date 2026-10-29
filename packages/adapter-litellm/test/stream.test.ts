@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { UpstreamStreamError, type UpstreamStream } from '@swag/llm-gateway-core';
 import { sseData } from '../src/index.ts';
-import { chatRequest, signal, stubFetch, upstreamFor, useFake } from './helpers.ts';
+import { STUB_URL, chatRequest, signal, stubFetch, upstreamFor, useFake } from './helpers.ts';
 
 // Спека 002, 4.4 и 4.5: поток адаптера против фейка. Тесты без AC-id: REQ-002-10 (поток) на уровне адаптера;
 // AC-002-10…13 описывают ответ шлюза и закрываются в T-17…T-23.
@@ -192,6 +192,28 @@ describe('stream: отказ до потока (спека 002, 4.5)', () => {
     );
 
     expect(result).toEqual({ ok: false, failure: { kind: 'network' } });
+  });
+
+  it('внешний abort во время чтения тела не-2xx — ok: false с network, не aborted (регрессия D-53)', async () => {
+    const controller = new AbortController();
+    const hangingFetch: typeof fetch = async (_url, init) => {
+      const fetchSignal = init?.signal as AbortSignal;
+      const body = new ReadableStream({
+        start(streamController) {
+          fetchSignal.addEventListener('abort', () => streamController.error(fetchSignal.reason));
+        },
+      });
+      return new Response(body, { status: 500 });
+    };
+
+    const pending = upstreamFor(STUB_URL, { fetch: hangingFetch }).stream(
+      streamBody('привет'),
+      controller.signal,
+    );
+    await sleep(50);
+    controller.abort();
+
+    expect(await pending).toEqual({ ok: false, failure: { kind: 'network' } });
   });
 });
 
