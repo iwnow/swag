@@ -9,11 +9,25 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     # Сервис NATS для теста адаптера шины (AC-001-21, NATS_TEST_URL); Docker на раннере есть для AC-001-22.
+    # Сервис Postgres для адаптера и схемы роёв (AC-003-1, -2, -3, -8; POSTGRES_TEST_URL); пароль фейковый, healthcheck — чтобы шаги ждали готовности.
     services:
       nats:
         image: nats:2.15.1-alpine3.22
         ports:
           - 4222:4222
+      postgres:
+        image: postgres:17.11-alpine3.23
+        env:
+          POSTGRES_USER: swag
+          POSTGRES_PASSWORD: swag-ci-fake
+          POSTGRES_DB: swag_test
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U swag -d swag_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       NATS_TEST_URL: nats://127.0.0.1:4222
     steps:
@@ -24,3 +38,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+        env:
+          POSTGRES_TEST_URL: postgres://swag:swag-ci-fake@127.0.0.1:5432/swag_test
