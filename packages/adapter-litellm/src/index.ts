@@ -135,9 +135,17 @@ function idleGuard(outer: AbortSignal, idleTimeoutMs: number) {
 
 type IdleGuard = ReturnType<typeof idleGuard>;
 
-// Сбой запроса или чтения тела без потока: таймер → timeout, иначе network (и внешний abort тоже).
-const transportFailure = (idle: IdleGuard): UpstreamFailure =>
-  idle.signal.reason === TIMEOUT_REASON ? { kind: 'timeout' } : { kind: 'network' };
+type CallFailure = UpstreamFailure | { kind: 'aborted' };
+
+// Спека 002, 4.5 и 030, 4.5: сбой запроса, чтения тела или потока. Таймер → timeout; внешний signal (клиент ушёл) → aborted; иначе network.
+function transportFailure(idle: IdleGuard, outer: AbortSignal): CallFailure {
+  if (idle.signal.reason === TIMEOUT_REASON) return { kind: 'timeout' };
+  return outer.aborted ? { kind: 'aborted' } : { kind: 'network' };
+}
+
+// Поток и listModels остаются на network при внешнем abort: спека 030 меняет только обычный вызов (complete).
+const withoutAborted = (failure: CallFailure): UpstreamFailure =>
+  failure.kind === 'aborted' ? { kind: 'network' } : failure;
 
 // Куски тела текстом. Таймер идёт только пока ждём кусок от апстрима; yield (пауза потребителя) его не касается.
 // Раннее закрытие потребителем, ошибка или конец тела снимают таймер и отменяют чтение: соединение закрывается.
@@ -181,8 +189,7 @@ const postJson = (options: LiteLlmOptions, body: ChatRequest): Init => ({
   body: JSON.stringify(body),
 });
 
-type Opened =
-  { ok: true; res: Response; idle: IdleGuard } | { ok: false; failure: UpstreamFailure };
+type Opened = { ok: true; res: Response; idle: IdleGuard } | { ok: false; failure: CallFailure };
 
 // Заголовки ответа. Отказ до заголовков — failure. При успехе таймер остаётся взведённым: его снимает тот, кто читает тело.
 async function open(
@@ -202,19 +209,19 @@ async function open(
     return { ok: true, res, idle };
   } catch {
     idle.stop();
-    return { ok: false, failure: transportFailure(idle) };
+    return { ok: false, failure: transportFailure(idle, signal) };
   }
 }
 
 // Тело целиком; таймер снимается по окончании чтения.
-async function readWhole(opened: {
-  res: Response;
-  idle: IdleGuard;
-}): Promise<{ ok: true; text: string } | { ok: false; failure: UpstreamFailure }> {
+async function readWhole(
+  opened: { res: Response; idle: IdleGuard },
+  outer: AbortSignal,
+): Promise<{ ok: true; text: string } | { ok: false; failure: CallFailure }> {
   try {
     return { ok: true, text: await readText(opened.res, opened.idle) };
   } catch {
-    return { ok: false, failure: transportFailure(opened.idle) };
+    return { ok: false, failure: transportFailure(opened.idle, outer) };
   } finally {
     opened.idle.stop();
   }
@@ -230,7 +237,7 @@ async function callUpstream(
 ): Promise<UpstreamResponse> {
   const opened = await open(options, path, init, signal, span);
   if (!opened.ok) return opened;
-  const whole = await readWhole(opened);
+  const whole = await readWhole(opened, signal);
   if (!whole.ok) return whole;
   if (!opened.res.ok) {
     return { ok: false, failure: httpFailure(opened.res.status, whole.text, options.secrets) };
@@ -261,12 +268,6 @@ export async function* sseData(texts: AsyncIterable<string>): AsyncGenerator<str
   }
 }
 
-// Причина сбоя потока после старта: таймер, внешний abort (клиент ушёл) или обрыв сети.
-function streamFailure(idle: IdleGuard, outer: AbortSignal): UpstreamFailure | { kind: 'aborted' } {
-  if (idle.signal.reason === TIMEOUT_REASON) return { kind: 'timeout' };
-  return outer.aborted ? { kind: 'aborted' } : { kind: 'network' };
-}
-
 // Спека 002, 4.4 и 4.5: payload'ы до [DONE] включительно. Конец тела без [DONE] — network.
 // Ошибка чтения превращается в UpstreamStreamError; yield вне try, чтобы throw() потребителя не перехватывался.
 async function* payloads(
@@ -281,7 +282,7 @@ async function* payloads(
       try {
         next = await parts.next();
       } catch {
-        throw new UpstreamStreamError(streamFailure(idle, outer));
+        throw new UpstreamStreamError(transportFailure(idle, outer));
       }
       if (next.done) break;
       yield next.value;
@@ -302,13 +303,13 @@ async function openStream(
   span: Span,
 ): Promise<UpstreamStream> {
   const opened = await open(options, CHAT_PATH, postJson(options, body), signal, span);
-  if (!opened.ok) return opened;
+  if (!opened.ok) return { ok: false, failure: withoutAborted(opened.failure) };
   if (opened.res.ok) {
     opened.idle.stop();
     return { ok: true, chunks: payloads(opened.res, opened.idle, signal) };
   }
-  const whole = await readWhole(opened);
-  if (!whole.ok) return whole;
+  const whole = await readWhole(opened, signal);
+  if (!whole.ok) return { ok: false, failure: withoutAborted(whole.failure) };
   return { ok: false, failure: httpFailure(opened.res.status, whole.text, options.secrets) };
 }
 
@@ -364,7 +365,7 @@ export function createLiteLlmUpstream(options: LiteLlmOptions): LlmUpstream {
         { method: 'GET', headers: authHeaders(options) },
         signal,
       );
-      if (!response.ok) return response;
+      if (!response.ok) return { ok: false, failure: withoutAborted(response.failure) };
       const ids = modelIds(response.body);
       return ids ? { ok: true, ids } : { ok: false, failure: { kind: 'network' } };
     },

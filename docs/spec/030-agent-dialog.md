@@ -166,8 +166,8 @@ export type UpstreamResponse =
 - [x] **T-4.** `packages/ui-core`: `unreadMessageIds` по 4.4 и тест AC-030-7; экспорт из индекса. Закрывает: REQ-030-6, AC-030-7. Готово, когда: тест зелёный, README `ui-core` обновлён.
 - [x] **T-5.** `apps/ui/cabinet/src/app/swarm.page.ts` (и его шаблон): отметка «не прочитано» по 4.4. Закрывает: REQ-030-6. Готово, когда: `npm run build` зелёный, README кабинета обновлён. Ручная проверка — в T-9.
 - [ ] **T-6.** `apps/api/test/e2e.test.ts`: тест AC-030-6; `apps/api/package.json` — `@swag/agent-core`, `@swag/orchestrator-core` и `@swag/ui-core` в `devDependencies`, при необходимости `references` в tsconfig (из N-13). Закрывает: REQ-030-5, AC-030-6. Готово, когда: тест зелёный, `npm run arch:check` зелёный.
-- [ ] **T-7.** `packages/llm-gateway-core/src/index.ts` и его тест: `UpstreamResponse` с `aborted`, публикация по 4.5. Закрывает: REQ-030-7, AC-030-8. Готово, когда: тесты gateway зелёные, README `llm-gateway-core` обновлён.
-- [ ] **T-8.** `packages/adapter-litellm/src/index.ts` и его тест: `complete` возвращает `aborted` по 4.5. Закрывает: REQ-030-7, AC-030-9. Готово, когда: тест AC-030-9 и прежние тесты адаптера зелёные, README адаптера обновлён.
+- [x] **T-7.** `packages/llm-gateway-core/src/index.ts` и его тест: `UpstreamResponse` с `aborted`, публикация по 4.5. Закрывает: REQ-030-7, AC-030-8. Готово, когда: тесты gateway зелёные, README `llm-gateway-core` обновлён.
+- [x] **T-8.** `packages/adapter-litellm/src/index.ts` и его тест: `complete` возвращает `aborted` по 4.5. Закрывает: REQ-030-7, AC-030-9. Готово, когда: тест AC-030-9 и прежние тесты адаптера зелёные, README адаптера обновлён.
 - [ ] **T-9.** Тексты и ручные проверки: 022 — 4.2, 4.4 (шаг 6), 4.5 (таблица инструментов), AC-022-13; 002 — 4.4 (обычный вызов, обрыв клиентом); пометка «изменено спекой 030», запись в журналы 022 и 002; глоссарий — строки «Итог цикла» и «Инструмент агента» дополнить `yielded` и `yieldTurn` (новые строки 4.6 уже добавлены); ручные AC-030-10, AC-030-11; `npm run check`. Закрывает: AC-030-10, AC-030-11. Готово, когда: проверки в журнале, `npm run check` зелёный, статус `review`.
 
 ## 9. Открытые вопросы

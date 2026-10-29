@@ -107,8 +107,9 @@ export type UpstreamFailure =
   | { kind: 'network' }
   | { kind: 'timeout' };
 
+// Спека 030, 4.5: aborted — внешний signal (клиент ушёл); для обычного вызова публикуется как aborted, а не error.
 export type UpstreamResponse =
-  { ok: true; body: unknown } | { ok: false; failure: UpstreamFailure };
+  { ok: true; body: unknown } | { ok: false; failure: UpstreamFailure | { kind: 'aborted' } };
 
 export type UpstreamModels = { ok: true; ids: string[] } | { ok: false; failure: UpstreamFailure };
 
@@ -275,7 +276,12 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
   const { catalog, upstream, events, clock, ids, trace, log, version } = deps;
 
   // Событие llm.call и лог `llm call` для обычного вызова: общие для успеха и отказа.
-  async function publishCall(data: LlmCallData, caller: LlmCaller, upstreamStatus?: number) {
+  async function publishCall(
+    data: LlmCallData,
+    caller: LlmCaller,
+    upstreamStatus?: number,
+    level: 'info' | 'warn' = data.status === 'ok' ? 'info' : 'warn',
+  ) {
     const event: PlatformEventInput = {
       id: ids.uuid(),
       swarmId: caller.swarmId,
@@ -291,29 +297,30 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
     } catch (err) {
       log.error('event_publish_failed', { callId: data.callId, err });
     }
-    const fields = callLogFields(data, caller, upstreamStatus);
-    if (data.status === 'ok') log.info('llm call', fields);
-    else log.warn('llm call', fields);
+    log[level]('llm call', callLogFields(data, caller, upstreamStatus));
   }
 
   // Спека 002, 4.4 (шаг 5) и 4.6: отказ апстрима — событие `error` и ответ клиенту; общий для вызова и потока.
+  // Спека 030, 4.5: обрыв клиентом (aborted) у обычного вызова — событие `aborted` без errorCode, лог info; клиенту — как network.
   async function upstreamFailed(
     base: Pick<LlmCallData, 'callId' | 'model' | 'stream' | 'latencyMs'>,
     caller: LlmCaller,
-    failure: UpstreamFailure,
+    failure: UpstreamFailure | { kind: 'aborted' },
   ): Promise<CompleteResult> {
-    const reply = upstreamReply(failure);
+    const aborted = failure.kind === 'aborted';
+    const reply = upstreamReply(failure.kind === 'aborted' ? { kind: 'network' } : failure);
     await publishCall(
       {
         ...base,
-        status: 'error',
+        status: aborted ? 'aborted' : 'error',
         usage: null,
         costMicroUsd: null,
         providerCostMicroUsd: null,
-        errorCode: reply.code,
+        ...(aborted ? {} : { errorCode: reply.code }),
       },
       caller,
       failure.kind === 'http' ? failure.status : undefined,
+      aborted ? 'info' : undefined,
     );
     return {
       kind: 'error',
