@@ -2,13 +2,14 @@ import type { SwarmStore } from '@swag/api-core';
 import { applyEvent, type SwarmView } from '@swag/api-integration';
 import type { PlatformEvent } from '@swag/contracts';
 
-// Спека 001, 4.10: SwarmStore в памяти. События и SwarmView хранятся вместе; при перезапуске теряются (003 заменит адаптером Postgres).
+// Спека 001, 4.10; спека 003, REQ-003-10: SwarmStore в памяти с тем же асинхронным портом.
+// Остаётся для тестов ядра; при перезапуске всё теряется. Рабочее хранилище — @swag/adapter-postgres (спека 003, T-5, T-6).
 export function createMemorySwarmStore(): SwarmStore {
   const events = new Map<string, PlatformEvent[]>();
   const views = new Map<string, SwarmView>();
 
   return {
-    appendEvent(event: PlatformEvent): void {
+    async appendEvent(event: PlatformEvent): Promise<void> {
       const current = views.get(event.swarmId) ?? null;
       const next = applyEvent(current, event); // бросает на недопустимое событие — тогда ничего не сохраняется
       if (next === current) return; // повтор seq — уже учтено
@@ -18,15 +19,15 @@ export function createMemorySwarmStore(): SwarmStore {
       events.set(event.swarmId, list);
     },
 
-    events(swarmId: string, afterSeq: number): PlatformEvent[] {
+    async events(swarmId: string, afterSeq: number): Promise<PlatformEvent[]> {
       return (events.get(swarmId) ?? []).filter((event) => event.seq > afterSeq);
     },
 
-    view(swarmId: string): SwarmView | null {
+    async view(swarmId: string): Promise<SwarmView | null> {
       return views.get(swarmId) ?? null;
     },
 
-    views(): SwarmView[] {
+    async views(): Promise<SwarmView[]> {
       return [...views.values()];
     },
   };

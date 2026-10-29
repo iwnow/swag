@@ -6,6 +6,7 @@ import {
   type LogContext,
   type Logger,
   type OrchestratorClient,
+  type SwarmStore,
 } from '../src/index.ts';
 
 const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -27,7 +28,29 @@ interface Entry {
   ctx?: LogContext;
 }
 
-function setup(options: { launch?: () => Promise<void>; maxActiveSwarms?: number } = {}) {
+// Хранилище с задержками: каждая операция ждёт delay() миллисекунд, данные — из inner.
+function slowStore(inner: SwarmStore, delay: () => number): SwarmStore {
+  const wait = () => new Promise<void>((resolve) => setTimeout(resolve, delay()));
+  return {
+    async appendEvent(event) {
+      await wait();
+      await inner.appendEvent(event);
+    },
+    async events(swarmId, afterSeq) {
+      await wait();
+      return inner.events(swarmId, afterSeq);
+    },
+    async view(swarmId) {
+      await wait();
+      return inner.view(swarmId);
+    },
+    views: () => inner.views(),
+  };
+}
+
+function setup(
+  options: { launch?: () => Promise<void>; maxActiveSwarms?: number; store?: SwarmStore } = {},
+) {
   let counter = 0;
   const launches: SwarmLaunch[] = [];
   const stops: string[] = [];
@@ -57,7 +80,7 @@ function setup(options: { launch?: () => Promise<void>; maxActiveSwarms?: number
   };
   const core = createApiCore({
     version: 'test',
-    store: createMemorySwarmStore(),
+    store: options.store ?? createMemorySwarmStore(),
     orchestrator,
     clock: { now: () => '2026-10-22T10:00:00.000Z' },
     ids: { uuid: () => uuid(++counter) },
@@ -96,7 +119,7 @@ describe('api-core', () => {
     expect(result.value.agents.map((a) => a.id)).toEqual(['agent-1', 'agent-2', 'agent-3']);
     expect(launches).toHaveLength(1);
     expect(launches[0]?.swarmId).toBe(result.value.id);
-    const events = core.getEvents(result.value.id, 0);
+    const events = await core.getEvents(result.value.id, 0);
     expect(events.ok && events.value.map((e) => [e.type, e.seq])).toEqual([['swarm.created', 1]]);
   });
 
@@ -120,10 +143,10 @@ describe('api-core', () => {
     expect(second.error.code).toBe('too_many_active_swarms');
 
     const id = first.value.id;
-    core.ingestEvent(
+    await core.ingestEvent(
       sys(id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
     );
-    core.ingestEvent(
+    await core.ingestEvent(
       sys(id, 2, {
         type: 'swarm.completed',
         source: 'orchestrator',
@@ -144,7 +167,7 @@ describe('api-core', () => {
     const result = await core.createSwarm(body(2));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const view = core.getSwarm(result.value.id);
+    const view = await core.getSwarm(result.value.id);
     expect(view.ok && view.value.status).toBe('failed');
     expect(view.ok && view.value.failure?.reason).toBe('orchestrator_unavailable');
   });
@@ -154,13 +177,13 @@ describe('api-core', () => {
     const created = await core.createSwarm(body(2));
     if (!created.ok) throw new Error('не создан');
     const id = created.value.id;
-    core.ingestEvent(
+    await core.ingestEvent(
       sys(id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
     );
-    core.ingestEvent(
+    await core.ingestEvent(
       sys(id, 2, { type: 'agent.started', source: 'agent', agentId: 'agent-1', data: {} }),
     );
-    core.ingestMessage({
+    await core.ingestMessage({
       id: uuid(8001),
       swarmId: id,
       from: 'user',
@@ -168,7 +191,7 @@ describe('api-core', () => {
       text: 'T',
       ts: '2026-10-22T10:00:02.000Z',
     });
-    const events = core.getEvents(id, 0);
+    const events = await core.getEvents(id, 0);
     if (!events.ok) throw new Error('нет событий');
     expect(events.value.map((e) => e.seq)).toEqual([1, 2, 3, 4]);
     const message = events.value[3];
@@ -178,7 +201,7 @@ describe('api-core', () => {
       to: 'agent-1',
       text: 'T',
     });
-    const after = core.getEvents(id, 1);
+    const after = await core.getEvents(id, 1);
     expect(after.ok && after.value.map((e) => e.seq)).toEqual([2, 3, 4]);
   });
 
@@ -187,9 +210,9 @@ describe('api-core', () => {
     const created = await core.createSwarm(body(1));
     if (!created.ok) throw new Error('не создан');
     const id = created.value.id;
-    core.ingestEvent({ type: 'мусор' });
-    core.ingestMessage({ id: 'не-uuid' });
-    core.ingestEvent(
+    await core.ingestEvent({ type: 'мусор' });
+    await core.ingestMessage({ id: 'не-uuid' });
+    await core.ingestEvent(
       sys(uuid(7777), 3, {
         type: 'swarm.started',
         source: 'orchestrator',
@@ -198,10 +221,10 @@ describe('api-core', () => {
       }),
     );
     expect(logs.length).toBeGreaterThanOrEqual(3);
-    core.ingestEvent(
+    await core.ingestEvent(
       sys(id, 4, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
     );
-    const events = core.getEvents(id, 0);
+    const events = await core.getEvents(id, 0);
     expect(events.ok && events.value.map((e) => e.seq)).toEqual([1, 2]);
   });
 
@@ -210,7 +233,7 @@ describe('api-core', () => {
     const created = await core.createSwarm(body(1));
     if (!created.ok) throw new Error('не создан');
     const id = created.value.id;
-    core.ingestEvent(
+    await core.ingestEvent(
       sys(id, 5, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
     );
     const stopped = await core.stopSwarm(id);
@@ -219,7 +242,7 @@ describe('api-core', () => {
 
     const other = await core.createSwarm(body(1));
     if (!other.ok) throw new Error('не создан');
-    core.ingestEvent(
+    await core.ingestEvent(
       sys(other.value.id, 6, {
         type: 'swarm.completed',
         source: 'orchestrator',
@@ -247,14 +270,14 @@ describe('api-core', () => {
     });
     const failed = await failing.core.createSwarm(body(1));
     if (!failed.ok) throw new Error('не создан');
-    const failedEvents = failing.core.getEvents(failed.value.id, 0);
+    const failedEvents = await failing.core.getEvents(failed.value.id, 0);
     expect(failedEvents.ok && failedEvents.value.map((e) => [e.type, e.traceId])).toEqual([
       ['swarm.created', T1],
       ['swarm.failed', T1],
     ]);
 
     traceState.current = T2;
-    core.ingestMessage({
+    await core.ingestMessage({
       id: uuid(8001),
       swarmId: id,
       from: 'user',
@@ -262,11 +285,11 @@ describe('api-core', () => {
       text: 'T',
       ts: '2026-10-22T10:00:02.000Z',
     });
-    core.ingestEvent({
+    await core.ingestEvent({
       ...sys(id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
       traceId: T3,
     });
-    const events = core.getEvents(id, 0);
+    const events = await core.getEvents(id, 0);
     expect(events.ok && events.value.map((e) => [e.type, e.traceId])).toEqual([
       ['swarm.created', T1],
       ['bus.message', T2],
@@ -298,7 +321,7 @@ describe('api-core', () => {
       ctx: { swarmId: failed.value.id, err: error },
     });
 
-    ok.core.ingestEvent(
+    await ok.core.ingestEvent(
       sys(uuid(7777), 2, {
         type: 'swarm.started',
         source: 'orchestrator',
@@ -306,7 +329,7 @@ describe('api-core', () => {
         data: {},
       }),
     );
-    ok.core.ingestMessage({ id: 'не-uuid' });
+    await ok.core.ingestMessage({ id: 'не-uuid' });
     const dropped = ok.entries.filter((e) => e.level === 'warn');
     expect(dropped).toContainEqual({
       level: 'warn',
@@ -342,10 +365,10 @@ describe('api-core', () => {
     };
 
     const delivered: Array<[string, number]> = [];
-    const sub = core.subscribe(id, 1, (e) => delivered.push([e.type, e.seq]));
+    const sub = await core.subscribe(id, 1, (e) => delivered.push([e.type, e.seq]));
     expect(sub.ok).toBe(true);
-    core.ingestEvent(sys(id, 20, llmCall));
-    const events = core.getEvents(id, 0);
+    await core.ingestEvent(sys(id, 20, llmCall));
+    const events = await core.getEvents(id, 0);
     expect(events.ok && events.value.map((e) => [e.type, e.source, e.seq])).toEqual([
       ['swarm.created', 'api', 1],
       ['llm.call', 'llm-gateway', 2],
@@ -353,7 +376,7 @@ describe('api-core', () => {
     expect(delivered).toEqual([['llm.call', 2]]);
     if (sub.ok) sub.value();
 
-    core.ingestEvent(sys(uuid(7777), 21, llmCall));
+    await core.ingestEvent(sys(uuid(7777), 21, llmCall));
     expect(entries).toContainEqual({
       level: 'warn',
       msg: 'event dropped',
@@ -363,7 +386,7 @@ describe('api-core', () => {
         reason: 'unknown_swarm',
       }),
     });
-    expect(core.getEvents(uuid(7777), 0).ok).toBe(false);
+    expect((await core.getEvents(uuid(7777), 0)).ok).toBe(false);
   });
 
   it('subscribe отдаёт хвост после after, затем новые события по возрастанию seq', async () => {
@@ -371,13 +394,13 @@ describe('api-core', () => {
     const created = await core.createSwarm(body(1));
     if (!created.ok) throw new Error('не создан');
     const id = created.value.id;
-    core.ingestEvent(
+    await core.ingestEvent(
       sys(id, 10, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
     );
     const seen: number[] = [];
-    const sub = core.subscribe(id, 0, (e) => seen.push(e.seq));
+    const sub = await core.subscribe(id, 0, (e) => seen.push(e.seq));
     expect(sub.ok).toBe(true);
-    core.ingestEvent(
+    await core.ingestEvent(
       sys(id, 11, {
         type: 'swarm.stopped',
         source: 'orchestrator',
@@ -387,7 +410,7 @@ describe('api-core', () => {
     );
     expect(seen).toEqual([1, 2, 3]);
     if (sub.ok) sub.value();
-    core.ingestEvent(
+    await core.ingestEvent(
       sys(id, 12, {
         type: 'swarm.failed',
         source: 'orchestrator',
@@ -396,5 +419,117 @@ describe('api-core', () => {
       }),
     );
     expect(seen).toEqual([1, 2, 3]);
+  });
+
+  it('AC-003-4: 20 параллельных ingestEvent одного роя и 5 другого — seq 1…N без пропусков и повторов', async () => {
+    let calls = 0;
+    const { core } = setup({
+      store: slowStore(createMemorySwarmStore(), () => (++calls * 7) % 5),
+    });
+    const first = await core.createSwarm(body(1));
+    const second = await core.createSwarm(body(1));
+    if (!first.ok || !second.ok) throw new Error('не создан');
+    const a = first.value.id;
+    const b = second.value.id;
+    const input = (id: string, n: number) =>
+      core.ingestEvent(
+        sys(id, 100 + n, { type: 'agent.started', source: 'agent', agentId: 'agent-1', data: {} }),
+      );
+
+    await Promise.all([
+      ...Array.from({ length: 20 }, (_, i) => input(a, i)),
+      ...Array.from({ length: 5 }, (_, i) => input(b, i)),
+    ]);
+
+    const seqsOf = async (id: string) => {
+      const events = await core.getEvents(id, 0);
+      return events.ok ? events.value.map((e) => e.seq) : [];
+    };
+    expect(await seqsOf(a)).toEqual(Array.from({ length: 21 }, (_, i) => i + 1));
+    expect(await seqsOf(b)).toEqual(Array.from({ length: 6 }, (_, i) => i + 1));
+  });
+
+  it('AC-003-5: subscribe(id, 1) — событие, записанное во время чтения истории, отдаётся ровно по разу и по порядку; неизвестный рой — not_found', async () => {
+    const inner = createMemorySwarmStore();
+    let entered = (): void => undefined;
+    const readStarted = new Promise<void>((resolve) => (entered = resolve));
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const store: SwarmStore = {
+      ...inner,
+      // Снимок истории берётся до записи события 4; чтение «висит» до release().
+      async events(swarmId, afterSeq) {
+        const snapshot = await inner.events(swarmId, afterSeq);
+        entered();
+        await gate;
+        return snapshot;
+      },
+    };
+    const { core } = setup({ store });
+    const created = await core.createSwarm(body(1));
+    if (!created.ok) throw new Error('не создан');
+    const id = created.value.id;
+    await core.ingestEvent(
+      sys(id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
+    );
+    await core.ingestEvent(
+      sys(id, 2, { type: 'agent.started', source: 'agent', agentId: 'agent-1', data: {} }),
+    );
+
+    const seen: number[] = [];
+    const subscribing = core.subscribe(id, 1, (e) => seen.push(e.seq));
+    await readStarted;
+    await core.ingestMessage({
+      id: uuid(8001),
+      swarmId: id,
+      from: 'user',
+      to: 'agent-1',
+      text: 'T',
+      ts: '2026-10-22T10:00:02.000Z',
+    });
+    release();
+    const sub = await subscribing;
+    expect(sub.ok).toBe(true);
+    expect(seen).toEqual([2, 3, 4]);
+
+    const unknown = await core.subscribe(uuid(4242), 0, () => undefined);
+    expect(unknown.ok === false && unknown.error.code).toBe('not_found');
+  });
+
+  it('лимит активных роёв держится при параллельных createSwarm (MAX_ACTIVE_SWARMS)', async () => {
+    const { core } = setup({
+      maxActiveSwarms: 1,
+      store: slowStore(createMemorySwarmStore(), () => 1),
+    });
+    const results = await Promise.all([core.createSwarm(body(1)), core.createSwarm(body(1))]);
+    const codes = results.map((r) => (r.ok ? 'ok' : r.error.code)).sort();
+    expect(codes).toEqual(['ok', 'too_many_active_swarms']);
+  });
+
+  it('сбой записи swarm.created: createSwarm отклоняется, оркестратор не вызывается', async () => {
+    const store: SwarmStore = {
+      ...createMemorySwarmStore(),
+      appendEvent: () => Promise.reject(new Error('запись отклонена')),
+    };
+    const { core, launches } = setup({ store });
+    await expect(core.createSwarm(body(1))).rejects.toThrow('swarm.created не записан');
+    expect(launches).toHaveLength(0);
+  });
+
+  it('сбой слушателя не мешает остальным подписчикам роя', async () => {
+    const { core, logs } = setup();
+    const created = await core.createSwarm(body(1));
+    if (!created.ok) throw new Error('не создан');
+    const id = created.value.id;
+    const seen: number[] = [];
+    await core.subscribe(id, 1, () => {
+      throw new Error('слушатель сломан');
+    });
+    await core.subscribe(id, 1, (e) => seen.push(e.seq));
+    await core.ingestEvent(
+      sys(id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
+    );
+    expect(seen).toEqual([2]);
+    expect(logs).toContain('listener failed');
   });
 });
