@@ -110,7 +110,8 @@ const sys = (
     traceId: null,
   }) as PlatformEventInput;
 
-describe('api-core', () => {
+// Сценарии 001, 016, 002 — на адаптере в памяти через асинхронный порт с прежними ожиданиями (AC-003-9).
+describe('api-core — AC-003-9: прежние сценарии на асинхронном порте', () => {
   it('AC-000-16: info() возвращает ServiceInfo сервиса api с версией из оболочки', () => {
     const { core } = setup();
     expect(core.info()).toEqual({ service: 'api', version: 'test' });

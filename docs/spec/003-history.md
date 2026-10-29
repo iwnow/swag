@@ -1,7 +1,7 @@
 ---
 id: "003"
 title: История роёв
-status: in-progress
+status: review
 roadmap_stage: 3
 depends_on: ["001", "016", "022"]
 superseded_by: null
@@ -232,7 +232,7 @@ drop table swarms;
 - [x] **T-8.** `.github/workflows/ci.yml`: сервис Postgres и `POSTGRES_TEST_URL` (4.8); `.env.example` — `POSTGRES_TEST_URL` для локального запуска. Готово, когда: CI зелёный, тесты AC-003-1, -2, -3, -8 в CI не пропущены.
 - [x] **T-9.** `packages/config/src/index.ts`: `TELEMETRY_RETENTION` в `ObservabilityConfig`, тест части AC-003-10 в `packages/config/test`; `.env.example` — `TELEMETRY_RETENTION=24h`. Закрывает: часть REQ-003-9, AC-003-10 (конфиг). Готово, когда: тесты `config` зелёные.
 - [x] **T-10.** (из N-15) `infra/lgtm/loki-config.yaml`, `infra/lgtm/tempo-config.yaml`, сервис `lgtm` в `compose.yaml` по 4.7; тест AC-003-10 в `scripts/repo.test.ts`; корневой README — переменная и значения для dev и прода. Закрывает: REQ-003-9, AC-003-10. Готово, когда: тест зелёный, `npm run up` поднимает `lgtm` healthy.
-- [ ] **T-11.** Ручные проверки AC-003-11, AC-003-12, замер NFR-003-2 в журнал; README всех затронутых пакетов сверены. Закрывает: AC-003-11, AC-003-12, NFR-003-2. Готово, когда: результаты в журнале.
+- [x] **T-11.** Ручные проверки AC-003-11, AC-003-12, замер NFR-003-2 в журнал; README всех затронутых пакетов сверены. Закрывает: AC-003-11, AC-003-12, NFR-003-2. Готово, когда: результаты в журнале.
 
 ## 9. Открытые вопросы
 
@@ -270,3 +270,59 @@ drop table swarms;
 | 2026-10-29 | spec/003-t6 | T-6: хранилище роёв на Postgres (`createPostgresSwarmStore`): события и проекция в одной транзакции; `for update` на существующий рой; `insert ... on conflict do nothing` для `swarm.created` с повтором записи один раз при гонке; сбой rollback не скрывает исходную ошибку; тесты AC-003-2/3, параллельный `swarm.created`, бенч NFR-003-2 | `runMigrations` переведён на `advisoryLockMode: 'wait'` (T-5 — режим `fail` по умолчанию): блокировка node-pg-migrate общая для базы, параллельные запуски (тесты разных файлов, несколько экземпляров `api`) ждут друг друга, а не падают. Трактовка гонки `swarm.created` (не оговорена спекой): `on conflict do nothing` + один повтор записи. Промежуточный замер NFR-003-2: 1000 событий одного роя, p50 ≈ 2,8 мс, p95 3,6–6,0 мс, локальный Postgres в docker на Windows; итоговая таблица — T-11. |
 | 2026-10-29 | spec/003-t7 | T-7: `main.ts` собирает `api` на Postgres по 4.5; общий `startApiCore` (`apps/api/src/start.ts`) для `main.ts` и теста AC-003-8; compose ждёт `postgres` в состоянии `service_healthy` | Параметр `schema` у `startApiCore` — только для изоляции тестов (`search_path` и схема миграций); в `main.ts` не передаётся, схема `public`. При ошибке миграций две строки лога: `migrations failed` (по спеке, с причиной) и `startup failed` из `main.ts` (код 1). `@swag/adapter-memory` перенесён в `devDependencies` `apps/api`: нужен только тестам. |
 | 2026-10-29 | spec/003-t9 | T-9: `TELEMETRY_RETENTION` в `ObservabilityConfig` (формат `<целое>h`, не меньше `24h`, без значения по умолчанию), тест AC-003-10 (конфиг), `.env.example` — `24h`. T-10: `infra/lgtm/loki-config.yaml` и `tempo-config.yaml` — копии из `grafana/otel-lgtm:0.37.0` со сроком хранения, сервис `lgtm` в compose по 4.7, тест AC-003-10 в `scripts/repo.test.ts`, README — значения dev `24h` и прод `168h` | В Tempo 3.1.0 из образа нет секции `compactor` (Tempo не стартует: `field compactor not found`), поэтому срок задан ключом `backend_worker.compaction.block_retention: ${TELEMETRY_RETENTION}`. По исходникам v3.1.0 удаление по сроку выполняет backend-worker (`processRetentionJob` → `RetainTenantWithConfig` с `backend_worker.compaction`, перекрывается только per-tenant `overrides.defaults.compaction.block_retention`, у нас не задан); `backend_scheduler…block_retention` (336h в `/status/config`) не читается. Эффективные значения в контейнере при `24h`: Loki `retention_period: 1d`, Prometheus `storage.tsdb.retention.time: 1d`, Tempo `backend_worker.compaction.block_retention: 24h0m0s`. Заметки N-15 в `notes.md` уже нет: удалена при создании спеки. |
+| 2026-10-29 | spec/003-t11 | T-11: ручные проверки на `npm run up` (Windows, Docker Desktop, `LLM_PROFILE=test`, `TELEMETRY_RETENTION=24h` в окружении команды). **AC-003-12 — прошла**: Loki `retention_enabled: true`, `retention_period: 1d` (= 24h); Tempo `backend_worker…block_retention: 24h0m0s`; Prometheus `storage.tsdb.retention.time: 1d`; свежие данные есть в Loki и Tempo (раздел 7). **AC-003-11 — прошла**: первый рой `completed` (24 события, результат «итог роя»), второй («по кругу») `running` → `docker compose restart api` → `failed` `api_restarted` (29 событий), оба в `GET /swarms`, `docker ps -a --filter label=swag.kind` пуст; страницы UI после обновления показывают оба роя. **NFR-003-2**: 3 прогона, p50 2,77 / 2,77 / 2,79 мс, p95 3,75 / 3,72 / 3,67 мс. README `contracts`, `api-integration`, `apps/api` и корневой сверены с кодом, `api-core`, `adapter-memory`, `adapter-postgres`, `config` — без расхождений. Вывод проверок — в подразделе «Ручные проверки» ниже | (1) В локальном `.env` нет `TELEMETRY_RETENTION` и стоит `LLM_PROFILE=dev`: обе переменные переданы в окружении команд compose, `.env` не менялся. (2) Скриншоты не сняты: текст страниц UI получен встроенным браузером (`get_page_text`, `innerText`). (3) Loki и Prometheus показывают срок как `1d` — это 24h в другой записи. (4) README: в `apps/api` порядок остановки дополнен `pool.end()`; в `contracts` и `api-integration` в «Спеки» добавлена 003; в корневом README — Postgres среди адаптеров, `db-migrate` среди скриптов, `POSTGRES_TEST_URL` и команда замера. |
+
+### Ручные проверки (T-11)
+
+Среда: Windows 10, Docker Desktop, локальный Postgres 17 в docker (compose), стек поднят `TELEMETRY_RETENTION=24h LLM_PROFILE=test npm run up`.
+
+**AC-003-12** — запросы изнутри контейнера `lgtm` (`docker compose exec lgtm curl …`), отобраны строки о сроке хранения:
+
+```
+Loki  GET :3100/config        retention_enabled: true            (compactor)
+                              delete_request_store: filesystem
+                              retention_period: 1d               (limits_config; 1d = 24h)
+                              retention_period: 0s               (table_manager, не используется)
+Tempo GET :3200/status/config backend_worker.compaction.block_retention: 24h0m0s
+                              backend_scheduler…block_retention: 336h0m0s   (не читается, см. T-9/T-10)
+Prom  GET :9090/api/v1/status/flags  "storage.tsdb.retention.time":"1d"
+```
+
+Телеметрия собирается (раздел 7): Loki `query_range {service_name="api"}` отдаёт записи (`Server listening at …`, `service_name: api`); Tempo `/api/search` за последний час — трейсы `orchestrator` («cleanup orphans») и `api` (`GET`).
+
+**AC-003-11** — профиль `test`, задачи собраны `JSON.stringify` с маркером `__tool_calls__`:
+
+```
+Рой 1  87d3fe4b-e7db-47ff-9a45-0a90bf1a0014  агенты «Автор» и «Редактор»
+       задача: agent-1 → agent-2 → agent-1 → finish("итог роя")
+       до перезапуска: completed, lastSeq 24, result «итог роя»
+Рой 2  f1942c69-f954-47af-80e4-d1d11c8824f2  та же пара агентов
+       задача «по кругу»: send_message agent-2 → agent-1 → agent-2, без finish
+       до перезапуска: running, lastSeq 28, оба агента idle, 2 контейнера swag.kind
+docker compose restart api → healthy; лог api: "interrupted swarms closed", count: 1
+GET /swarms            → оба роя в списке
+GET /swarms/87d3fe4b…  → completed, lastSeq 24, result «итог роя», failure null
+GET …/events           → 24 события, seq 1..24, последнее swarm.completed
+GET /swarms/f1942c69…  → failed, lastSeq 29, failure {"reason":"api_restarted"}
+GET …/events           → 29 событий, seq 1..29, последнее swarm.failed
+                         {"reason":"api_restarted"}, source api, traceId null
+docker ps -a --filter label=swag.kind → пусто
+```
+
+UI после обновления (встроенный браузер, `http://127.0.0.1:4200`):
+
+- Список: две строки — «… ошибка · 2 агента · 2026-10-29T17:55:37.580Z» и «… завершён · 2 · 2026-10-29T17:55:31.231Z».
+- Страница первого роя: «Статус: завершён · поток подключён», рёбра «1 сообщ.» в обе стороны, «Автор agent-1 · готов, шагов: 2», «Редактор agent-2 · остановлен, шагов: 1», «Результат: итог роя», лента #1 `swarm.created` … #24 `swarm.completed итог роя`, три `llm.call` по `$0.009960`.
+- Страница второго роя: «Статус: ошибка · поток подключён», лента до #29 `swarm.failed api_restarted`.
+
+**NFR-003-2** — `POSTGRES_BENCH=1 POSTGRES_TEST_URL=<postgres на 127.0.0.1> npx vitest run packages/adapter-postgres/test/bench.test.ts`, 1000 событий одного роя:
+
+| Прогон | p50, мс | p95, мс |
+|---|---|---|
+| 1 | 2,77 | 3,75 |
+| 2 | 2,77 | 3,72 |
+| 3 | 2,79 | 3,67 |
+
+Машина: Windows, локальный Postgres в docker. Порога нет (точка отсчёта).
+
+**AC-003-9 (трактовка, завершение).** Отдельного теста критерий не требует: это регрессия «прежние тесты зелёные без изменения ожиданий». Id стоит в имени `describe` набора `packages/api-core/test/api-core.test.ts` (сценарии 001, 016, 002 на `createMemorySwarmStore` через асинхронный порт; в T-3 в них добавлены только `await`). Тестов 022 в `api-core` нет: сценарии 022 ядра `api` проверяются в `apps/api/test/e2e.test.ts` на том же адаптере в памяти, они тоже зелёные.

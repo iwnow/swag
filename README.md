@@ -80,6 +80,8 @@ npm run infra:check
 | `npm run agent:image`  | Собрать образ агента `swag-agent:dev` для песочниц                                                                                                                                                                                                             |
 | `npm run images:prune` | Удалить старые образы swag без тега (`<none>`), оставшиеся от пересборок                                                                                                                                                                                       |
 
+Тесты `adapter-postgres` и `apps/api` (хранилище роёв, спека 003) идут против Postgres при заданной `POSTGRES_TEST_URL` (в `.env.example` — база из compose на `127.0.0.1`); без неё пропускаются. Замер NFR-003-2 (p50 и p95 `appendEvent` на 1000 событий): `POSTGRES_BENCH=1 npx vitest run packages/adapter-postgres/test/bench.test.ts`.
+
 `npm run up` сначала собирает образ агента (`npm run agent:image`, профиль `agent`: `docker compose --profile agent build agent`), затем поднимает `postgres`, `nats`, `lgtm`, `otel-collector`, `orchestrator`, `api`, `ui`, а также `litellm`, `llm-fake` и `llm-gateway` (спека 002, профиль моделей `LLM_PROFILE`, по умолчанию `test`). Образ агента сам по себе не стартует. `orchestrator` ждёт `llm-gateway` (`service_healthy`): агенты ходят в модель только через него (спека 022, 4.8). В конце `npm run up` удаляет образы swag, которые остались без тега после пересборки (`npm run images:prune`): `npm run down` образы не трогает, и без чистки они копятся, примерно по 450 МБ на каждую пересборку сервиса. Чистка затрагивает только образы с меткой проекта compose `swag`; кэш сборки не трогается (`docker builder prune`). `api` ждёт `postgres` (`service_healthy`) и при старте применяет миграции схемы роёв до приёма запросов, затем закрывает рои, прерванные перезапуском (спека 003, 4.5).
 
 ## Как открыть личный кабинет и запустить рой
@@ -110,8 +112,8 @@ npm run infra:check
 apps/        оболочки: api, orchestrator (Fastify), agent (процесс в песочнице), llm-gateway (Fastify)
 apps/ui/     фронтенды (npm workspaces apps/ui/*): cabinet — личный кабинет на Angular
 packages/    ядра *-core (api, orchestrator, agent, ui, llm-gateway); contracts и api-integration (общие схемы и проекция роя);
-             adapter-* (Docker, NATS, память, HTTP-оркестратор); config (env, только для оболочек)
-scripts/     arch-check, spec-check, infra-check, llm-ping
+             adapter-* (Docker, NATS, память, Postgres, HTTP-оркестратор); config (env, только для оболочек)
+scripts/     arch-check, spec-check, infra-check, llm-ping, db-migrate
 ```
 
 ## Лицензия
