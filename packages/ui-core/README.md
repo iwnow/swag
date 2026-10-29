@@ -12,14 +12,16 @@
 - `traceUrl(traceId)` — адрес трейса события в Grafana по шаблону из зависимостей; без `traceId` — `null` (спека 016, 4.10).
 - `formatLlmCall(data)` — строка события `llm.call` для ленты роя: модель, токены с кэшем, стоимость в долларах (6 знаков), статус `прерван` или `ошибка <код>`; при `usage: null` — `без usage` (спека 002, 4.11). Чистая функция вне `createUiCore`: фронтенд вызывает её напрямую.
 - `formatAgentStep(data)` — строка `agent.step` в ленте роя: `шаг N`, текст ответа через `: ` (если не `null`), имена инструментов через `→` (спека 022, 4.10). Тип `data` — `AgentStepData`, выведен из `@swag/contracts`.
+- `unreadMessageIds(feed, status)` — id событий `bus.message`, на которые получатель не начал ход (нет `agent.working` с тем же `messageId`); пусто, пока рой не в `completed`, `failed`, `stopped` (спека 030, 4.4). Чистая функция вне `createUiCore`.
 - Форма: модель агента — поле `AgentDraft.model`; без выбора схема `SwarmCreateRequest` в `validateForm` подставляет `chat-small`, в `SwarmsApi.create` уходит она.
 
 ## Что внутри сейчас
 
-- `src/index.ts` — `createUiCore`, порты `SwarmsApi`, `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функции `formatLlmCall`, `formatAgentStep`.
+- `src/index.ts` — `createUiCore`, порты `SwarmsApi`, `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функции `formatLlmCall`, `formatAgentStep`, `unreadMessageIds`.
 - `test/ui-core.test.ts` — AC-001-23, AC-016-14, AC-022-23.
 - `test/format-llm-call.test.ts` — AC-002-24.
 - `test/format-agent-step.test.ts` — AC-022-23.
+- `test/unread-message-ids.test.ts` — AC-030-7.
 
 ## Ключевые решения
 
@@ -27,6 +29,7 @@
 - Переподключение: `onError` от потока → `Timers.setTimeout` → `open(id, lastSeq)`; защита от повторов — проверкой `event.seq <= view.lastSeq` до `applyEvent`; событие, не подходящее к состоянию, пропускается.
 - Модель формы роя не дублируется: список моделей UI берёт из `PlatformModel.options` контракта, форма валидируется `SwarmCreateRequest`, значение по умолчанию — из схемы (`chat-small`).
 - Зависимости (`package.json`): `@swag/contracts`, `@swag/api-integration`, `zod`; в исходниках `zod` напрямую не импортируется. Белый список ядра — REQ-001-18.
+- Непрочитанное (030) вычисляется из уже существующих событий: `bus.message` и `agent.working` с тем же `messageId`; новых событий платформы нет, проекция роя не меняется.
 - `traceUrl`: шаблон с подстановкой `{traceId}` приходит от фронтенда (`traces.urlTemplate`, обязательная зависимость), ядро не знает адреса Grafana. `traceId` подставляется через `encodeURIComponent` (для hex — без изменений), заменяются все вхождения `{traceId}`.
 
 ## Ограничения
@@ -45,3 +48,4 @@
 - 014 — деление `ui-core` по фронтендам (D-11).
 - 002 — 4.11, REQ-002-15, AC-002-24.
 - 022 — 4.1 (`PlatformModel`, `AgentDraft.model`), 4.10, REQ-022-15, AC-022-23.
+- 030 — 4.4, REQ-030-6, AC-030-7.
