@@ -71,10 +71,6 @@ const toolCall = (name: string, args: Record<string, unknown>): ChatModelResult 
     ],
   },
 });
-const reply = (content: string): ChatModelResult => ({
-  ok: true,
-  message: { content, tool_calls: [] },
-});
 
 // Скриптовый ChatModel: ответы по порядку. Исчерпанный сценарий — ok: false, агент уходит в failed, и тест это увидит.
 function scripted(replies: ChatModelResult[]): ChatModel {
@@ -94,16 +90,12 @@ function team(agentId: string): ChatModelResult[] {
     case 'agent-1':
       return [
         toolCall('send_message', { to: 'agent-2', text: 'Подготовь часть' }),
-        reply('Жду ответа'),
         toolCall('finish', { result: 'Итог: задача решена' }),
       ];
     case 'agent-2':
-      return [
-        toolCall('send_message', { to: 'agent-3', text: 'Дополни' }),
-        reply('Передал дальше'),
-      ];
+      return [toolCall('send_message', { to: 'agent-3', text: 'Дополни' })];
     case 'agent-3':
-      return [toolCall('send_message', { to: 'agent-1', text: 'Дополнено' }), reply('Отправил')];
+      return [toolCall('send_message', { to: 'agent-1', text: 'Дополнено' })];
     default:
       return [];
   }

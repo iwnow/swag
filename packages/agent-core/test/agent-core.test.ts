@@ -58,19 +58,19 @@ interface Entry {
 }
 
 let callCounter = 0;
-const toolCall = (name: string, args: Record<string, unknown>): ChatModelResult => ({
+const toolCalls = (...calls: [name: string, args: Record<string, unknown>][]): ChatModelResult => ({
   ok: true,
   message: {
     content: null,
-    tool_calls: [
-      {
-        id: `call_${++callCounter}`,
-        type: 'function',
-        function: { name, arguments: JSON.stringify(args) },
-      },
-    ],
+    tool_calls: calls.map(([name, args]) => ({
+      id: `call_${++callCounter}`,
+      type: 'function',
+      function: { name, arguments: JSON.stringify(args) },
+    })),
   },
 });
+const toolCall = (name: string, args: Record<string, unknown>): ChatModelResult =>
+  toolCalls([name, args]);
 const reply = (content: string): ChatModelResult => ({
   ok: true,
   message: { content, tool_calls: [] },
@@ -162,7 +162,7 @@ describe('agent-core', () => {
     });
   });
 
-  it('AC-022-13: агент без finish — два хода подряд: working, два шага, сообщение входу, idle; история и сквозные stepIndex', async () => {
+  it('AC-022-13: агент пишет входу в каждом ходе — send_message уступает ход: working, один шаг, idle; stepIndex сквозной, история накапливается', async () => {
     const { core, events, messages, requests, deliver } = setup(
       {
         agentId: 'agent-2',
@@ -172,9 +172,7 @@ describe('agent-core', () => {
       },
       [
         toolCall('send_message', { to: 'agent-1', text: 'черновик' }),
-        reply('готово'),
         toolCall('send_message', { to: 'agent-1', text: 'правка' }),
-        reply('готово 2'),
       ],
     );
     await core.start();
@@ -184,27 +182,57 @@ describe('agent-core', () => {
     expect(events.slice(1).map((e) => e.type)).toEqual([
       'agent.working',
       'agent.step',
-      'agent.step',
       'agent.idle',
       'agent.working',
-      'agent.step',
       'agent.step',
       'agent.idle',
     ]);
     expect(events.filter((e) => e.type === 'agent.step').map((e) => e.data)).toMatchObject([
       { messageId: MSG, stepIndex: 1 },
-      { messageId: MSG, stepIndex: 2, text: 'готово' },
-      { messageId: MSG2, stepIndex: 3 },
-      { messageId: MSG2, stepIndex: 4, text: 'готово 2' },
+      { messageId: MSG2, stepIndex: 2 },
     ]);
     expect(messages).toMatchObject([
       { from: 'agent-2', to: 'agent-1', text: 'черновик' },
       { from: 'agent-2', to: 'agent-1', text: 'правка' },
     ]);
-    expect(requests[2]?.messages).toContainEqual({
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.messages.map((m) => m.role)).toEqual([
+      'system',
+      'user',
+      'assistant',
+      'tool',
+      'user',
+    ]);
+    expect(requests[1]?.messages).toContainEqual({
       role: 'user',
       content: 'Сообщение от agent-1 «Автор»:\nпервая',
     });
+  });
+
+  it('AC-030-5: агент-вход шлёт участнику и уступает ход; ответ участника — следующий ход с его текстом во входе модели', async () => {
+    const { core, events, messages, requests, deliver } = setup({}, [
+      toolCall('send_message', { to: 'agent-2', text: 'проверь' }),
+      toolCall('finish', { result: 'итог' }),
+    ]);
+    await core.start();
+    await deliver(inbox('T'));
+    expect(events.slice(1).map((e) => e.type)).toEqual([
+      'agent.working',
+      'agent.step',
+      'agent.idle',
+    ]);
+    expect(events[2]).toMatchObject({ data: { messageId: MSG, stepIndex: 1 } });
+    expect(messages).toMatchObject([{ from: 'agent-1', to: 'agent-2', text: 'проверь' }]);
+    expect(requests).toHaveLength(1);
+    expect(countReminders(requests[0]?.messages ?? [])).toBe(0);
+
+    await deliver(inbox('правлено', 'agent-2', 'agent-1', MSG2));
+    expect(events[4]).toMatchObject({ type: 'agent.working', data: { messageId: MSG2 } });
+    expect(requests[1]?.messages.at(-1)).toEqual({
+      role: 'user',
+      content: 'Сообщение от agent-2 «Редактор»:\nправлено',
+    });
+    expect(events.at(-1)).toMatchObject({ type: 'agent.result', data: { text: 'итог' } });
   });
 
   it('AC-022-15: finish у агента-входа — agent.result, следующее сообщение отброшено с warn, модель не вызвана', async () => {
@@ -231,7 +259,8 @@ describe('agent-core', () => {
   it('AC-022-16: AGENT_MAX_STEPS=3 — три шага и agent.failed max_steps, следующее сообщение отброшено', async () => {
     const { core, events, entries, requests, deliver } = setup(
       { maxSteps: 3 },
-      Array.from({ length: 5 }, () => toolCall('send_message', { to: 'agent-2', text: 'x' })),
+      // agent-9 — не участник: send_message возвращает ошибку и не уступает ход.
+      Array.from({ length: 5 }, () => toolCall('send_message', { to: 'agent-9', text: 'x' })),
     );
     await core.start();
     await deliver(inbox('T'));
@@ -365,10 +394,11 @@ describe('agent-core', () => {
     const { core, events, requests, deliver } = setup(
       { peers: [...PEERS, { id: 'agent-3', name: 'Корректор', role: 'правит текст' }] },
       [
-        toolCall('send_message', { to: 'agent-2', text: 'a' }),
-        toolCall('send_message', { to: 'agent-3', text: 'b' }),
+        toolCalls(
+          ['send_message', { to: 'agent-2', text: 'a' }],
+          ['send_message', { to: 'agent-3', text: 'b' }],
+        ),
         reply('ждём'),
-        reply('ждём участников'),
         reply('ответ 3'),
         reply('итог'),
       ],
@@ -376,17 +406,17 @@ describe('agent-core', () => {
     await core.start();
     await deliver(inbox('T'));
     expect(events.at(-1)).toMatchObject({ type: 'agent.idle' });
-    expect(requests).toHaveLength(3);
+    expect(requests).toHaveLength(1);
 
     await deliver(inbox('ответ 2', 'agent-2', 'agent-1', MSG2));
     expect(events.at(-1)).toMatchObject({ type: 'agent.idle' });
-    expect(requests).toHaveLength(4);
-    expect(countReminders(requests[3]?.messages ?? [])).toBe(0);
+    expect(requests).toHaveLength(2);
+    expect(countReminders(requests[1]?.messages ?? [])).toBe(0);
 
     await deliver(inbox('ответ 3', 'agent-3', 'agent-1', MSG3));
-    expect(requests).toHaveLength(6);
-    expect(countReminders(requests[4]?.messages ?? [])).toBe(0);
-    expect(countReminders(requests[5]?.messages ?? [])).toBe(1);
+    expect(requests).toHaveLength(4);
+    expect(countReminders(requests[2]?.messages ?? [])).toBe(0);
+    expect(countReminders(requests[3]?.messages ?? [])).toBe(1);
     expect(events.at(-1)).toMatchObject({ type: 'agent.result', data: { text: 'итог' } });
   });
 
@@ -406,13 +436,11 @@ describe('agent-core', () => {
     expect(events.at(-1)).toMatchObject({ type: 'agent.idle' });
   });
 
-  it('AC-022-28: после напоминания send_message к agent-2 и текст — agent.idle без agent.result; ответ agent-2 не отбрасывается', async () => {
+  it('AC-022-28: после напоминания send_message к agent-2 — agent.idle без agent.result; ответ agent-2 не отбрасывается, finish по нему — agent.result', async () => {
     const { core, events, entries, requests, deliver } = setup({}, [
       reply('черновик'),
       toolCall('send_message', { to: 'agent-2', text: 'проверь' }),
-      reply('жду правку'),
-      reply('спасибо'),
-      reply('итог'),
+      toolCall('finish', { result: 'итог' }),
     ]);
     await core.start();
     await deliver(inbox('T'));
@@ -422,7 +450,7 @@ describe('agent-core', () => {
     await deliver(inbox('правка', 'agent-2', 'agent-1', MSG2));
     expect(entries.some((e) => e.msg === 'message dropped')).toBe(false);
     expect(events.at(-1)).toMatchObject({ type: 'agent.result', data: { text: 'итог' } });
-    expect(requests).toHaveLength(5);
+    expect(requests).toHaveLength(3);
   });
 
   it('AC-022-28: после напоминания текст null — agent.failed empty_result, agent.result нет', async () => {

@@ -80,7 +80,10 @@ function sendMessageTool(peers: AgentPeer[], send: SendMessage): AgentTool {
       const parsed = args.safeParse(raw);
       if (!parsed.success) return { content: `error: ${formatError(parsed.error)}` };
       await send(parsed.data.to, parsed.data.text);
-      return { content: `ok: отправлено ${parsed.data.to}` };
+      return {
+        content: `ok: отправлено ${parsed.data.to}. Ответ придёт отдельным сообщением.`,
+        yieldTurn: true,
+      };
     },
   };
 }

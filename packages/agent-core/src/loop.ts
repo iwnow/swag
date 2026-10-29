@@ -39,7 +39,8 @@ export interface AgentTool {
   definition: ToolDefinition;
   execute(args: unknown): Promise<ToolOutcome>; // args — уже JSON.parse; проверку схемы делает инструмент
 }
-export type ToolOutcome = { content: string; stop?: { result: string } };
+// yieldTurn — инструмент уступает ход: цикл заканчивается после этого шага (030, REQ-030-1).
+export type ToolOutcome = { content: string; stop?: { result: string }; yieldTurn?: true };
 
 export interface AgentCallContext {
   model: ModelId;
@@ -57,6 +58,7 @@ export interface AgentStep {
 export type AgentLoopResult = { messages: ChatMessage[]; steps: number } & (
   | { kind: 'text'; text: string | null }
   | { kind: 'stopped'; result: string }
+  | { kind: 'yielded' }
   | { kind: 'max_steps' }
   | { kind: 'model_error'; error: { code: ChatModelErrorCode; message: string } }
 );
@@ -105,6 +107,7 @@ export async function runAgentLoop(
     }
     const stop = runs.find(({ outcome }) => outcome.stop !== undefined)?.outcome.stop;
     if (stop) return { messages, steps, kind: 'stopped', result: stop.result };
+    if (runs.some(({ outcome }) => outcome.yieldTurn)) return { messages, steps, kind: 'yielded' };
   }
 }
 
