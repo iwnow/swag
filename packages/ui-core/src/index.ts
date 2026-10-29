@@ -2,6 +2,7 @@ import {
   SwarmCreateRequest,
   type LlmCallData,
   type PlatformEvent,
+  type SwarmStatus,
   type SwarmSummary,
 } from '@swag/contracts';
 import { applyEvent, type SwarmView } from '@swag/api-integration';
@@ -85,6 +86,24 @@ export function formatLlmCall(data: LlmCallData): string {
   const cost = ((data.costMicroUsd ?? 0) / 1e6).toFixed(6);
   const abortedMark = aborted ? ' · прерван' : '';
   return `${data.model} · ${promptTokens} (кэш ${cachedPromptTokens}) → ${completionTokens} ток. · $${cost}${abortedMark}`;
+}
+
+const FINAL_SWARM_STATUSES: ReadonlySet<SwarmStatus> = new Set(['completed', 'failed', 'stopped']);
+
+// Спека 030, 4.4: id событий bus.message, которые получатель не начал обрабатывать; пусто, пока рой не в конечном статусе.
+export function unreadMessageIds(
+  feed: readonly PlatformEvent[],
+  status: SwarmStatus,
+): ReadonlySet<string> {
+  const unread = new Set<string>();
+  if (!FINAL_SWARM_STATUSES.has(status)) return unread;
+  const started = new Set(
+    feed.flatMap((event) => (event.type === 'agent.working' ? [event.data.messageId] : [])),
+  );
+  for (const event of feed) {
+    if (event.type === 'bus.message' && !started.has(event.data.messageId)) unread.add(event.id);
+  }
+  return unread;
 }
 
 export function createUiCore(deps: UiCoreDeps): UiCore {
