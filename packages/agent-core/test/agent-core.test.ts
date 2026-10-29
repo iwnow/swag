@@ -259,6 +259,7 @@ describe('agent-core', () => {
   it('AC-022-16: AGENT_MAX_STEPS=3 — три шага и agent.failed max_steps, следующее сообщение отброшено', async () => {
     const { core, events, entries, requests, deliver } = setup(
       { maxSteps: 3 },
+      // agent-9 — не участник: send_message возвращает ошибку и не уступает ход.
       Array.from({ length: 5 }, () => toolCall('send_message', { to: 'agent-9', text: 'x' })),
     );
     await core.start();
