@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { LlmCaller, LlmSwarmRegistration, SwarmId } from '@swag/contracts';
+import { LlmCaller, LlmSwarmRegistration, PricePerMTok, SwarmId } from '@swag/contracts';
 import type {
   ChargeBasis,
   GatewayErrorCode,
@@ -176,6 +176,119 @@ export function parseProviderCost(raw: unknown): number | null {
   const cost = raw.cost;
   if (typeof cost !== 'number' || !Number.isFinite(cost) || cost < 0) return null;
   return Math.round(cost * 1_000_000);
+}
+
+// Спека 004, 4.9. Цены OpenRouter: строка за токен × 10⁶ → строка за 1 млн токенов, без Number.
+const DECIMAL = /^\d+(\.\d+)?$/;
+const TOKENS_PER_MTOK_DIGITS = 6;
+const EXTRA_CHARGE_FIELDS = ['request', 'image', 'web_search'] as const;
+
+// Десятичный сдвиг на 6 знаков; больше 4 знаков после точки — округление вверх; null — не разобрано или не PricePerMTok.
+function perMTokPrice(perToken: unknown): string | null {
+  if (typeof perToken !== 'string' || !DECIMAL.test(perToken)) return null;
+  const [whole = '0', fraction = ''] = perToken.split('.');
+  const point = whole.length + TOKENS_PER_MTOK_DIGITS;
+  const digits = (whole + fraction).padEnd(point, '0');
+  const rest = digits.slice(point);
+  const roundUp = /[1-9]/.test(rest.slice(4)) ? 1n : 0n;
+  const scaled = BigInt(digits.slice(0, point) + rest.slice(0, 4).padEnd(4, '0')) + roundUp;
+  const text = scaled.toString().padStart(5, '0');
+  const fractionText = text.slice(-4).replace(/0+$/, '');
+  const price = `${BigInt(text.slice(0, -4))}${fractionText ? `.${fractionText}` : ''}`;
+  return PricePerMTok.safeParse(price).success ? price : null;
+}
+
+// Спека 004, 4.9: request, image, web_search — пропуск, если не нулевые или не разобраны (отсутствие поля — ноль).
+function extraChargeReason(pricing: Record<string, unknown>): string | null {
+  for (const field of EXTRA_CHARGE_FIELDS) {
+    const value = pricing[field];
+    if (value === undefined || value === null) continue;
+    if (typeof value !== 'string' || !DECIMAL.test(value)) return `invalid pricing.${field}`;
+    if (/[1-9]/.test(value)) return `non-zero pricing.${field}`;
+  }
+  return null;
+}
+
+type PricesParse = { prices: ModelPrices } | { reason: string };
+
+// Спека 004, 4.9: prompt → inputPerMTokUsd, completion → outputPerMTokUsd, input_cache_read → cachedInputPerMTokUsd (нет — prompt).
+function pricesFromPricing(pricing: Record<string, unknown>): PricesParse {
+  const extra = extraChargeReason(pricing);
+  if (extra) return { reason: extra };
+  const inputPerMTokUsd = perMTokPrice(pricing.prompt);
+  if (inputPerMTokUsd === null) return { reason: 'invalid pricing.prompt' };
+  const outputPerMTokUsd = perMTokPrice(pricing.completion);
+  if (outputPerMTokUsd === null) return { reason: 'invalid pricing.completion' };
+  const cachedInputPerMTokUsd =
+    pricing.input_cache_read == null ? inputPerMTokUsd : perMTokPrice(pricing.input_cache_read);
+  if (cachedInputPerMTokUsd === null) return { reason: 'invalid pricing.input_cache_read' };
+  return { prices: { inputPerMTokUsd, cachedInputPerMTokUsd, outputPerMTokUsd } };
+}
+
+// Сравнение по значению: "3" и "3.00" равны.
+function samePrices(a: ModelPrices, b: ModelPrices): boolean {
+  return (
+    scaledPrice(a.inputPerMTokUsd) === scaledPrice(b.inputPerMTokUsd) &&
+    scaledPrice(a.cachedInputPerMTokUsd) === scaledPrice(b.cachedInputPerMTokUsd) &&
+    scaledPrice(a.outputPerMTokUsd) === scaledPrice(b.outputPerMTokUsd)
+  );
+}
+
+export type PriceChange = { model: ModelId; from: ModelPrices; to: ModelPrices };
+export type PriceSkip = { model: ModelId; reason: string };
+
+// Спека 004, 4.9. Чистая: модели с openRouterModel берут цены из data[] ответа с тем же id; остальные не меняются.
+// Ответ не того вида (нет data[]) — пустой список, все такие модели в skipped (D-96).
+export function applyOpenRouterPrices(
+  catalog: ModelCatalog,
+  response: unknown,
+): { catalog: ModelCatalog; changed: PriceChange[]; skipped: PriceSkip[] } {
+  const offers = new Map<string, Record<string, unknown>>();
+  if (isRecord(response) && Array.isArray(response.data)) {
+    for (const offer of response.data) {
+      if (isRecord(offer) && typeof offer.id === 'string' && !offers.has(offer.id)) {
+        offers.set(offer.id, offer);
+      }
+    }
+  }
+  const changed: PriceChange[] = [];
+  const skipped: PriceSkip[] = [];
+  const models = catalog.models.map((model) => {
+    if (model.openRouterModel === undefined) return model;
+    const offer = offers.get(model.openRouterModel);
+    if (!offer) {
+      skipped.push({ model: model.id, reason: 'not in OpenRouter response' });
+      return model;
+    }
+    if (!isRecord(offer.pricing)) {
+      skipped.push({ model: model.id, reason: 'no pricing' });
+      return model;
+    }
+    const parsed = pricesFromPricing(offer.pricing);
+    if ('reason' in parsed) {
+      skipped.push({ model: model.id, reason: parsed.reason });
+      return model;
+    }
+    if (samePrices(model.prices, parsed.prices)) return model;
+    changed.push({ model: model.id, from: model.prices, to: parsed.prices });
+    return { ...model, prices: parsed.prices };
+  });
+  return { catalog: { ...catalog, models }, changed, skipped };
+}
+
+// Спека 004, 4.9. Чистая: модель с openRouterModel и сохранённой ценой берёт её (ключ — openRouterModel, не id модели платформы).
+export function applyStoredPrices(catalog: ModelCatalog, stored: StoredPrice[]): ModelCatalog {
+  const byOpenRouterModel = new Map(stored.map((price) => [price.openRouterModel, price.prices]));
+  return {
+    ...catalog,
+    models: catalog.models.map((model) => {
+      const prices =
+        model.openRouterModel === undefined
+          ? undefined
+          : byOpenRouterModel.get(model.openRouterModel);
+      return prices === undefined ? model : { ...model, prices };
+    }),
+  };
 }
 
 // Спека 002, 4.4. Порт апстрима: обычный вызов, поток и список моделей.

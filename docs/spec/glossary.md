@@ -167,6 +167,7 @@
 | Старт gateway с Postgres | `startLlmGatewayCore`, `catalogPriceBook` | Оболочка `apps/llm-gateway`: миграции, пул, `BudgetStore`, `PriceBook` из каталога и `releaseHolds` до приёма запросов; `catalogPriceBook` пока без обновления цен (004, 4.4, 4.11, REQ-004-14). |
 | Сохранённые цены | `PriceStore`, `StoredPrice`, `createPostgresPriceStore`, `model_prices`, `applyStoredPrices`, `price_save_failed` | Последние успешные цены OpenRouter в Postgres по id модели OpenRouter; при старте ложатся поверх `models.json` (004, 4.5, 4.9, Q-8). |
 | Цены OpenRouter | `applyOpenRouterPrices`, `openRouterModel`, `@swag/adapter-openrouter`, `createOpenRouterPrices` | Обновление цен каталога из `GET /api/v1/models` OpenRouter (004, 4.9). |
+| Пропуск обновления цены | `price_update_skipped`, `PriceSkip`, `PriceChange` | Лог `warn` оболочки по `skipped` из `applyOpenRouterPrices` (поля `model`, `reason`); `PriceChange` — элемент `changed` с `from` и `to` (004, 4.9). Причины — английский текст, спека его не задаёт. |
 | Общие хелперы | `@swag/helpers`, `@swag/helpers/server` | Пакет `packages/helpers`: универсальные функции и хелперы над `fetch` только для сервера. |
 | Повтор с задержкой | `retry`, `RetryOptions`, `HttpError`, `httpRetryable`, `parseRetryAfter` | Повтор с экспоненциальной задержкой, полным разбросом и `Retry-After` (004, 4.10). |
 | Отчёт сверки | `ledgerReport`, `LedgerReport`, `money:report` | Суммы ledger по рою или периоду: списано по тарифу, факт провайдера, разница (004, 4.5, 4.13). |
