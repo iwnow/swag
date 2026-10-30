@@ -17,7 +17,11 @@ import {
 
 // Спека 002, 4.2 и 4.6: оболочка против фейка. Отказы до ядра и до апстрима не вызывают фейк и не публикуют событий.
 
-const validBody = { model: 'chat-small', messages: [{ role: 'user', content: 'hi' }] };
+const validBody = {
+  model: 'chat-small',
+  max_tokens: 256,
+  messages: [{ role: 'user', content: 'hi' }],
+};
 
 afterEach(closeAll);
 
@@ -194,6 +198,7 @@ describe('оболочка llm-gateway: ответ JSON и отмена (спе�
     const gateway = await openGateway();
     const sent = {
       model: 'chat-small',
+      max_tokens: 256,
       messages: [{ role: 'user', content: 'hi' }],
       tools: [
         { type: 'function', function: { name: 'get_weather', parameters: { type: 'object' } } },

@@ -18,6 +18,7 @@ const REMOTE_SPAN = '00f067aa0ba902b7';
 const headers = { ...caller, 'content-type': 'application/json' };
 const chat = (content: string, stream = false) => ({
   model: 'chat-small',
+  max_tokens: 256,
   messages: [{ role: 'user', content }],
   stream,
 });

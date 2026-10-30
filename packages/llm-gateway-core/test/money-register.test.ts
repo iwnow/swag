@@ -104,6 +104,17 @@ describe('registerSwarm и closeSwarm', () => {
     });
   });
 
+  it('AC-004-8: closeSwarm с id не в формате UUID — 404 not_found, budgets.close не вызван', async () => {
+    const { deps, budgets } = fakeDeps({ registered: false });
+    const close = vi.spyOn(budgets, 'close');
+    expect(await createLlmGatewayCore(deps).closeSwarm('not-a-uuid')).toMatchObject({
+      ok: false,
+      status: 404,
+      error: { code: 'not_found' },
+    });
+    expect(close).not.toHaveBeenCalled();
+  });
+
   it('AC-004-8: часы позже expiresAt — вызов дает 403, фейк не вызван', async () => {
     const { deps, upstream, clock } = fakeDeps({ registered: false, upstream: { complete: OK } });
     const core = createLlmGatewayCore(deps);

@@ -102,8 +102,9 @@ export const AgentConfig = z.object({
 });
 export type AgentConfig = z.infer<typeof AgentConfig>;
 
-// Спека 002, 4.9. Без BaseConfig: gateway не нужна DATABASE_URL. Ключи провайдеров — только в .env.llm (4.8).
+// Спека 002, 4.9; спека 004, 4.11: DATABASE_URL — бюджеты, ledger и цены. Без BaseConfig. Ключи провайдеров — только в .env.llm (4.8).
 export const LlmGatewayConfig = z.object({
+  DATABASE_URL: z.string().url(),
   NATS_URL: z.string().url(),
   OTEL_EXPORTER_OTLP_ENDPOINT: OptionalUrl,
   LOG_LEVEL: LogLevel.default('info'),

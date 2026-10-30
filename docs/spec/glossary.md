@@ -164,6 +164,7 @@
 | Причина «шлюз недоступен» | `gateway_unavailable` | Причина `swarm.failed`: регистрация роя в gateway не удалась, песочницы не создаются (004, 4.6). |
 | Регистрация роёв в оркестраторе | `LlmSwarms`, `createGatewaySwarms`, `@swag/adapter-gateway-http` | Порт `orchestrator-core` и HTTP-адаптер к внутреннему API gateway (004, 4.6). |
 | Книга цен | `PriceBook` | Порт `llm-gateway-core`: текущие цены модели, которые обновляются из OpenRouter (004, 4.4, 4.9). |
+| Старт gateway с Postgres | `startLlmGatewayCore`, `catalogPriceBook` | Оболочка `apps/llm-gateway`: миграции, пул, `BudgetStore`, `PriceBook` из каталога и `releaseHolds` до приёма запросов; `catalogPriceBook` пока без обновления цен (004, 4.4, 4.11, REQ-004-14). |
 | Сохранённые цены | `PriceStore`, `StoredPrice`, `createPostgresPriceStore`, `model_prices`, `applyStoredPrices`, `price_save_failed` | Последние успешные цены OpenRouter в Postgres по id модели OpenRouter; при старте ложатся поверх `models.json` (004, 4.5, 4.9, Q-8). |
 | Цены OpenRouter | `applyOpenRouterPrices`, `openRouterModel`, `@swag/adapter-openrouter`, `createOpenRouterPrices` | Обновление цен каталога из `GET /api/v1/models` OpenRouter (004, 4.9). |
 | Общие хелперы | `@swag/helpers`, `@swag/helpers/server` | Пакет `packages/helpers`: универсальные функции и хелперы над `fetch` только для сервера. |
