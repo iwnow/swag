@@ -45,6 +45,8 @@
 
 ## Ограничения
 
+- `holdMicroUsd` и `chargeFor` ожидают целые неотрицательные аргументы: `BigInt` на нецелом бросает `RangeError`. Валидация `maxOut` — в `complete` (спека 004, 4.3, шаг 7, T-5).
+
 Правила ядра ([архитектура](../../docs/architecture.md), [спека 000, 4.2](../../docs/spec/000-foundation.md#42-правила-ядра-и-оболочки)):
 
 - Зависимости — `@swag/contracts` и `zod`. `zod` по 4.14 нужен для схемы `ChatRequest`.

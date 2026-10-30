@@ -4,6 +4,7 @@ import type {
   ChargeBasis,
   GatewayErrorCode,
   LlmCallData,
+  LlmCallStatus,
   LlmCharge,
   LlmSwarmRegistration,
   LlmUsage,
@@ -126,7 +127,7 @@ export function outputBytes(message: unknown): number {
 // Спека 004, 4.3: usage есть (любой status) — по usage; нет usage при ok/aborted — оценка; error — 0.
 export function chargeFor(
   call: {
-    status: LlmCallData['status'];
+    status: LlmCallStatus;
     usage: LlmUsage | null;
     inputBytes: number;
     outputBytes: number;

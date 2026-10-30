@@ -62,15 +62,20 @@ describe('AC-004-9: chargeFor по таблице 4.3', () => {
 });
 
 describe('AC-004-9: inputBytes и outputBytes — UTF-8', () => {
-  const withContent = (content: string) =>
-    ({ messages: [{ role: 'user', content }] }) as Parameters<typeof inputBytes>[0];
+  const withContent = (content: string): Parameters<typeof inputBytes>[0] => ({
+    model: 'chat-small',
+    messages: [{ role: 'user', content }],
+  });
 
   it('AC-004-9: "ё" на 1 байт больше, чем "e" (2 байта против 1)', () => {
     expect(inputBytes(withContent('ё'))).toBe(inputBytes(withContent('e')) + 1);
   });
 
   it('AC-004-9: inputBytes считает JSON строки с messages и tools по умолчанию []', () => {
-    const body = { messages: [{ role: 'user', content: 'a' }] } as Parameters<typeof inputBytes>[0];
+    const body: Parameters<typeof inputBytes>[0] = {
+      model: 'chat-small',
+      messages: [{ role: 'user', content: 'a' }],
+    };
     expect(inputBytes(body)).toBe(
       new TextEncoder().encode(JSON.stringify({ messages: body.messages, tools: [] })).length,
     );
