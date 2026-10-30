@@ -234,7 +234,7 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
         AGENT_PEERS: JSON.stringify(peers),
         AGENT_ENTRY: ENTRY_AGENT_ID,
         AGENT_MAX_STEPS: String(deps.agent.maxSteps),
-        AGENT_MAX_TOKENS: String(deps.agent.maxTokens),
+        AGENT_MAX_TOKENS: String(agent.maxTokens ?? run.launch.maxTokens ?? deps.agent.maxTokens), // 031, 4.4
         LLM_GATEWAY_TOKEN: deps.agent.llmGatewayToken,
         TELEMETRY_FLUSH_TIMEOUT_MS: String(deps.agent.flushTimeoutMs),
       },

@@ -109,7 +109,10 @@ describe('ui-core', () => {
     expect(api.create).toHaveBeenCalledWith({
       task: 'T',
       budgetMicroUsd: 500000,
-      agents: [{ name: 'A', role: 'r', model: 'chat-small', budgetMicroUsd: null }],
+      maxTokens: null,
+      agents: [
+        { name: 'A', role: 'r', model: 'chat-small', budgetMicroUsd: null, maxTokens: null },
+      ],
     });
   });
 
@@ -126,7 +129,10 @@ describe('ui-core', () => {
     expect(api.create).toHaveBeenLastCalledWith({
       task: 'T',
       budgetMicroUsd: 500000,
-      agents: [{ name: 'A', role: 'r', model: 'chat-small', budgetMicroUsd: null }],
+      maxTokens: null,
+      agents: [
+        { name: 'A', role: 'r', model: 'chat-small', budgetMicroUsd: null, maxTokens: null },
+      ],
     });
 
     await core.createSwarm({
@@ -137,7 +143,10 @@ describe('ui-core', () => {
     expect(api.create).toHaveBeenLastCalledWith({
       task: 'T',
       budgetMicroUsd: 500000,
-      agents: [{ name: 'A', role: 'r', model: 'chat-large', budgetMicroUsd: null }],
+      maxTokens: null,
+      agents: [
+        { name: 'A', role: 'r', model: 'chat-large', budgetMicroUsd: null, maxTokens: null },
+      ],
     });
 
     const invalid = core.validateForm({

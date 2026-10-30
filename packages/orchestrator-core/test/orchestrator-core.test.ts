@@ -45,6 +45,7 @@ function setup(
     registerError?: Error;
     registerHold?: Promise<void>;
     closeError?: Error;
+    agentMaxTokens?: number;
   } = {},
 ): Fake {
   let counter = 0;
@@ -129,7 +130,7 @@ function setup(
     agent: {
       template: TEMPLATE,
       maxSteps: 20,
-      maxTokens: 2048,
+      maxTokens: options.agentMaxTokens ?? 2048,
       llmGatewayToken: LLM_TOKEN,
       flushTimeoutMs: 2000,
     },
@@ -165,6 +166,7 @@ const launchBody = (count: number) => ({
   swarmId: SWARM,
   task: 'T',
   budgetMicroUsd: 500000,
+  maxTokens: null,
   agents: agents(count),
 });
 
@@ -212,6 +214,7 @@ describe('orchestrator-core', () => {
       swarmId: SWARM,
       task: 'T',
       budgetMicroUsd: 500000,
+      maxTokens: null,
       agents: agents(3).map((agent, i) => ({ ...agent, model: models[i] })),
     };
     expect((await fake.core.launch(body)).ok).toBe(true);
@@ -668,3 +671,25 @@ describe('orchestrator-core: токен шлюза (спека 004, AC-004-33)',
 async function waitMicrotasks(): Promise<void> {
   for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
 }
+
+describe('orchestrator-core: AC-031-4 — AGENT_MAX_TOKENS агента, роя или умолчания', () => {
+  it('AC-031-4: агент с maxTokens 16384 и агент без значения при maxTokens роя 4096 — env 16384 и 4096', async () => {
+    const fake = setup({ agentMaxTokens: 8192 });
+    const body = {
+      ...launchBody(2),
+      maxTokens: 4096,
+      agents: agents(2).map((agent, i) => (i === 0 ? { ...agent, maxTokens: 16384 } : agent)),
+    };
+    expect((await fake.core.launch(body)).ok).toBe(true);
+    expect([...fake.sandboxes.values()].map((s) => s.env['AGENT_MAX_TOKENS'])).toEqual([
+      '16384',
+      '4096',
+    ]);
+  });
+
+  it('AC-031-4: без значения у агента и роя — AGENT_MAX_TOKENS умолчания оркестратора 8192', async () => {
+    const fake = setup({ agentMaxTokens: 8192 });
+    expect((await fake.core.launch(launchBody(1))).ok).toBe(true);
+    expect([...fake.sandboxes.values()].map((s) => s.env['AGENT_MAX_TOKENS'])).toEqual(['8192']);
+  });
+});
