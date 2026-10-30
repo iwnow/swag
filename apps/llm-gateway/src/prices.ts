@@ -62,7 +62,7 @@ export async function refreshPrices(deps: PriceRefreshDeps, signal: AbortSignal)
 }
 
 export interface PriceRefreshOptions extends PriceRefreshDeps {
-  profile: 'test' | 'dev' | 'prod';
+  profile: 'test' | 'dev' | 'test-pay' | 'prod';
   intervalMs: number; // LLM_PRICES_REFRESH_MS
 }
 

@@ -123,7 +123,7 @@ export const LlmGatewayConfig = z.object({
   LLM_GATEWAY_UPSTREAM_TIMEOUT_MS: z.coerce.number().int().min(1).default(120000),
   LLM_GATEWAY_STARTUP_TIMEOUT_MS: z.coerce.number().int().min(1).default(60000),
   LLM_GATEWAY_BODY_LIMIT_BYTES: z.coerce.number().int().min(1024).default(8388608),
-  LLM_PROFILE: z.enum(['test', 'dev', 'prod']), // спека 002, 4.8; test не обращается к OpenRouter (004, 4.9)
+  LLM_PROFILE: z.enum(['test', 'dev', 'test-pay', 'prod']), // спека 002, 4.8; 032, 4.1; test не обращается к OpenRouter (004, 4.9)
   LLM_PRICES_REFRESH_MS: z.coerce.number().int().min(0).default(3600000), // спека 004, 4.11; 0 — выключено
   OPENROUTER_MODELS_URL: z.string().url().default('https://openrouter.ai/api/v1/models'), // спека 004, 4.11
 });

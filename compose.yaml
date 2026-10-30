@@ -171,7 +171,7 @@ services:
       retries: 90
 
   # Спека 002, 4.8: LiteLLM — единственный выход к провайдерам. Ключи — из .env.llm, порта наружу нет.
-  # Профиль (test, dev, prod) выбирает LLM_PROFILE из .env: конфиг моделей монтируется по нему.
+  # Профиль (test, dev, test-pay, prod) выбирает LLM_PROFILE из .env: конфиг моделей монтируется по нему.
   litellm:
     image: ghcr.io/berriai/litellm:main-v1.83.14-stable.patch.3
     command: ['--config', '/app/config.yaml', '--port', '4000']

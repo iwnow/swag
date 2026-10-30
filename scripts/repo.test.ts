@@ -10,7 +10,7 @@ const root = new URL('..', import.meta.url);
 const git = (...args: string[]) =>
   execFileSync('git', args, { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
 
-const profiles = ['test', 'dev', 'prod'];
+const profiles = ['test', 'dev', 'test-pay', 'prod'];
 const profileFile = (profile: string, name: string) =>
   fileURLToPath(new URL(`infra/llm/${profile}/${name}`, root));
 const catalogIds = (profile: string) =>
@@ -64,7 +64,7 @@ describe('политики репозитория', () => {
     }
   });
 
-  it('AC-002-19: наборы id models.json трёх профилей равны', () => {
+  it('AC-002-19: наборы id models.json всех профилей равны', () => {
     const [first, ...rest] = profiles.map((profile) => [...catalogIds(profile)].sort());
     for (const ids of rest) expect(ids).toEqual(first);
   });
@@ -113,8 +113,25 @@ describe('политики репозитория', () => {
     expect(withKeys).toEqual(['litellm', 'llm-gateway']);
   });
 
-  it('AC-004-30: openRouterModel у каждой модели dev и prod равен litellm_params.model без openrouter/; в test поля нет', () => {
-    for (const profile of ['dev', 'prod']) {
+  it('AC-032-1: test-pay проходит ModelCatalog, id совпадают с id dev и prod, каждый id есть в litellm.yaml, openRouterModel равен модели LiteLLM без openrouter/', () => {
+    expect(() => readCatalog(profileFile('test-pay', 'models.json'))).not.toThrow();
+    expect([...catalogIds('test-pay')].sort()).toEqual([...catalogIds('dev')].sort());
+    expect([...catalogIds('test-pay')].sort()).toEqual([...catalogIds('prod')].sort());
+    const models = new Map(
+      liteLlmConfig('test-pay').model_list.map((entry) => [
+        entry.model_name,
+        entry.litellm_params.model,
+      ]),
+    );
+    for (const model of readCatalog(profileFile('test-pay', 'models.json')).models) {
+      expect(models.has(model.id), `test-pay/${model.id}`).toBe(true);
+      const upstream = String(models.get(model.id)).replace(/^openrouter\//, '');
+      expect(model.openRouterModel, `test-pay/${model.id}`).toBe(upstream);
+    }
+  });
+
+  it('AC-004-30: openRouterModel у каждой модели dev, test-pay и prod равен litellm_params.model без openrouter/; в test поля нет', () => {
+    for (const profile of ['dev', 'test-pay', 'prod']) {
       const models = new Map(
         liteLlmConfig(profile).model_list.map((entry) => [
           entry.model_name,

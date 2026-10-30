@@ -56,10 +56,11 @@
 
 ## Профили моделей (`infra/llm/`)
 
-Профиль выбирается `LLM_PROFILE` (`test`, `dev`, `prod`); каталог — `infra/llm/<профиль>/models.json` (путь в `LLM_CATALOG_PATH`), конфиг LiteLLM — `infra/llm/<профиль>/litellm.yaml`. Модели платформы одинаковые во всех профилях: `chat-small` и `chat-large` (Q-4). Наборы `id` трёх профилей совпадают (REQ-002-12). Ключи — только ссылки `os.environ/…`, значений в git нет.
+Профиль выбирается `LLM_PROFILE` (`test`, `dev`, `test-pay`, `prod`); каталог — `infra/llm/<профиль>/models.json` (путь в `LLM_CATALOG_PATH`), конфиг LiteLLM — `infra/llm/<профиль>/litellm.yaml`. Модели платформы одинаковые во всех профилях: `chat-small` и `chat-large` (Q-4). Наборы `id` четырёх профилей совпадают (REQ-002-12, 032).
 
 - `test` — фейковый провайдер `llm-fake` (`openai/fake-small`, `openai/fake-large`); цены по 4.7: `chat-small` `3.00 / 0.30 / 15.00`, `chat-large` `0 / 0 / 0`.
 - `dev` — OpenRouter, бесплатные модели `:free` (Q-2), цены `0`. Ключ — `OPENROUTER_API_KEY`.
+- `test-pay` (спека 032) — OpenRouter, дешёвые платные модели без reasoning (`mistralai/mistral-nemo` для `chat-small`, `meta-llama/llama-3.1-8b-instruct` для `chat-large`) для платных проверок вместо `prod`; цены OpenRouter. Ключ — `OPENROUTER_API_KEY`.
 - `prod` — OpenRouter, платные модели (Q-2), цены OpenRouter. Ключ — `OPENROUTER_API_KEY`.
 
 Проверено 2026-10-27 по `https://openrouter.ai/api/v1/models` (поле `pricing` в USD за токен, в таблице пересчитано в USD за 1 млн токенов; `supported_parameters` — поддержка `tools`) и по `https://openrouter.ai/models`. Поток: `stream: true` поддерживается для любой модели (`https://openrouter.ai/docs/api/reference/streaming`). `usage` в потоке приходит в последнем SSE-сообщении без параметров запроса, `stream_options.include_usage` объявлен устаревшим и не действует (`https://openrouter.ai/docs/use-cases/usage-accounting`). Стоимость провайдера — `usage.cost`.
