@@ -173,7 +173,7 @@
 | Пропуск обновления цены | `price_update_skipped`, `PriceSkip`, `PriceChange` | Лог `warn` оболочки по `skipped` из `applyOpenRouterPrices` (поля `model`, `reason`); `PriceChange` — элемент `changed` с `from` и `to` (004, 4.9). Причины — английский текст, спека его не задаёт. |
 | Общие хелперы | `@swag/helpers`, `@swag/helpers/server` | Пакет `packages/helpers`: универсальные функции и хелперы над `fetch` только для сервера. |
 | Повтор с задержкой | `retry`, `RetryOptions`, `HttpError`, `httpRetryable`, `parseRetryAfter` | Повтор с экспоненциальной задержкой, полным разбросом и `Retry-After` (004, 4.10). |
-| Отчёт сверки | `ledgerReport`, `LedgerReport`, `money:report` | Суммы ledger по рою или периоду: списано по тарифу, факт провайдера, разница (004, 4.5, 4.13). |
+| Отчёт сверки | `ledgerReport`, `LedgerReport`, `money:report`, `formatMoneyReport`, `parseMoneyReportArgs` | Суммы ledger по рою или периоду: списано по тарифу, факт провайдера, разница (004, 4.5, 4.13). `formatMoneyReport` — строки отчёта, `parseMoneyReportArgs` — разбор `--swarm` и `--since` в `scripts/money-report.ts`. |
 | Деньги в UI | `formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney` | Функции `ui-core`: сумма, перевод из долларов, расход за минуту, строка панели роя (004, 4.8). |
 | Ввод денег формы | `AgentInput`, `agentBudgetMicro`, `swarmFormInput` | `ui-core`: поля формы роя в доллары → micro-USD; пустой бюджет агента — `null` (004, 4.8). |
 | Тексты причин роя | `failureReasonText` | `ui-core`: текст причины `swarm.failed` — `budget_exceeded`, `gateway_unavailable` из 4.8, прочие как пришли (004, 4.8). |

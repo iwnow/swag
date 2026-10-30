@@ -57,6 +57,16 @@ npm run infra:check
 **Проверка.**
 
 - `npm run llm:ping [model] [-- --stream]` — с хоста регистрирует рой со случайным `swarmId` (бюджет 1000000, `agent-1`, истекает через 5 минут), делает один вызов через gateway, печатает ответ, `usage` и задержку, затем закрывает рой (спека 004, 4.13).
+- `npm run money:report -- [--swarm <uuid>] [--since <ISO>]` — сверка ledger: сколько списано по тарифу, сколько вызовы стоили у провайдера и разница по тем же вызовам; читает `DATABASE_URL` из `.env`, без фильтров — весь ledger (спека 004, 4.5, 4.13). Пример вывода:
+
+  ```
+  calls 12 · charged $0.0421 (usage 11 / $0.0418, estimate 1 / $0.0003, none 0)
+  provider $0.0415 по 11 вызовам · без факта 1
+  charged vs provider по тем же вызовам: $0.0418 vs $0.0415 · +0.72%
+  ```
+
+  Суммы — в долларах с четырьмя знаками, округление вверх; при `provider = 0` разница — `n/a`. Формат строк — спека 004, 4.13.
+
 - `npm run infra:check` — проверяет `/health` у `llm-gateway` (`service: llm-gateway`).
 - Замер задержки NFR-002-1 (p95 поверх апстрима, порог 20 мс в спеке, в CI не проверяется): `LLM_GATEWAY_BENCH=1 npx vitest run apps/llm-gateway/test/nfr-latency.test.ts`. Без переменной тест пропускается.
 - Стек-тесты `apps/llm-gateway/test/stack.test.ts` идут против поднятого стека при `LLM_GATEWAY_URL=http://127.0.0.1:3002`; без неё пропускаются.
@@ -79,6 +89,7 @@ npm run infra:check
 | `npm run infra:check`  | Проверить с хоста Postgres, NATS, `/health` у `api`, доступность `ui`, `/api/health` у Grafana; `/health` у `orchestrator` — изнутри контейнера, `otel-collector` — из сети compose (порты не публикуются); `/health` у `llm-gateway` с `service: llm-gateway` |
 | `npm run db:migrate`   | Применить миграции схемы роёв (`packages/adapter-postgres`) к базе из `DATABASE_URL`, адрес хоста — `127.0.0.1`, как у `infra:check` (спека 003, 4.6)                                                                                                          |
 | `npm run llm:ping`     | Регистрирует рой, один вызов через LLM Gateway с хоста и закрытие роя: `npm run llm:ping [model] [-- --stream]`, печатает ответ, `usage` и задержку; модель по умолчанию `chat-small` (спека 002, 4.13; регистрация и закрытие — спека 004, 4.13)              |
+| `npm run money:report` | Сверка ledger: списано по тарифу, стоимость провайдера и разница по тем же вызовам; фильтры `--swarm <uuid>` и `--since <ISO>` (спека 004, 4.5, 4.13)                                                                                                          |
 | `npm run agent:image`  | Собрать образ агента `swag-agent:dev` для песочниц                                                                                                                                                                                                             |
 | `npm run images:prune` | Удалить старые образы swag без тега (`<none>`), оставшиеся от пересборок                                                                                                                                                                                       |
 
