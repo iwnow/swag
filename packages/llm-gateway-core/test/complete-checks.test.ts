@@ -7,7 +7,11 @@ import { fakeDeps } from './fakes.ts';
 const signal = { aborted: false };
 const SWARM_ID = '6f1c2a4e-8b3d-4e5f-9a1b-2c3d4e5f6a7b';
 const caller = { swarmId: SWARM_ID, agentId: 'agent-1' };
-const body = { model: 'chat-small', messages: [{ role: 'user', content: 'привет' }] };
+const body = {
+  model: 'chat-small',
+  messages: [{ role: 'user', content: 'привет' }],
+  max_tokens: 256,
+};
 
 const CALLER_MESSAGE = 'Missing or invalid x-swag-swarm-id / x-swag-agent-id';
 

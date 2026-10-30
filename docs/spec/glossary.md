@@ -155,6 +155,7 @@
 | Ошибка внутреннего API gateway | `InternalErrorCode`, `swarm_registered` | Коды `/internal/*`: `invalid_request`, `model_not_found`, `swarm_registered`, `not_found` (004, 4.2). |
 | Бюджеты роёв | `swarm_budgets` | Таблица бюджета, трат и резервов роя в gateway (004, 4.5). |
 | Хранилище бюджетов | `BudgetStore`, `RegisteredAgent`, `createPostgresBudgetStore` | Порт `llm-gateway-core` и адаптер Postgres: регистрация, поиск агента, резерв, списание, закрытие, освобождение резервов (004, 4.4, 4.5). |
+| Внутренний API gateway | `InternalResult`, `InternalErrorCode`, `internalError` | Результат внутренних операций `registerSwarm` и `closeSwarm` и коды ошибок `invalid_request`, `model_not_found`, `swarm_registered`, `not_found` (004, 4.4). |
 | Результат резерва | `ReserveResult`, `reserve`, `settle`, `releaseHolds` | `ReserveResult` — `ok: true` или код `swarm_budget_exceeded` / `agent_budget_exceeded`; `reserve` — условный резерв, `settle` — списание с записью ledger, `releaseHolds` — снятие резервов при старте (004, 4.4, 4.5). |
 | Списание вызова | `LlmCharge`, `ChargeBasis`, `charge`, `chargeFor` | Сумма и основание (`usage`, `estimate`, `none`), записанные в ledger и в `llm.call` (004, 4.3). |
 | Оценка байтов вызова | `inputBytes`, `outputBytes` | Длина входа и выхода вызова в UTF-8 — верхняя граница токенов для резерва и оценки списания (004, 4.3). |

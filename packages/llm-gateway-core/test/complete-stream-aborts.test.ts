@@ -14,6 +14,7 @@ const BAD_REQUEST = 'bad request: unsupported tool_choice';
 const body = {
   model: 'chat-small',
   messages: [{ role: 'user', content: 'привет' }],
+  max_tokens: 256,
   stream: true,
 };
 

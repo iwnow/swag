@@ -1,12 +1,12 @@
 import { z } from 'zod';
-import { LlmCaller } from '@swag/contracts';
+import { LlmCaller, LlmSwarmRegistration } from '@swag/contracts';
 import type {
   ChargeBasis,
   GatewayErrorCode,
   LlmCallData,
   LlmCallStatus,
   LlmCharge,
-  LlmSwarmRegistration,
+  LlmSwarmClosed,
   LlmUsage,
   ModelCatalog,
   ModelId,
@@ -50,13 +50,17 @@ export function parseChatRequest(raw: unknown): ChatRequestParse {
   }
   const parsed = ChatRequest.safeParse(raw);
   if (parsed.success) return { ok: true, value: parsed.data };
-  const message = parsed.error.issues
+  return { ok: false, message: zodMessage(parsed.error) };
+}
+
+// Спека 002, 4.6. Первые три ошибки Zod как `path: message`, через `; `.
+function zodMessage(error: z.ZodError): string {
+  return error.issues
     .slice(0, 3)
     .map((issue) =>
       issue.path.length > 0 ? `${issue.path.join('.')}: ${issue.message}` : issue.message,
     )
     .join('; ');
-  return { ok: false, message };
 }
 
 // Спека 002, 4.3. Цены — целые × 10⁴: "3.00" → 30000, "0.0001" → 1.
@@ -122,6 +126,16 @@ export function outputBytes(message: unknown): number {
     }
   }
   return bytes;
+}
+
+// Спека 004, 4.3: сумма outputBytes по choices[].message (без потока) или choices[].delta (фрагмент потока).
+function choicesOutputBytes(payload: unknown, field: 'message' | 'delta'): number {
+  if (!isRecord(payload) || !Array.isArray(payload.choices)) return 0;
+  return payload.choices.reduce(
+    (sum: number, choice: unknown) =>
+      sum + outputBytes(isRecord(choice) ? choice[field] : undefined),
+    0,
+  );
 }
 
 // Спека 004, 4.3: usage есть (любой status) — по usage; нет usage при ok/aborted — оценка; error — 0.
@@ -250,6 +264,8 @@ export interface LlmGatewayDeps {
   trace: TraceContext;
   log: Logger;
   version: string;
+  budgets: BudgetStore; // спека 004, 4.4
+  prices: PriceBook; // цены модели для списания; catalog остаётся списком моделей
 }
 
 export type CompleteResult =
@@ -276,6 +292,11 @@ export interface LlmGatewayCore {
     rawBody: unknown,
     signal: UpstreamSignal,
   ): Promise<CompleteResult>;
+  // Спека 004, 4.4: регистрация роя; ошибка — InternalResult.
+  registerSwarm(raw: unknown): Promise<InternalResult<void>>;
+  closeSwarm(swarmId: string): Promise<InternalResult<LlmSwarmClosed>>;
+  // Снимает резервы прошлого процесса без списания; возвращает их число (лог warn hold_released на каждый).
+  releaseHolds(): Promise<number>;
 }
 
 const CALLER_MESSAGE = 'Missing or invalid x-swag-swarm-id / x-swag-agent-id';
@@ -284,6 +305,15 @@ const MODEL_NAME_LIMIT = 100;
 // Спека 002, 4.6. Отказ до апстрима: без обращения к LiteLLM и без события.
 function refusal(status: number, code: GatewayErrorCode, message: string): CompleteResult {
   return { kind: 'error', status, error: { message, code } };
+}
+
+// Спека 004, 4.4. Ошибка внутреннего API (регистрация роя, закрытие): без записи в БД.
+function internalError(
+  status: number,
+  code: InternalErrorCode,
+  message: string,
+): InternalResult<never> {
+  return { ok: false, status, error: { message, code } };
 }
 
 // Спека 002, 4.6. Отказ апстрима → статус, код и message клиенту; статус апстрима сюда не попадает (только в лог).
@@ -308,12 +338,14 @@ function upstreamReply(failure: UpstreamFailure): {
 
 // Спека 002, 4.10. Поля лога — из данных события и upstreamStatus; null/undefined не пишутся.
 function callLogFields(data: LlmCallData, caller: LlmCaller, upstreamStatus?: number): LogContext {
-  const { usage, ...rest } = data;
+  const { usage, charge, ...rest } = data;
   const fields = {
     swarmId: caller.swarmId,
     agentId: caller.agentId,
     ...rest,
     ...usage,
+    chargeMicroUsd: charge?.microUsd,
+    chargeBasis: charge?.basis,
     upstreamStatus,
   };
   return Object.fromEntries(Object.entries(fields).filter(([, value]) => value != null));
@@ -321,8 +353,22 @@ function callLogFields(data: LlmCallData, caller: LlmCaller, upstreamStatus?: nu
 
 const DONE = '[DONE]';
 
-// Спека 002, 4.4 (поток, шаг 3): usage фрагмента и его стоимость у провайдера; фрагмент не JSON или без usage — null.
-function chunkUsage(payload: string): { usage: LlmUsage; providerCost: number | null } | null {
+// Спека 004, 4.3: что нужно списанию вызова, кроме итога апстрима. Байты выхода — у вызова отдельно.
+interface Settlement {
+  caller: LlmCaller;
+  prices: ModelPrices;
+  bytesIn: number;
+  holdMicroUsd: number;
+}
+
+type LlmCallBase = Omit<LlmCallData, 'charge'>;
+
+// Спека 002, 4.4 (поток, шаг 3) и 004, 4.3: usage фрагмента с его стоимостью у провайдера и байты его delta; фрагмент не JSON — null.
+function parseChunk(payload: string): {
+  usage: LlmUsage | null;
+  providerCost: number | null;
+  deltaBytes: number;
+} | null {
   let chunk: unknown;
   try {
     chunk = JSON.parse(payload);
@@ -331,25 +377,82 @@ function chunkUsage(payload: string): { usage: LlmUsage; providerCost: number | 
   }
   const raw = isRecord(chunk) ? chunk.usage : undefined;
   const usage = parseUsage(raw);
-  return usage ? { usage, providerCost: parseProviderCost(raw) } : null;
+  return {
+    usage,
+    providerCost: usage ? parseProviderCost(raw) : null,
+    deltaBytes: choicesOutputBytes(chunk, 'delta'),
+  };
 }
 
 // Спека 002, 4.4. Фабрика ядра; complete — проверки 2–4 из 4.2, вызов (шаги 2–7 без потока, поток — шаги 1–5).
 export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
-  const { catalog, upstream, events, clock, ids, trace, log, version } = deps;
+  const {
+    catalog,
+    upstream,
+    events,
+    clock,
+    ids,
+    trace,
+    log,
+    version,
+    budgets,
+    prices: priceBook,
+  } = deps;
 
-  // Событие llm.call и лог `llm call` для обычного вызова: общие для успеха и отказа.
-  async function publishCall(
-    data: LlmCallData,
+  // Спека 004, 4.4: отказ на шагах 5–8 — без события, лог warn с кодом.
+  function refuseCall(
+    status: number,
+    code: GatewayErrorCode,
+    message: string,
     caller: LlmCaller,
+  ): CompleteResult {
+    log.warn('call_refused', { code, swarmId: caller.swarmId, agentId: caller.agentId });
+    return refusal(status, code, message);
+  }
+
+  // Спека 004, 4.3 (списание) и 002, 4.4 (событие `llm.call` и лог `llm call`): общие для успеха и отказа.
+  // Списание пишется до публикации; сбой записи не меняет ответ клиенту (REQ-004-13).
+  async function publishCall(
+    base: LlmCallBase,
+    settlement: Settlement,
+    bytesOut: number,
     upstreamStatus?: number,
-    level: 'info' | 'warn' = data.status === 'ok' ? 'info' : 'warn',
+    level: 'info' | 'warn' = base.status === 'ok' ? 'info' : 'warn',
   ) {
+    const { caller, prices, bytesIn, holdMicroUsd: hold } = settlement;
+    const charge = chargeFor(
+      { status: base.status, usage: base.usage, inputBytes: bytesIn, outputBytes: bytesOut },
+      prices,
+    );
+    const data: LlmCallData = { ...base, charge };
+    const ts = clock.now().toISOString();
+    try {
+      await budgets.settle({
+        callId: base.callId,
+        ts,
+        swarmId: caller.swarmId,
+        agentId: caller.agentId,
+        model: base.model,
+        kind: 'llm',
+        amountMicroUsd: charge.microUsd,
+        basis: charge.basis,
+        providerCostMicroUsd: base.providerCostMicroUsd,
+      });
+    } catch (err) {
+      log.error('settle_failed', { callId: base.callId, err });
+    }
+    if (charge.microUsd > hold) {
+      log.warn('hold_exceeded', {
+        callId: base.callId,
+        holdMicroUsd: hold,
+        chargeMicroUsd: charge.microUsd,
+      });
+    }
     const event: PlatformEventInput = {
       id: ids.uuid(),
       swarmId: caller.swarmId,
       agentId: caller.agentId,
-      ts: clock.now().toISOString(),
+      ts,
       source: 'llm-gateway',
       traceId: trace.currentTraceId(),
       type: 'llm.call',
@@ -358,7 +461,7 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
     try {
       await events.publishEvent(event);
     } catch (err) {
-      log.error('event_publish_failed', { callId: data.callId, err });
+      log.error('event_publish_failed', { callId: base.callId, err });
     }
     log[level]('llm call', callLogFields(data, caller, upstreamStatus));
   }
@@ -367,7 +470,7 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
   // Спека 030, 4.5: обрыв клиентом (aborted) у обычного вызова — событие `aborted` без errorCode, лог info; клиенту — как network.
   async function upstreamFailed(
     base: Pick<LlmCallData, 'callId' | 'model' | 'stream' | 'latencyMs'>,
-    caller: LlmCaller,
+    settlement: Settlement,
     failure: UpstreamFailure | { kind: 'aborted' },
   ): Promise<CompleteResult> {
     const aborted = failure.kind === 'aborted';
@@ -381,7 +484,8 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
         providerCostMicroUsd: null,
         ...(aborted ? {} : { errorCode: reply.code }),
       },
-      caller,
+      settlement,
+      0,
       failure.kind === 'http' ? failure.status : undefined,
       aborted ? 'info' : undefined,
     );
@@ -397,10 +501,10 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
     callId: string,
     t0: number,
     body: ChatRequest,
-    prices: ModelPrices,
-    caller: LlmCaller,
+    settlement: Settlement,
     signal: UpstreamSignal,
   ): Promise<CompleteResult> {
+    const { prices } = settlement;
     const response = await upstream.stream(
       { ...body, stream_options: { ...body.stream_options, include_usage: true } },
       signal,
@@ -409,7 +513,7 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
       const latencyMs = Math.round(clock.monotonicMs() - t0); // D-57: до публикации события
       return upstreamFailed(
         { callId, model: body.model, stream: true, latencyMs },
-        caller,
+        settlement,
         response.failure,
       );
     }
@@ -418,6 +522,7 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
     async function* relay(): AsyncGenerator<string> {
       let usage: LlmUsage | null = null;
       let providerCost: number | null = null;
+      let bytesOut = 0; // байты delta фрагментов, дошедших до клиента (4.3)
       let done = false;
       let reply: ReturnType<typeof upstreamReply> | null = null;
       let upstreamStatus: number | undefined;
@@ -428,12 +533,13 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
             yield payload;
             break;
           }
-          const found = chunkUsage(payload);
-          if (found) {
-            usage = found.usage;
-            providerCost = found.providerCost;
+          const chunk = parseChunk(payload);
+          if (chunk?.usage) {
+            usage = chunk.usage;
+            providerCost = chunk.providerCost;
           }
           yield payload;
+          bytesOut += chunk?.deltaBytes ?? 0;
         }
       } catch (err) {
         // Спека 002, 4.4 (шаг 5): обрыв апстрима после старта отдаём клиенту последним payload; клиент ушёл — исключение дальше.
@@ -458,7 +564,8 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
             latencyMs,
             ...(reply ? { errorCode: reply.code } : {}),
           },
-          caller,
+          settlement,
+          bytesOut,
           upstreamStatus,
         );
       }
@@ -498,16 +605,71 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
       const parsed = parseChatRequest(rawBody);
       if (!parsed.ok) return refusal(400, 'invalid_request', parsed.message);
       const body = parsed.value;
-      const entry = catalog.models.find((model) => model.id === body.model);
-      if (!entry) {
+      if (!catalog.models.some((model) => model.id === body.model)) {
         const name = Array.from(body.model).slice(0, MODEL_NAME_LIMIT).join('');
         return refusal(400, 'model_not_found', `Unknown model: ${name}`);
       }
 
+      // Спека 004, 4.2 (шаг 5) и 4.3 (шаги 7–8): регистрация роя и агента, max_tokens, резерв до апстрима.
+      const agent = await budgets.findAgent(caller.data.swarmId, caller.data.agentId);
+      if (!agent || agent.closed || (agent.expiresAt !== null && agent.expiresAt <= clock.now())) {
+        return refuseCall(
+          403,
+          'caller_not_registered',
+          'Swarm or agent is not registered',
+          caller.data,
+        );
+      }
+      if (agent.model !== body.model) {
+        return refuseCall(
+          403,
+          'model_not_allowed',
+          'Model is not allowed for this agent',
+          caller.data,
+        );
+      }
+      const maxOut = body.max_tokens ?? body.max_completion_tokens;
+      if (maxOut === undefined) {
+        return refuseCall(400, 'invalid_request', 'max_tokens is required', caller.data);
+      }
+      if (!isCount(maxOut) || maxOut < 1) {
+        return refuseCall(
+          400,
+          'invalid_request',
+          'max_tokens must be an integer >= 1',
+          caller.data,
+        );
+      }
+      const modelPrices = priceBook.prices(body.model);
+      const bytesIn = inputBytes(body);
+      const hold = holdMicroUsd(bytesIn, maxOut, modelPrices);
       const callId = ids.uuid();
+      const reserved = await budgets.reserve(callId, caller.data, hold, clock.now());
+      if (!reserved.ok) {
+        log.warn('budget_exceeded', {
+          swarmId: caller.data.swarmId,
+          agentId: caller.data.agentId,
+          holdMicroUsd: hold,
+          code: reserved.code,
+        });
+        return refusal(
+          402,
+          reserved.code,
+          reserved.code === 'swarm_budget_exceeded'
+            ? 'Swarm budget exceeded'
+            : 'Agent budget exceeded',
+        );
+      }
+      const settlement: Settlement = {
+        caller: caller.data,
+        prices: modelPrices,
+        bytesIn,
+        holdMicroUsd: hold,
+      };
+
       const t0 = clock.monotonicMs();
       if (body.stream === true) {
-        return streamReply(callId, t0, body, entry.prices, caller.data, signal);
+        return streamReply(callId, t0, body, settlement, signal);
       }
       const response = await upstream.complete(body, signal);
       const latencyMs = Math.round(clock.monotonicMs() - t0); // D-57: до публикации события
@@ -515,7 +677,7 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
       if (!response.ok) {
         return upstreamFailed(
           { callId, model: body.model, stream: false, latencyMs },
-          caller.data,
+          settlement,
           response.failure,
         );
       }
@@ -530,13 +692,53 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
           stream: false,
           status: 'ok',
           usage,
-          costMicroUsd: usage ? costMicroUsd(usage, entry.prices) : null,
+          costMicroUsd: usage ? costMicroUsd(usage, modelPrices) : null,
           providerCostMicroUsd: usage ? parseProviderCost(rawUsage) : null,
           latencyMs,
         },
-        caller.data,
+        settlement,
+        choicesOutputBytes(response.body, 'message'),
       );
       return { kind: 'json', body: response.body };
+    },
+
+    async registerSwarm(raw) {
+      const parsed = LlmSwarmRegistration.safeParse(raw);
+      if (!parsed.success) return internalError(400, 'invalid_request', zodMessage(parsed.error));
+      const reg = parsed.data;
+      if (
+        reg.agents.some(
+          (agent) => agent.budgetMicroUsd !== null && agent.budgetMicroUsd > reg.budgetMicroUsd,
+        )
+      ) {
+        return internalError(400, 'invalid_request', 'agent budget exceeds swarm budget');
+      }
+      if (reg.agents.some((agent) => !catalog.models.some((model) => model.id === agent.model))) {
+        return internalError(400, 'model_not_found', 'Unknown model');
+      }
+      const registered = await budgets.register(reg, clock.now());
+      return registered
+        ? { ok: true, value: undefined }
+        : internalError(409, 'swarm_registered', 'Swarm is already registered');
+    },
+
+    async closeSwarm(swarmId) {
+      const closed = await budgets.close(swarmId, clock.now());
+      return closed
+        ? { ok: true, value: closed }
+        : internalError(404, 'not_found', 'Swarm not found');
+    },
+
+    async releaseHolds() {
+      const released = await budgets.releaseHolds();
+      for (const hold of released) {
+        log.warn('hold_released', {
+          swarmId: hold.swarmId,
+          callId: hold.callId,
+          amountMicroUsd: hold.amountMicroUsd,
+        });
+      }
+      return released.length;
     },
   };
 }
@@ -586,6 +788,18 @@ export interface StoredPrice {
   prices: ModelPrices;
   updatedAt: Date;
 }
+
+// Спека 004, 4.4. Текущие цены модели платформы (каталог обновляется из OpenRouter, 4.9).
+export interface PriceBook {
+  prices(model: ModelId): ModelPrices;
+}
+
+// Спека 004, 4.4. Внутренний API (регистрация, закрытие): коды 4.2.
+export type InternalErrorCode =
+  'invalid_request' | 'model_not_found' | 'swarm_registered' | 'not_found';
+export type InternalResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; status: number; error: { message: string; code: InternalErrorCode } };
 
 export interface PriceStore {
   load(): Promise<StoredPrice[]>;
