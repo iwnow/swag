@@ -56,7 +56,9 @@
 
 ## Профили моделей (`infra/llm/`)
 
-Профиль выбирается `LLM_PROFILE` (`test`, `dev`, `prod`); каталог — `infra/llm/<профиль>/models.json` (путь в `LLM_CATALOG_PATH`), конфиг LiteLLM — `infra/llm/<профиль>/litellm.yaml`. Модели платформы одинаковые во всех профилях: `chat-small` и `chat-large` (Q-4). Наборы `id` трёх профилей совпадают (REQ-002-12). Ключи — только ссылки `os.environ/…`, значений в git нет.
+Профиль выбирается `LLM_PROFILE` (`test`, `dev`, `test-pay`, `prod`); каталог — `infra/llm/<профиль>/models.json` (путь в `LLM_CATALOG_PATH`), конфиг LiteLLM — `infra/llm/<профиль>/litellm.yaml`. Модели платформы одинаковые во всех профилях: `chat-small` и `chat-large` (Q-4). Наборы `id` четырёх профилей совпадают (REQ-002-12, 032).
+
+`test-pay` (спека 032) — дешёвые платные модели OpenRouter без reasoning (`mistralai/mistral-nemo` для `chat-small`, `meta-llama/llama-3.1-8b-instruct` для `chat-large`) для платных проверок; `prod` для них не используется. Цены обновляются из OpenRouter так же, как у `dev` и `prod`. Ключи — только ссылки `os.environ/…`, значений в git нет.
 
 - `test` — фейковый провайдер `llm-fake` (`openai/fake-small`, `openai/fake-large`); цены по 4.7: `chat-small` `3.00 / 0.30 / 15.00`, `chat-large` `0 / 0 / 0`.
 - `dev` — OpenRouter, бесплатные модели `:free` (Q-2), цены `0`. Ключ — `OPENROUTER_API_KEY`.

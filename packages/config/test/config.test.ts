@@ -19,6 +19,14 @@ const validEnv = {
 
 const gatewayToken = 'swag-local-gateway-token-not-secret-000';
 
+// Спека 002, 4.8 и 4.9: примеры окружения шлюза; `.env.example` и `.env.llm.example` вместе проходят разбор.
+const gatewayExamples = (): Record<string, string> => ({
+  ...parseEnv(readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8')),
+  ...parseEnv(readFileSync(new URL('../../../.env.llm.example', import.meta.url), 'utf8')),
+  // Спека 002, 4.8: задаёт compose; в 4.9 `.env.example` его не включает (D-63).
+  LLM_CATALOG_PATH: '/etc/swag/models.json',
+});
+
 // Спека 022, 4.8: env агента, который ставит ядро оркестратора.
 const agentEnv = {
   NATS_URL: 'nats://nats:4222',
@@ -249,13 +257,16 @@ describe('loadConfig', () => {
     expect(example).not.toHaveProperty('AGENT_STEP_DELAY_MS');
   });
 
+  it('AC-032-2: LlmGatewayConfig принимает LLM_PROFILE=test-pay и отклоняет dev-paid', () => {
+    const examples = gatewayExamples();
+    const profileOf = (LLM_PROFILE: string) =>
+      LlmGatewayConfig.safeParse({ ...examples, LLM_PROFILE }).success;
+    expect(profileOf('test-pay')).toBe(true);
+    expect(profileOf('dev-paid')).toBe(false);
+  });
+
   it('AC-002-27: LlmGatewayConfig — токен от 32 символов, LITELLM_MASTER_KEY с sk-; примеры окружения проходят', () => {
-    const examples: Record<string, string> = {
-      ...parseEnv(readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8')),
-      ...parseEnv(readFileSync(new URL('../../../.env.llm.example', import.meta.url), 'utf8')),
-      // Спека 002, 4.8: задаёт compose; в 4.9 `.env.example` его не включает (D-63).
-      LLM_CATALOG_PATH: '/etc/swag/models.json',
-    };
+    const examples = gatewayExamples();
     const { LLM_GATEWAY_TOKEN: _omitted, ...withoutToken } = examples;
     const failures = (env: Record<string, string | undefined>) =>
       LlmGatewayConfig.safeParse(env).error?.issues.map((issue) => issue.path.join('.')) ?? [];
