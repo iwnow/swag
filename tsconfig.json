@@ -5,6 +5,7 @@
   "references": [
     { "path": "packages/contracts" },
     { "path": "packages/config" },
+    { "path": "packages/helpers" },
     { "path": "packages/api-integration" },
     { "path": "packages/api-core" },
     { "path": "packages/orchestrator-core" },
