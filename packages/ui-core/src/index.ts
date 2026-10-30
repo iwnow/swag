@@ -118,20 +118,35 @@ export interface AgentInput {
   role: string;
   model: PlatformModel;
   budget: string; // «Бюджет агента, $»: пустое — бюджета нет
+  maxTokens: string; // «Лимит ответа, токенов»: пустое — значение роя
 }
 
 export function agentBudgetMicro(budget: string): number | null {
   return budget.trim() === '' ? null : usdToMicro(budget);
 }
 
-// Спека 004, 4.8: вход формы (доллары строками) → поля SwarmCreateRequest.
-export function swarmFormInput(task: string, budget: string, agents: AgentInput[]): unknown {
+// Спека 031, 4.5: пустое поле — null (значение по умолчанию), иначе целое; нечисловое — NaN, его отсекает SwarmCreateRequest.
+export function maxTokensInput(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed === '') return null;
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
+}
+
+// Спека 004, 4.8; лимит ответа — спека 031, 4.5: вход формы (доллары и токены строками) → поля SwarmCreateRequest.
+export function swarmFormInput(
+  task: string,
+  budget: string,
+  maxTokens: string,
+  agents: AgentInput[],
+): unknown {
   return {
     task,
     budgetMicroUsd: usdToMicro(budget),
-    agents: agents.map(({ budget: agentBudget, ...agent }) => ({
+    maxTokens: maxTokensInput(maxTokens),
+    agents: agents.map(({ budget: agentBudget, maxTokens: agentMaxTokens, ...agent }) => ({
       ...agent,
       budgetMicroUsd: agentBudgetMicro(agentBudget),
+      maxTokens: maxTokensInput(agentMaxTokens),
     })),
   };
 }
