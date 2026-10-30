@@ -194,7 +194,7 @@ export function swarmFormInput(
 Выполняются по порядку. После каждой задачи — коммит.
 
 - [x] **T-1.** `@swag/contracts`: `MaxTokens` в `llm.ts`, `maxTokens` в `AgentDraft`, `SwarmCreateRequest`, `SwarmLaunch` (`swarm.ts`) и `swarm.created` (`events.ts`) по 4.1; тесты в `test/swarm.test.ts`; README пакета; `MaxTokens` в глоссарий уже внесён. Закрывает: REQ-031-1, REQ-031-6, AC-031-1, AC-031-6. Готово, когда: тесты пакета и `npm run typecheck` зелёные. Ломает `api-core` и `orchestrator-core` по типам (`SwarmLaunch.maxTokens` обязателен), поэтому T-1…T-4 идут через фича-ветку `spec/031-max-tokens`, `npm run check` зелёный только после T-4.
-- [ ] **T-2.** `@swag/config`: `AGENT_MAX_TOKENS_LIMIT` в `ApiConfig` (`z.coerce.number().int().min(1)`); `.env.example` и локальный `.env` — `AGENT_MAX_TOKENS_LIMIT=65536`; `compose.yaml` — переменная у `api`; `apps/api/src/main.ts` — `limits.maxTokens`. README `config` и `api`. Закрывает: REQ-031-2 (конфигурация). Готово, когда: `npm run typecheck` по `config` и `api` зелёный.
+- [x] **T-2.** `@swag/config`: `AGENT_MAX_TOKENS_LIMIT` в `ApiConfig` (`z.coerce.number().int().min(1)`); `.env.example` и локальный `.env` — `AGENT_MAX_TOKENS_LIMIT=65536`; `compose.yaml` — переменная у `api`; `apps/api/src/main.ts` — `limits.maxTokens`. README `config` и `api`. Закрывает: REQ-031-2 (конфигурация). Готово, когда: `npm run typecheck` по `config` и `api` зелёный.
 - [ ] **T-3.** `@swag/api-core`: `limits.maxTokens`, проверка и перенос `maxTokens` в `createSwarm` по 4.3; тесты в `test/api-core.test.ts`; README. Закрывает: REQ-031-2, REQ-031-3, AC-031-2, AC-031-3. Готово, когда: тесты пакета зелёные.
 - [ ] **T-4.** `@swag/orchestrator-core`: `AGENT_MAX_TOKENS` в `agentSpec` по 4.4; тест на три агента; README. Закрывает: REQ-031-4, AC-031-4. Готово, когда: тесты пакета зелёные, `npm run check` зелёный (конец фича-ветки).
 - [ ] **T-5.** `@swag/ui-core`: `maxTokensInput`, поле `maxTokens` в `AgentInput`, третий аргумент `swarmFormInput` по 4.5; тесты; README. Ломает `apps/ui/cabinet` по сигнатуре — T-5 и T-6 одним этапом. Закрывает: REQ-031-5, AC-031-5. Готово, когда: тесты пакета зелёные.
@@ -215,3 +215,4 @@ export function swarmFormInput(
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
 | 2026-10-30 | spec/031-t1 / T-1 | Контракты: `MaxTokens`, `maxTokens` в `AgentDraft`, `SwarmCreateRequest`, `SwarmLaunch`, `swarm.created`; тесты AC-031-1, AC-031-6 | — |
+| 2026-10-30 | spec/031-t1 / T-2 | `AGENT_MAX_TOKENS_LIMIT` в `ApiConfig`, `.env.example`, `compose.yaml`, `main.ts` → `limits.maxTokens`; тесты config обновлены фикстурой | api typecheck зелёный только после T-3 (api-core `limits.maxTokens`) |
