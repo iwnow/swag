@@ -174,7 +174,7 @@ describe.skipIf(!url)('llm-gateway с Postgres (спека 004, 4.4, 4.5)', () =
       expect(ledgerSum).toBe(chargeSum);
       expect(ledgerSum).toBe(spent);
 
-      // spentMicroUsd проекции по опубликованным событиям роя (4.7, D-95) сходится с тем же числом.
+      // spentMicroUsd проекции по опубликованным событиям роя (4.7) сходится с тем же числом.
       const created = {
         id: randomUUID(),
         swarmId,

@@ -344,7 +344,7 @@ describe('projectSwarm — AC-004-26: деньги роя и агентов', ()
     expect(view.agents[0]?.spentMicroUsd).toBe(7000);
   });
 
-  it('AC-004-3: рой до 004 без бюджетов проецируется: budgetMicroUsd нет, spentMicroUsd = 0', () => {
+  it('проекция роя до 004 без бюджетов: budgetMicroUsd нет, spentMicroUsd = 0 (4.7)', () => {
     n = 0;
     const view = projectSwarm([
       ev({
@@ -379,8 +379,8 @@ describe('projectSwarm — AC-004-26: деньги роя и агентов', ()
   });
 });
 
-describe('applyEvent — AC-004-3: проекция, сохранённая до 004', () => {
-  it('AC-004-3: без полей расхода llm.call даёт число, не NaN', () => {
+describe('applyEvent — проекция, сохранённая до 004 (4.7, D-101)', () => {
+  it('без полей расхода llm.call даёт число, не NaN (D-101)', () => {
     n = 0;
     const view = projectSwarm([
       ev({
@@ -394,5 +394,21 @@ describe('applyEvent — AC-004-3: проекция, сохранённая до
     const next = applyEvent(stored as unknown as SwarmView, llmCall(A1, { costMicroUsd: 300 }));
     expect(next.spentMicroUsd).toBe(300);
     expect(next.agents[0]?.spentMicroUsd).toBe(300);
+  });
+});
+
+describe('projectSwarm — AC-004-26: charge важнее costMicroUsd', () => {
+  it('AC-004-26: при charge и costMicroUsd с разными значениями считается charge', () => {
+    n = 0;
+    const view = projectSwarm([
+      ev({
+        ...base(null, 'api'),
+        type: 'swarm.created',
+        data: { task: 'T', agents: [{ id: A1, name: 'A', role: 'r1', model: 'chat-small' }] },
+      }),
+      llmCall(A1, { charge: { microUsd: 900, basis: 'usage' }, costMicroUsd: 1200 }),
+    ]);
+    expect(view.spentMicroUsd).toBe(900);
+    expect(view.agents[0]?.spentMicroUsd).toBe(900);
   });
 });
