@@ -74,9 +74,29 @@ describe('loadConfig', () => {
       ...validEnv,
       ORCHESTRATOR_URL: 'http://orchestrator:3001',
       MAX_ACTIVE_SWARMS: '3',
+      SWARM_MAX_BUDGET_MICRO_USD: '5000000',
     };
     expect(loadConfig(ApiConfig, { ...apiEnv, API_PORT: '3000' }).API_PORT).toBe(3000);
     expect(() => loadConfig(ApiConfig, { ...apiEnv, API_PORT: 'abc' })).toThrow(/API_PORT/);
+  });
+
+  it('спека 004, 4.11: SWARM_MAX_BUDGET_MICRO_USD — целое не меньше 1', () => {
+    const apiEnv = {
+      ...validEnv,
+      ORCHESTRATOR_URL: 'http://orchestrator:3001',
+      MAX_ACTIVE_SWARMS: '3',
+      API_PORT: '3000',
+    };
+    expect(
+      loadConfig(ApiConfig, { ...apiEnv, SWARM_MAX_BUDGET_MICRO_USD: '5000000' })
+        .SWARM_MAX_BUDGET_MICRO_USD,
+    ).toBe(5000000);
+    expect(() => loadConfig(ApiConfig, { ...apiEnv, SWARM_MAX_BUDGET_MICRO_USD: '0' })).toThrow(
+      /SWARM_MAX_BUDGET_MICRO_USD/,
+    );
+    expect(() => loadConfig(ApiConfig, { ...apiEnv, SWARM_MAX_BUDGET_MICRO_USD: '1.5' })).toThrow(
+      /SWARM_MAX_BUDGET_MICRO_USD/,
+    );
   });
 
   it('спека 022, 4.8: AgentConfig разбирает AGENT_PEERS, умолчания и не знает AGENT_NEXT', () => {

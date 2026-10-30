@@ -53,7 +53,10 @@ const { core, pool } = await startApiCore(
     ids: { uuid: () => randomUUID() },
     log,
     trace: telemetry.trace,
-    limits: { maxActiveSwarms: config.MAX_ACTIVE_SWARMS },
+    limits: {
+      maxActiveSwarms: config.MAX_ACTIVE_SWARMS,
+      maxBudgetMicroUsd: config.SWARM_MAX_BUDGET_MICRO_USD,
+    },
   },
 ).catch((error: unknown) => fail('startup failed', error));
 

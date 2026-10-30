@@ -10,7 +10,7 @@
 ## Что внутри сейчас
 
 - `BaseConfig` — `DATABASE_URL`, `NATS_URL`; телеметрия (спека 016, 4.11): `OTEL_EXPORTER_OTLP_ENDPOINT` (необязательная, пусто → `null`), `LOG_LEVEL` (`LogLevel`, по умолчанию `info`), `TELEMETRY_FLUSH_TIMEOUT_MS` (по умолчанию `2000`).
-- `ApiConfig` — база + `API_PORT`, `ORCHESTRATOR_URL`, `MAX_ACTIVE_SWARMS` (спека 001).
+- `ApiConfig` — база + `API_PORT`, `ORCHESTRATOR_URL`, `MAX_ACTIVE_SWARMS` (спека 001), `SWARM_MAX_BUDGET_MICRO_USD` (спека 004, 4.11: целое не меньше 1, без значения по умолчанию).
 - `OrchestratorConfig` — база + `ORCHESTRATOR_PORT`, `AGENT_TEMPLATE`, `DOCKER_AGENT_NETWORK`, `DOCKER_AGENT_NATS_URL`, `DOCKER_AGENT_OTLP_ENDPOINT` (необязательная, пусто → `null`), `AGENT_START_TIMEOUT_MS`, `SWARM_TIMEOUT_MS`; спека 022, 4.8: `AGENT_MAX_STEPS`, `AGENT_MAX_TOKENS` (целые ≥ 1), `LLM_GATEWAY_TOKEN` (от 32 символов), `DOCKER_AGENT_LLM_GATEWAY_URL` (URL); спека 004, 4.11: `LLM_GATEWAY_URL` (URL, адрес gateway без `/v1` — внутренний API для регистрации роёв; в отличие от `AgentConfig.LLM_GATEWAY_URL` с `/v1`).
 - `AgentConfig` — без `DATABASE_URL` (спека 022, 4.8): `NATS_URL`, `SWARM_ID`, `AGENT_ID`, `AGENT_NAME`, `AGENT_ROLE`, `AGENT_MODEL`, `AGENT_PEERS` (JSON-массив `{id, name, role}`), `AGENT_ENTRY`, `AGENT_MAX_STEPS`, `AGENT_MAX_TOKENS`, `LLM_GATEWAY_URL`, `LLM_GATEWAY_TOKEN` (от 32 символов), `AGENT_LLM_TIMEOUT_MS` (по умолчанию `120000`), `AGENT_LLM_MAX_RETRIES` (по умолчанию `2`); телеметрия: `TRACEPARENT` и `OTEL_EXPORTER_OTLP_ENDPOINT` (пусто → `null`), `TELEMETRY_FLUSH_TIMEOUT_MS` (по умолчанию `2000`).
 - `LlmGatewayConfig` — телеметрия (`OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL`, `TELEMETRY_FLUSH_TIMEOUT_MS`) и `NATS_URL`, `LLM_GATEWAY_PORT`, `LLM_GATEWAY_TOKEN` (от 32 символов), `LLM_CATALOG_PATH`, `LITELLM_URL`, `LITELLM_MASTER_KEY` (с `sk-`, от 16 символов), таймауты и лимит тела `LLM_GATEWAY_UPSTREAM_TIMEOUT_MS`, `LLM_GATEWAY_STARTUP_TIMEOUT_MS`, `LLM_GATEWAY_BODY_LIMIT_BYTES` (спека 002, 4.9); без `DATABASE_URL`.
@@ -50,3 +50,4 @@
 - 003 — 4.7, `TELEMETRY_RETENTION` (Q-5).
 - 002 — 4.8 (файлы окружения), 4.9 (`LlmGatewayConfig`), AC-002-27.
 - 022 — 4.8 (env агента и оркестратора, `.env.example`).
+- 004 — 4.11, `SWARM_MAX_BUDGET_MICRO_USD` в `ApiConfig`.

@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { projectSwarm } from '@swag/api-integration';
 import { createPostgresBudgetStore, runMigrations } from '@swag/adapter-postgres';
-import type { PlatformEventInput } from '@swag/contracts';
+import type { PlatformEvent, PlatformEventInput } from '@swag/contracts';
 import { startLlmGatewayCore } from '../src/start.ts';
 import { readCatalog } from '../src/catalog.ts';
 import { startFakeProvider, type FakeProvider } from '../../../infra/llm/fake-provider/server.ts';
@@ -113,7 +114,7 @@ describe.skipIf(!url)('llm-gateway с Postgres (спека 004, 4.4, 4.5)', () =
     }
   });
 
-  it('AC-004-19 (без projectSwarm): 12 вызовов роя из трёх агентов и закрытие — ledger, charge событий и ответ закрытия сходятся', async () => {
+  it('AC-004-19: 12 вызовов роя из трёх агентов и закрытие — ledger, charge событий, ответ закрытия и projectSwarm сходятся', async () => {
     const fake: FakeProvider = await startFakeProvider({ port: 0 });
     const pool = newPool();
     const swarmId = randomUUID();
@@ -172,6 +173,31 @@ describe.skipIf(!url)('llm-gateway с Postgres (спека 004, 4.4, 4.5)', () =
       expect(ledger.rows[0]?.n).toBe(12);
       expect(ledgerSum).toBe(chargeSum);
       expect(ledgerSum).toBe(spent);
+
+      // spentMicroUsd проекции по опубликованным событиям роя (4.7) сходится с тем же числом.
+      const created = {
+        id: randomUUID(),
+        swarmId,
+        ts: new Date().toISOString(),
+        source: 'api',
+        agentId: null,
+        traceId: null,
+        type: 'swarm.created',
+        data: {
+          task: 'T',
+          budgetMicroUsd: LIMIT,
+          agents: AGENTS.map((id) => ({
+            id,
+            name: id,
+            role: 'r',
+            model: 'chat-small',
+            budgetMicroUsd: null,
+          })),
+        },
+      } as PlatformEventInput;
+      const roiEvents = [created, ...events.filter((e) => e.swarmId === swarmId)];
+      const view = projectSwarm(roiEvents.map((e, i) => ({ ...e, seq: i + 1 }) as PlatformEvent));
+      expect(view.spentMicroUsd).toBe(spent);
     } finally {
       await fake.close();
     }
