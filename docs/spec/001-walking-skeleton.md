@@ -109,10 +109,12 @@ export const SwarmId = z.uuid();
 export const AgentDraft = z.strictObject({
   name: z.string().trim().min(1).max(40),
   role: z.string().trim().min(1).max(500), // роль агента: текст обязанностей, не путать с ролью пользователя
+  budgetMicroUsd: BudgetMicroUsd.nullable().default(null), // изменено спекой 004, 4.1: null — только бюджет роя
 });
 
 export const SwarmCreateRequest = z.strictObject({
   task: z.string().trim().min(1).max(4000),
+  budgetMicroUsd: BudgetMicroUsd, // изменено спекой 004, 4.1: бюджет роя обязателен, от 1 до SWARM_MAX_BUDGET_MICRO_USD
   agents: z.array(AgentDraft).min(1).max(8),
 });
 
@@ -125,6 +127,7 @@ export const AgentStatus = z.enum(['starting', 'idle', 'working', 'done', 'stopp
 export const SwarmLaunch = z.strictObject({
   swarmId: SwarmId,
   task: z.string(),
+  budgetMicroUsd: BudgetMicroUsd, // изменено спекой 004, 4.1
   agents: z.array(AgentSpec).min(1),
 });
 ```
@@ -172,12 +175,12 @@ const Envelope = {
 };
 
 export const PlatformEventInput = z.discriminatedUnion('type', [
-  z.strictObject({ ...Envelope, type: z.literal('swarm.created'),   data: z.strictObject({ task: z.string(), agents: z.array(AgentSpec) }) }),
+  z.strictObject({ ...Envelope, type: z.literal('swarm.created'),   data: z.strictObject({ task: z.string(), budgetMicroUsd: BudgetMicroUsd.optional(), agents: z.array(AgentSpec.partial({ budgetMicroUsd: true })) }) }), // изменено спекой 004, 4.1: бюджеты; у событий до 004 их нет
   z.strictObject({ ...Envelope, type: z.literal('swarm.started'),   data: z.strictObject({}) }),
   z.strictObject({ ...Envelope, type: z.literal('swarm.completed'), data: z.strictObject({ result: z.string() }) }),
   z.strictObject({ ...Envelope, type: z.literal('swarm.stopped'),   data: z.strictObject({ reason: z.literal('user') }) }),
   z.strictObject({ ...Envelope, type: z.literal('swarm.failed'),    data: z.strictObject({
-      reason: z.enum(['agent_start_timeout', 'swarm_timeout', 'orchestrator_unavailable', 'sandbox_error']),
+      reason: z.enum(['agent_start_timeout', 'swarm_timeout', 'orchestrator_unavailable', 'sandbox_error', 'budget_exceeded', 'gateway_unavailable']), // две последние — изменено спекой 004, 4.1
       detail: z.string().optional() }) }),
   z.strictObject({ ...Envelope, type: z.literal('agent.launched'),  data: z.strictObject({ sandboxId: z.string() }) }),
   z.strictObject({ ...Envelope, type: z.literal('agent.started'),   data: z.strictObject({}) }),
@@ -212,7 +215,9 @@ export interface SwarmView {
   task: string;
   status: SwarmStatus;
   createdAt: string;                  // ts события swarm.created
-  agents: { id: AgentId; name: string; role: string; status: AgentStatus; messagesIn: number; messagesOut: number }[];
+  budgetMicroUsd?: number;  // изменено спекой 004, 4.7: нет у роёв до 004
+  spentMicroUsd: number;    // изменено спекой 004, 4.7: сумма charge.microUsd событий llm.call роя
+  agents: { id: AgentId; name: string; role: string; status: AgentStatus; messagesIn: number; messagesOut: number; budgetMicroUsd?: number | null; spentMicroUsd: number }[];
   edges: { from: AgentId; to: AgentId; messages: number }[]; // рёбра по фактическим сообщениям (изменено спекой 022, 4.6)
   result: string | null;
   failure: { reason: string; detail?: string } | null;
@@ -226,7 +231,7 @@ export function projectSwarm(events: PlatformEvent[]): SwarmView; // = events.re
 
 | Событие | Рой | Агент |
 |---|---|---|
-| `swarm.created` | создаётся, `starting`; агенты из `data.agents`, все `starting`; `edges` пуст | — |
+| `swarm.created` | создаётся, `starting`; бюджеты из `data.budgetMicroUsd` и `data.agents[].budgetMicroUsd` (*изменено спекой 004, 4.7*); агенты из `data.agents`, все `starting`; `edges` пуст | — |
 | `swarm.started` | `running` | — |
 | `agent.started` | — | `idle` |
 | `agent.working` | — | `working` |
@@ -237,6 +242,7 @@ export function projectSwarm(events: PlatformEvent[]): SwarmView; // = events.re
 | `swarm.completed` | `completed`, `result = data.result` | — |
 | `swarm.stopped` | `stopped` | — |
 | `swarm.failed` | `failed`, `failure = data` | — |
+| `llm.call` (*изменено спекой 004, 4.7*) | `spentMicroUsd += charge.microUsd` (без `charge` — `costMicroUsd ?? 0`) | `spentMicroUsd += ` то же у агента `agentId` |
 
 `lastSeq` = `seq` последнего применённого события. Событие с `seq` не больше `lastSeq` игнорируется. Событие до `swarm.created` — ошибка.
 
@@ -262,7 +268,7 @@ export const SwarmSummary = z.object({
 ```
 
 `POST /swarms`:
-1. Проверить тело и число активных роёв (`starting` + `running`) против `MAX_ACTIVE_SWARMS`.
+1. Проверить тело, бюджет роя против `SWARM_MAX_BUDGET_MICRO_USD` и бюджет агента против бюджета роя (*изменено спекой 004, 4.7*: `validation_error`), число активных роёв (`starting` + `running`) против `MAX_ACTIVE_SWARMS`.
 2. Назначить `swarmId` (UUID v4), агентам — `agent-1…agent-N` по порядку.
 3. Записать `swarm.created`.
 4. Вызвать оркестратор (`SwarmLaunch`).
@@ -369,7 +375,7 @@ export interface OrchestratorCore {
 ```
 
 Порядок запуска роя:
-1. `launch`.
+1. `launch`. Регистрация роя в gateway до песочниц (*изменено спекой 004, 4.6*): бюджеты, срок и модели агентов; сбой → `swarm.failed` (`gateway_unavailable`), песочниц нет.
 2. Для каждого агента `create` → `agent.launched`. Ошибка `create` → `swarm.failed` (`sandbox_error`) и уборка.
 3. Ждать `agent.started` от всех, но не дольше `agentStartMs`.
 4. `BusMessage` от `user` к `agent-1` с текстом задачи.
@@ -467,11 +473,11 @@ Docker-адаптер (`packages/adapter-docker`) переводит это в �
 
 ## 5. Критерии приёмки
 
-- **AC-001-1** — *Given* `SwarmCreateRequest`, *When* разбор, *Then* валидный запрос с 1 и с 8 агентами проходит; пустая задача, 0 или 9 агентов, роль длиннее 500, лишнее поле — ошибка с путём поля.
+- **AC-001-1** — *Given* `SwarmCreateRequest`, *When* разбор, *Then* валидный запрос с бюджетом роя и с 1 и с 8 агентами проходит; пустая задача, 0 или 9 агентов, роль длиннее 500, лишнее поле, отсутствующий или нулевой `budgetMicroUsd` — ошибка с путём поля (*изменено спекой 004, AC-004-1*).
 - **AC-001-2** — *Given* последовательность событий из таблицы 4.4, *When* `projectSwarm`, *Then* статусы роя и агентов, счётчики сообщений, рёбра, `result` и `failure` соответствуют таблице; событие с повторным `seq` не меняет состояние.
-- **AC-001-3** — *Given* `api` с фейковым оркестратором, *When* `POST /swarms` с тремя агентами, *Then*:
+- **AC-001-3** — *Given* `api` с фейковым оркестратором, *When* `POST /swarms` с тремя агентами и `budgetMicroUsd: 500000` (*изменено спекой 004, AC-004-2*), *Then*:
   - ответ `201`, `status: starting`, агенты `agent-1…agent-3`;
-  - оркестратор получил `SwarmLaunch` с тем же `swarmId`;
+  - оркестратор получил `SwarmLaunch` с тем же `swarmId` и `budgetMicroUsd: 500000`;
   - у роя одно событие `swarm.created` с `seq: 1`.
 - **AC-001-4** — *Given* `api`, *When* `POST /swarms` с невалидным телом, *Then* `400`, `error.code = validation_error`, в `issues` путь поля.
 - **AC-001-5** — *Given* `MAX_ACTIVE_SWARMS=1` и один рой в `running`, *When* `POST /swarms`, *Then* `409 too_many_active_swarms`; после `swarm.completed` первого роя новый создаётся.
@@ -671,3 +677,4 @@ T`.
 | 2026-10-22 | — | **UI в браузере (проверил человек с Claude).** Кабинет в compose не грузился: в образ попадал локальный кэш `apps/ui/cabinet/.angular` (504 Outdated Optimize Dep), каталог кабинета принадлежал root (EACCES у `ng serve` под `node`), не копировался `tsconfig.base.json`; без `<base href="/">` прямой переход на `/swarms/...` давал 404 на `main.js`. Исправлено: `**/.angular` в `.dockerignore`, `chown` каталога и копия `tsconfig.base.json` в Dockerfile, `<base href>` в `index.html`. После исправления AC-001-26: рой из трёх агентов из UI, статусы в графе и лента обновляются без перезагрузки, результат по 4.7.2, контейнеров с меткой 0. AC-001-27: «Стоп» в UI во время эстафеты (задержка 1000 мс) — рой и агенты `stopped`, контейнеров 0. Healthcheck `ui` проверяет только отдачу `index.html` и сломанный UI не ловит. | Задержка 1000 мс, не 5000. |
 | 2026-10-22 | — | **Ручной UI.** Angular 22 собирается (`ng build`, bundle 689 kB raw). Ручная проверка графа и кнопки «Стоп» в браузере — не проведена. | Не проверено, нужен человек. |
 | 2026-10-28 | `spec/022-t16` | **Правка по Q-6 спеки 022 (T-16).** Переписаны 4.7.1 и 4.7.2 (env и цикл агента вместо эстафеты, со ссылкой на 022) и тексты AC-001-11, -15, -19, -20, -26, -27 с пометкой «Изменено спекой 022 (Q-6)»; id сохранены. AC-001-27 заменён AC-022-27. | Остальные места 001 (эстафета в разделах 1–2, 4.9, 6–7, задачи T-5, T-6, T-11) не менялись: вне Q-6. |
+| 2026-10-30 | `spec/004-t19` | Тексты изменены спекой 004 (пометка «изменено спекой 004»): 4.1 (`SwarmCreateRequest`, `AgentDraft`, `SwarmLaunch`, `swarm.created`, `swarm.failed`), 4.4 (`SwarmView`, строки проекции `swarm.created` и `llm.call`), 4.5.1 (порядок проверок `POST /swarms`), 4.6 (шаг `launch` с регистрацией роя), AC-001-1 и AC-001-3 (бюджет в телах запросов). Разделы 2, 3, 5 (кроме двух AC), 6–9 и статус не менялись. | Отклонение от 004 нет. Вне T-19, не менял: `swarm.failed.reason` в 4.1 не содержит `agent_failed`, который требует REQ-001-9 (проверить отдельно). |
