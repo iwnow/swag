@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ChatRequest } from '../src/index.ts';
 import { createLlmGatewayCore, inputBytes, UpstreamStreamError } from '../src/index.ts';
 import { chunksThen, fakeDeps, TEST_SWARM_ID } from './fakes.ts';
@@ -277,6 +277,20 @@ describe('списание после вызова', () => {
         ctx: expect.objectContaining({ callId: expect.any(String) }),
       }),
     );
+  });
+
+  it('AC-004-15: reserve бросает (сбой БД) — исключение проброшено без settle и события, ledger пуст', async () => {
+    const { deps, events, budgets } = fakeDeps();
+    budgets.reserve = async () => {
+      throw new Error('db down');
+    };
+    const settle = vi.spyOn(budgets, 'settle');
+    await expect(createLlmGatewayCore(deps).complete(caller, body, signal)).rejects.toThrow(
+      'db down',
+    );
+    expect(settle).not.toHaveBeenCalled();
+    expect(events.published).toEqual([]);
+    expect(budgets.ledger).toEqual([]);
   });
 
   it('AC-004-18: releaseHolds снимает резервы прошлого процесса без списания, по warn на каждый', async () => {

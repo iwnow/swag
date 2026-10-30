@@ -679,6 +679,23 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
       const hold = holdMicroUsd(bytesIn, maxOut, modelPrices);
       const callId = ids.uuid();
       const t0 = clock.monotonicMs();
+      // Резерв до апстрима (4.3, шаг 8): сбой резерва — исключение без события, резерва нет.
+      const reserved = await budgets.reserve(callId, caller.data, hold, clock.now());
+      if (!reserved.ok) {
+        log.warn('budget_exceeded', {
+          swarmId: caller.data.swarmId,
+          agentId: caller.data.agentId,
+          holdMicroUsd: hold,
+          code: reserved.code,
+        });
+        return refusal(
+          402,
+          reserved.code,
+          reserved.code === 'swarm_budget_exceeded'
+            ? 'Swarm budget exceeded'
+            : 'Agent budget exceeded',
+        );
+      }
       const settlement: Settlement = {
         caller: caller.data,
         prices: modelPrices,
@@ -687,27 +704,11 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
         settled: false,
       };
       try {
-        const reserved = await budgets.reserve(callId, caller.data, hold, clock.now());
-        if (!reserved.ok) {
-          log.warn('budget_exceeded', {
-            swarmId: caller.data.swarmId,
-            agentId: caller.data.agentId,
-            holdMicroUsd: hold,
-            code: reserved.code,
-          });
-          return refusal(
-            402,
-            reserved.code,
-            reserved.code === 'swarm_budget_exceeded'
-              ? 'Swarm budget exceeded'
-              : 'Agent budget exceeded',
-          );
-        }
         return body.stream === true
           ? await streamReply(callId, t0, body, settlement, signal)
           : await jsonReply(callId, t0, body, settlement, signal);
       } catch (err) {
-        // Сбой вне порта апстрима: резерв закрывается как сетевой отказ (charge 0, 4.3), ошибка уходит дальше.
+        // Сбой после резерва вне порта апстрима: резерв закрывается как сетевой отказ (charge 0, 4.3), ошибка уходит дальше.
         if (!settlement.settled) {
           await upstreamFailed(
             {
