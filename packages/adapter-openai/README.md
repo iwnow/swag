@@ -11,12 +11,12 @@
 ## Что внутри сейчас
 
 - `src/index.ts` — `OpenAiChatModelOptions`, `createOpenAiChatModel`; внутри — `toolCalls` (ответ → `ToolCall[]`), `errorCode` (ошибка SDK → `ChatModelErrorCode`), `redact` (токен в `message` заменяется на `***`).
-- `test/chat-model.test.ts` — AC-022-19 и ветки кодов: запрос к `startFakeProvider` (путь, `authorization`, заголовки вызывающего, `traceparent`, тело, `tool_calls` из маркера), без `traceparent`, `rate_limited`, `model_not_found` с редактированием токена, `network`, `timeout`, `upstream_error`, `invalid_response`, `max_tokens` (обрезка с `content` и с `tool_calls`, подставной HTTP-сервер).
+- `test/chat-model.test.ts` — AC-022-19 и ветки кодов: запрос к `startFakeProvider` (путь, `authorization`, заголовки вызывающего, `traceparent`, тело, `tool_calls` из маркера), без `traceparent`, `rate_limited`, `model_not_found` с редактированием токена, `network`, `timeout`, `upstream_error`, `invalid_response`, `max_tokens` (обрезка с `content` и с `tool_calls`, подставной HTTP-сервер); AC-004-25 — `402 swarm_budget_exceeded` и `403 caller_not_registered` с одним запросом при `maxRetries: 2`.
 
 ## Ключевые решения
 
 - SDK: `openai` 7.33.0 (точная версия) — последняя стабильная, опубликованная не позже 2026-10-14 (за 2 недели до реализации 2026-10-28), по 4.3.
-- Повторы — встроенные в SDK (`maxRetries`, Q-4); тесты используют `maxRetries: 0`, чтобы код ошибки был виден сразу.
+- Повторы — встроенные в SDK (`maxRetries`, Q-4); тесты используют `maxRetries: 0`, чтобы код ошибки был виден сразу. Исключение — тест AC-004-25: там `maxRetries: 2`, и проверяется, что SDK не повторяет `402` и `403` (004, 4.12). SDK повторяет только `408`, `409`, `429`, `5xx` и ответ с `x-should-retry: true`; отдельной правки адаптера для этого не понадобилось (`openai` 7.33.0).
 - `APIConnectionTimeoutError` проверяется раньше `APIConnectionError` (наследник), `APIError` — последним.
 - Код ошибки: `error.code` тела, если он в `GatewayErrorCode`. Без такого кода: HTTP `429` → `rate_limited`, прочее → `upstream_error`. Отступление от буквы 4.3, нужное для AC-022-19: фейк отдаёт `429` без `code`.
 - `tool_calls` с типом, отличным от `function`, отбрасываются: порт описывает только function-вызовы.
@@ -40,3 +40,4 @@
 ## Спеки
 
 - 022 — 4.2 (порт), 4.3 (адаптер), REQ-022-9, AC-022-19 (T-8).
+- 004 — 4.12 (коды gateway), AC-004-25 (T-12).
