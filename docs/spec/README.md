@@ -87,7 +87,7 @@ docs/spec/
 | — | 000 | [Каркас проекта](000-foundation.md) | 0 | done |
 | — | 001 | [Сквозной скелет без LLM](001-walking-skeleton.md): рой с ролями из UI, контейнер на агента, обмен через NATS, события в UI по WebSocket, хранение в памяти | 1 | done |
 | — | 016 | [Наблюдаемость](016-observability.md): `traceId` через все сервисы, шину и песочницы, `traceId` в событиях, структурные логи, OpenTelemetry Collector и Grafana LGTM в compose | 1а | done |
-| — | 002 | [LLM Gateway](002-llm-gateway.md): отдельный сервис, LiteLLM за ним, ключ провайдера только в gateway, профили моделей test, dev и prod, `usage` и стоимость вызова в событии `llm.call` | 2 | done |
+| — | 002 | [LLM Gateway](002-llm-gateway.md): отдельный сервис, LiteLLM за ним, ключ провайдера только в gateway, профили моделей test, dev, test-pay и prod, `usage` и стоимость вызова в событии `llm.call` | 2 | done |
 | 1 | 022 | [Агентный цикл](022-agent-loop.md): контекст вызова без знания о рое, порт модели на OpenAI SDK через gateway, инструменты `send_message` и `finish`, модель агента в форме, шаги в UI (D-13, D-19) | 2 | done |
 | 1а | 030 | [Диалог агентов роя](030-agent-dialog.md): `send_message` уступает ход и агент ждёт ответа, «не прочитано» в ленте, обрыв клиентом вызова модели — `aborted` (N-13) | 2 | done |
 | 2 | 003 | [История роёв](003-history.md): рои и события в Postgres, миграции (из 000 Q-3), закрытие прерванных роёв, срок хранения телеметрии (N-15) | 3 | done |

@@ -64,7 +64,7 @@ describe('политики репозитория', () => {
     }
   });
 
-  it('AC-002-19: наборы id models.json трёх профилей равны', () => {
+  it('AC-002-19: наборы id models.json всех профилей равны', () => {
     const [first, ...rest] = profiles.map((profile) => [...catalogIds(profile)].sort());
     for (const ids of rest) expect(ids).toEqual(first);
   });
