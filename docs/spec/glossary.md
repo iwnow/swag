@@ -73,9 +73,9 @@
 | Спан LiteLLM | `litellm.chat` | Клиентский спан вызова LiteLLM в `adapter-litellm` у `complete` и `stream`: модель, поток, статус ответа, `gen_ai.usage.*`; текстов нет (спека 002, 4.5). |
 | Редактирование секретов | `redact` | Функция `adapter-litellm`: каждое вхождение секрета в тексте заменяется на `***`; пустые секреты игнорируются (спека 002, 4.5, REQ-002-11). |
 | Фактическая стоимость провайдера | `providerCostMicroUsd`, `parseProviderCost` | Сколько вызов стоил платформе у провайдера по её ключу, из `usage.cost` ответа (OpenRouter), в micro-USD. Только для счёта платформы (D-38); списание с организации — `costMicroUsd` по тарифу. |
-| Код ошибки gateway | `GatewayErrorCode` | `unauthorized`, `invalid_request`, `model_not_found`, `model_not_allowed`, `swarm_budget_exceeded`, `agent_budget_exceeded`, `upstream_bad_request`, `rate_limited`, `upstream_error`, `upstream_timeout`; `invalid_caller` удаляется спекой 004 (4.1, 4.12). |
+| Код ошибки gateway | `GatewayErrorCode` | `unauthorized`, `invalid_caller`, `invalid_request`, `model_not_found`, `caller_not_registered`, `model_not_allowed`, `swarm_budget_exceeded`, `agent_budget_exceeded`, `upstream_bad_request`, `rate_limited`, `upstream_error`, `upstream_timeout` (002, 004 4.1, 4.12). |
 | Ошибка в потоке gateway | `swag_gateway_error` | Значение `type` в payload `{"error":{message, type, code}}`, которым поток завершается после обрыва апстрима (спека 002, 4.4, шаг 5; T-18). |
-| Вызывающий gateway | `LlmCaller`, `SWARM_ID_HEADER`, `AGENT_ID_HEADER` | `swarmId` и `agentId` из заголовков `x-swag-swarm-id`, `x-swag-agent-id` (002, Q-3). Спекой 004 удаляются: рой и агент берутся из ключа агента (`AgentKeyInfo`). |
+| Вызывающий gateway | `LlmCaller`, `SWARM_ID_HEADER`, `AGENT_ID_HEADER` | `swarmId` и `agentId` из заголовков `x-swag-swarm-id`, `x-swag-agent-id` (002, Q-3). С 004 gateway пропускает только вызывающих из регистрации роя (004, 4.2, Q-2). |
 | Фейковый провайдер | `llm-fake`, `startFakeProvider` | OpenAI-совместимый сервер для тестов и профиля `test`, `infra/llm/fake-provider`. |
 | Сеть LLM | `llm` (сеть compose) | Обычная bridge-сеть compose (4.8), в которой живут `litellm` и `llm-fake`; `llm-gateway` входит в неё и в `default`. Порт `litellm` не публикуется. |
 | Запись запроса к фейку | `FakeRequest` | Что фейк записал о запросе: `path`, `headers`, `body`, `closedByClient`; тесты читают список `requests`. |
@@ -151,17 +151,17 @@
 | Grafana LGTM | `grafana/otel-lgtm` | Бэкенд наблюдаемости: Loki (логи), Grafana, Tempo (трейсы), позже метрики Prometheus. Локально — один контейнер. |
 | Журнал инструментов | `ToolJournal` | Записи `started` / результат по каждому `tool_call_id`. |
 | Бюджет | `Budget`, `budgetMicroUsd`, `BudgetMicroUsd`, `spentMicroUsd` | Лимит расходов роя (обязателен) или агента (необязателен) в micro-USD; `spentMicroUsd` — потрачено (004, 4.1, 4.7). |
-| Ключ агента | `AgentKey`, `AgentKeyInfo`, `agent_keys` | Ключ `swk_…` агента к gateway, привязан к рою, агенту и модели; хранится хэшем SHA-256, отзывается закрытием роя, истекает сам (004, 4.2). |
-| Регистрация роя в gateway | `LlmSwarmRegistration`, `LlmSwarmKeys`, `LlmSwarmClosed`, `registerSwarm`, `closeSwarm` | Внутренний API gateway `/internal/swarms`: бюджеты роя и агентов, выдача ключей, закрытие роя (004, 4.2). |
+| Регистрация роя в gateway | `LlmSwarmRegistration`, `LlmSwarmClosed`, `registerSwarm`, `closeSwarm`, `swarm_agents`, `RegisteredAgent`, `findAgent`, `caller_not_registered` | Внутренний API gateway `/internal/swarms`: бюджет и срок роя, агенты с моделями и бюджетами, закрытие роя; вызов не из регистрации — `403 caller_not_registered` (004, 4.2, 4.5). |
 | Ошибка внутреннего API gateway | `InternalErrorCode`, `swarm_registered` | Коды `/internal/*`: `invalid_request`, `model_not_found`, `swarm_registered`, `not_found` (004, 4.2). |
 | Бюджеты роёв | `swarm_budgets` | Таблица бюджета, трат и резервов роя в gateway (004, 4.5). |
-| Хранилище бюджетов | `BudgetStore`, `createPostgresBudgetStore` | Порт `llm-gateway-core` и адаптер Postgres: регистрация, ключи, резерв, списание, закрытие, освобождение резервов (004, 4.4, 4.5). |
+| Хранилище бюджетов | `BudgetStore`, `createPostgresBudgetStore` | Порт `llm-gateway-core` и адаптер Postgres: регистрация, поиск агента, резерв, списание, закрытие, освобождение резервов (004, 4.4, 4.5). |
 | Списание вызова | `LlmCharge`, `ChargeBasis`, `charge`, `chargeFor` | Сумма и основание (`usage`, `estimate`, `none`), записанные в ledger и в `llm.call` (004, 4.3). |
 | Оценка байтов вызова | `inputBytes`, `outputBytes` | Длина входа и выхода вызова в UTF-8 — верхняя граница токенов для резерва и оценки списания (004, 4.3). |
 | Причина «бюджет исчерпан» | `budget_exceeded` | Причина `swarm.failed`: агент получил `402` по бюджету роя или агента (004, 4.6). |
 | Причина «шлюз недоступен» | `gateway_unavailable` | Причина `swarm.failed`: регистрация роя в gateway не удалась, песочницы не создаются (004, 4.6). |
-| Ключи агентов в оркестраторе | `LlmKeys`, `createGatewayKeys`, `@swag/adapter-gateway-http` | Порт `orchestrator-core` и HTTP-адаптер к внутреннему API gateway (004, 4.6). |
+| Регистрация роёв в оркестраторе | `LlmSwarms`, `createGatewaySwarms`, `@swag/adapter-gateway-http` | Порт `orchestrator-core` и HTTP-адаптер к внутреннему API gateway (004, 4.6). |
 | Книга цен | `PriceBook` | Порт `llm-gateway-core`: текущие цены модели, которые обновляются из OpenRouter (004, 4.4, 4.9). |
+| Сохранённые цены | `PriceStore`, `StoredPrice`, `createPostgresPriceStore`, `model_prices`, `applyStoredPrices`, `price_save_failed` | Последние успешные цены OpenRouter в Postgres по id модели OpenRouter; при старте ложатся поверх `models.json` (004, 4.5, 4.9, Q-8). |
 | Цены OpenRouter | `applyOpenRouterPrices`, `openRouterModel`, `@swag/adapter-openrouter`, `createOpenRouterPrices` | Обновление цен каталога из `GET /api/v1/models` OpenRouter (004, 4.9). |
 | Общие хелперы | `@swag/helpers`, `@swag/helpers/server` | Пакет `packages/helpers`: универсальные функции и хелперы над `fetch` только для сервера. |
 | Повтор с задержкой | `retry`, `RetryOptions`, `HttpError`, `httpRetryable`, `parseRetryAfter` | Повтор с экспоненциальной задержкой, полным разбросом и `Retry-After` (004, 4.10). |
@@ -184,7 +184,7 @@
 | Конфигурация агента | `AgentConfig` | Env агента (022, 4.8) в `@swag/config`; без `DATABASE_URL`. |
 | Модель агента | `AGENT_MODEL` | Имя модели из плана роя (`PlatformModel`), env агента (022, 4.8). |
 | Лимиты агента | `AGENT_MAX_STEPS`, `AGENT_MAX_TOKENS`, `AGENT_LLM_TIMEOUT_MS`, `AGENT_LLM_MAX_RETRIES` | Лимиты цикла и вызова модели агента; первые два задаёт оркестратор, два последних — умолчания `AgentConfig` (022, 4.8). |
-| Шлюз моделей для агента | `LLM_GATEWAY_URL`, `DOCKER_AGENT_LLM_GATEWAY_URL`, `LLM_GATEWAY_KEY` | Адрес gateway изнутри песочницы и ключ агента (004, 4.6); общий `LLM_GATEWAY_TOKEN` с 004 — только у оркестратора для `/internal/*`. |
+| Шлюз моделей для агента | `LLM_GATEWAY_URL`, `DOCKER_AGENT_LLM_GATEWAY_URL` | Адрес gateway изнутри песочницы (022) и для оркестратора (004, 4.11); агенты ходят с общим `LLM_GATEWAY_TOKEN` (004, Q-2). |
 | Конфигурация UI | `UiConfig` | Порт `UI_PORT` для проверки инфраструктуры в `@swag/config`. |
 | Команда пинга шлюза | `llm:ping`, `scripts/llm-ping.ts` | Ручная проверка с хоста: один вызов `POST /v1/chat/completions` через gateway, печатает ответ, `usage`, задержку (спека 002, 4.13, REQ-002-17). |
 | Конфигурация шлюза | `LlmGatewayConfig` | Env `llm-gateway` (002, 4.9) в `@swag/config`: телеметрия, ключи из `.env.llm`; без `DATABASE_URL`. |
