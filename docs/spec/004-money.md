@@ -881,7 +881,7 @@ charged vs provider по тем же вызовам: $0.0418 vs $0.0415 · +0.72
   - README.
 
   Закрывает: REQ-004-9, REQ-004-10, AC-004-13, AC-004-14, AC-004-18 (часть хранилища), AC-004-20, AC-004-32, AC-004-40 (часть хранилища), NFR-004-1. Готово, когда: тесты адаптера зелёные с `POSTGRES_TEST_URL`.
-- [ ] **T-4.** `llm-gateway-core`, чистые функции 4.3: `inputBytes`, `holdMicroUsd`, `outputBytes`, `chargeFor`; тесты по таблицам. Закрывает: AC-004-9. Готово, когда: тесты ядра зелёные.
+- [x] **T-4.** `llm-gateway-core`, чистые функции 4.3: `inputBytes`, `holdMicroUsd`, `outputBytes`, `chargeFor`; тесты по таблицам. Закрывает: AC-004-9. Готово, когда: тесты ядра зелёные.
 - [ ] **T-5.** `llm-gateway-core`:
   - `complete` с шагами 4.3, `registerSwarm`, `closeSwarm`, `releaseHolds`, порт `PriceBook` вместо цен каталога;
   - события с `charge`, логи 4.4;

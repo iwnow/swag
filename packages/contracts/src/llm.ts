@@ -73,6 +73,7 @@ export const LlmCharge = z.strictObject({ microUsd: MicroUsd, basis: ChargeBasis
 export type LlmCharge = z.infer<typeof LlmCharge>;
 
 export const LlmCallStatus = z.enum(['ok', 'error', 'aborted']);
+export type LlmCallStatus = z.infer<typeof LlmCallStatus>;
 
 export const LlmCallData = z.strictObject({
   callId: z.uuid(),
