@@ -162,7 +162,7 @@
 | Причина «бюджет исчерпан» | `budget_exceeded` | Причина `swarm.failed`: агент получил `402` по бюджету роя или агента (004, 4.6). |
 | Отказ вызова до апстрима | `call_refused` | Лог `warn` при отказе `complete` на шагах 2–7 (4.3, 4.4): поле `code` — код ошибки gateway; `swarmId` и `agentId` — только после проверки вызывающего (004, 4.3). Имя на подтверждении, D-92 в `questions.md`. |
 | Причина «шлюз недоступен» | `gateway_unavailable` | Причина `swarm.failed`: регистрация роя в gateway не удалась, песочницы не создаются (004, 4.6). |
-| Регистрация роёв в оркестраторе | `LlmSwarms`, `createGatewaySwarms`, `@swag/adapter-gateway-http` | Порт `orchestrator-core` и HTTP-адаптер к внутреннему API gateway (004, 4.6). |
+| Регистрация роёв в оркестраторе | `LlmSwarms`, `createGatewaySwarms`, `@swag/adapter-gateway-http`, `GatewayError` (ошибка ответа внутреннего API, код из тела) | Порт `orchestrator-core` и HTTP-адаптер к внутреннему API gateway (004, 4.6). |
 | Сбой закрытия роя в gateway | `gateway_close_failed` | Лог `warn` ядра оркестратора, когда `LlmSwarms.close` бросил исключение; рой всё равно завершается (004, 4.6). |
 | Книга цен | `PriceBook` | Порт `llm-gateway-core`: текущие цены модели, которые обновляются из OpenRouter (004, 4.4, 4.9). |
 | Старт gateway с Postgres | `startLlmGatewayCore`, `assembleCore` | Оболочка `apps/llm-gateway`: миграции, пул, `BudgetStore`, `PriceStore`, каталог с сохранёнными ценами поверх `models.json`, `PriceBook` и `releaseHolds` до приёма запросов (004, 4.4, 4.9, 4.11, REQ-004-14). |

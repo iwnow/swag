@@ -19,6 +19,7 @@
     { "path": "packages/adapter-litellm" },
     { "path": "packages/adapter-openai" },
     { "path": "packages/adapter-openrouter" },
+    { "path": "packages/adapter-gateway-http" },
     { "path": "packages/adapter-orchestrator-http" },
     { "path": "packages/adapter-docker" },
     { "path": "apps/api" },

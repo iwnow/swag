@@ -1,0 +1,14 @@
+{
+  "name": "@swag/adapter-gateway-http",
+  "version": "0.0.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@swag/contracts": "0.0.0",
+    "@swag/orchestrator-core": "0.0.0"
+  }
+}

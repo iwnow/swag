@@ -160,6 +160,9 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
     await bus.publishEvent(event);
   }
 
+  // stop меняет фазу во время await; TS после проверки выше сузил бы run.phase и счёл бы сравнение с 'finished' ошибкой.
+  const isFinished = (run: Run): boolean => run.phase === 'finished';
+
   // Закрытие роя в gateway (4.6): сбой логируется и не мешает завершению роя.
   async function closeInGateway(swarmId: string): Promise<void> {
     try {
@@ -320,7 +323,7 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
       for (const agent of launch.agents) {
         try {
           const { sandboxId } = await sandboxes.create(agentSpec(run, agent));
-          if (run.phase === 'finished') {
+          if (isFinished(run)) {
             // рой остановили во время создания — эту песочницу удаляем сразу
             await sandboxes.remove(sandboxId);
             break;

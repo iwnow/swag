@@ -48,6 +48,7 @@ const orchestratorEnv = {
   AGENT_MAX_TOKENS: '2048',
   LLM_GATEWAY_TOKEN: gatewayToken,
   DOCKER_AGENT_LLM_GATEWAY_URL: 'http://llm-gateway:3002/v1',
+  LLM_GATEWAY_URL: 'http://llm-gateway:3002',
 };
 
 describe('loadConfig', () => {
@@ -195,6 +196,7 @@ describe('loadConfig', () => {
       AGENT_MAX_TOKENS: 2048,
       LLM_GATEWAY_TOKEN: gatewayToken,
       DOCKER_AGENT_LLM_GATEWAY_URL: 'http://llm-gateway:3002/v1',
+      LLM_GATEWAY_URL: 'http://llm-gateway:3002',
     });
     expect(config).not.toHaveProperty('AGENT_STEP_DELAY_MS');
     expect(() =>
@@ -206,6 +208,14 @@ describe('loadConfig', () => {
     expect(() =>
       loadConfig(OrchestratorConfig, { ...orchestratorEnv, DOCKER_AGENT_LLM_GATEWAY_URL: 'нет' }),
     ).toThrow(/DOCKER_AGENT_LLM_GATEWAY_URL/);
+  });
+
+  it('спека 004, 4.11: OrchestratorConfig.LLM_GATEWAY_URL — URL; без него или невалидный — ошибка', () => {
+    const { LLM_GATEWAY_URL: _omitted, ...withoutUrl } = orchestratorEnv;
+    expect(() => loadConfig(OrchestratorConfig, withoutUrl)).toThrow(/LLM_GATEWAY_URL/);
+    expect(() =>
+      loadConfig(OrchestratorConfig, { ...orchestratorEnv, LLM_GATEWAY_URL: 'нет' }),
+    ).toThrow(/LLM_GATEWAY_URL/);
   });
 
   it('спека 022, 4.8: .env.example проходит OrchestratorConfig и содержит новые переменные', () => {

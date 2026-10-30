@@ -17,7 +17,7 @@
 
 - `createOrchestratorCore(deps)` с портами `SandboxProvider`, `OrchestratorBus`, `Timers`, `Clock`, `IdGenerator`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`.
 - `deps.agent` — `{ template, maxSteps, maxTokens, llmGatewayToken, flushTimeoutMs }`: значения env агента, которые ставит ядро.
-- Порт `LlmSwarms` (`register`, `close`) — `deps.llmSwarms`; реализация — `@swag/adapter-gateway-http` (T-11).
+- Порт `LlmSwarms` (`register`, `close`) — `deps.llmSwarms`; реализация — `@swag/adapter-gateway-http`.
 - Env песочницы агента (4.8): `SWARM_ID`, `AGENT_ID`, `AGENT_NAME`, `AGENT_ROLE`, `AGENT_MODEL`, `AGENT_PEERS` (JSON `{id,name,role}` остальных агентов роя), `AGENT_ENTRY`, `AGENT_MAX_STEPS`, `AGENT_MAX_TOKENS`, `LLM_GATEWAY_TOKEN`, `TELEMETRY_FLUSH_TIMEOUT_MS`. Адресов NATS, OTLP и gateway ядро не знает — их добавляет адаптер.
 - Логи по таблице 4.8 спеки 016: `info swarm launch`, `error sandbox create failed`, `error agent start timeout` (с `missing`), `error swarm timeout`, `info swarm finished` (со `status`), `warn sandbox remove failed`, `warn gateway_close_failed`; невалидное событие шины — `warn event dropped`.
 - Тесты: `test/orchestrator-core.test.ts` — AC-000-16, AC-001-11…18 (AC-001-11 и AC-001-15 переписаны под 4.9; AC-001-12 — также в `apps/orchestrator/test`), AC-022-17, AC-022-18, AC-002-22, AC-016-5, AC-016-7, AC-004-21…24. Фейк `LlmSwarms` по умолчанию успешен; `registerError` и `closeError` — для сбоев.

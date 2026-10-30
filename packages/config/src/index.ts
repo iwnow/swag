@@ -42,6 +42,8 @@ export const OrchestratorConfig = BaseConfig.extend({
   AGENT_MAX_TOKENS: PositiveInt.min(1),
   LLM_GATEWAY_TOKEN: GatewayToken,
   DOCKER_AGENT_LLM_GATEWAY_URL: z.string().url(),
+  // Спека 004, 4.11: внутренний API gateway (регистрация роёв) — без /v1, как база для /internal/*.
+  LLM_GATEWAY_URL: z.string().url(),
   AGENT_START_TIMEOUT_MS: PositiveInt,
   SWARM_TIMEOUT_MS: PositiveInt,
 });
