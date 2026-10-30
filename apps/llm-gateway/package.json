@@ -7,11 +7,13 @@
   "dependencies": {
     "@swag/adapter-litellm": "0.0.0",
     "@swag/adapter-nats": "0.0.0",
+    "@swag/adapter-postgres": "0.0.0",
     "@swag/adapter-telemetry": "0.0.0",
     "@swag/config": "0.0.0",
     "@swag/contracts": "0.0.0",
     "@swag/llm-gateway-core": "0.0.0",
-    "fastify": "5.12.7"
+    "fastify": "5.12.7",
+    "pg": "8.23.1"
   },
   "scripts": {
     "start": "node src/main.ts"

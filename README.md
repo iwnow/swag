@@ -28,7 +28,7 @@ npm run infra:check
 
 Все вызовы моделей идут через `llm-gateway`: OpenAI-совместимый API на `127.0.0.1:${LLM_GATEWAY_PORT}` (по умолчанию 3002), за ним LiteLLM. Сервисы compose:
 
-- `llm-gateway` — оболочка `apps/llm-gateway` и ядро `packages/llm-gateway-core`; в сетях `default` и `llm`; наружу — только `127.0.0.1`.
+- `llm-gateway` — оболочка `apps/llm-gateway` и ядро `packages/llm-gateway-core`; в сетях `default` и `llm`; наружу — только `127.0.0.1`. Зависит от `postgres` (спека 004): бюджеты, ledger и цены, миграции при старте; `DATABASE_URL` — общая переменная из `.env`.
 - `litellm` — только в сети `llm`, порт не публикуется. Переводит форматы провайдеров, виртуальные ключи и БД не используются (D-21).
 - `llm-fake` — фейковый провайдер `infra/llm/fake-provider/server.ts`, в той же сети `llm`, порт не публикуется. Compose поднимает его при любом профиле (`litellm` ждёт его в `depends_on`), но модели ходят в него только в профиле `test`.
 

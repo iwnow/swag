@@ -10,6 +10,7 @@
   "references": [
     { "path": "../../packages/adapter-litellm" },
     { "path": "../../packages/adapter-nats" },
+    { "path": "../../packages/adapter-postgres" },
     { "path": "../../packages/adapter-telemetry" },
     { "path": "../../packages/config" },
     { "path": "../../packages/contracts" },

@@ -10,7 +10,11 @@ import { caller, createMemoryBus, gatewayOptions, listenUrl, makeCore } from './
 
 const ROUNDS = 200;
 const WARMUP = 20;
-const body = JSON.stringify({ model: 'chat-small', messages: [{ role: 'user', content: 'ping' }] });
+const body = JSON.stringify({
+  model: 'chat-small',
+  max_tokens: 256,
+  messages: [{ role: 'user', content: 'ping' }],
+});
 const plainHeaders = { 'content-type': 'application/json' };
 const gatewayHeaders = { ...plainHeaders, ...caller };
 

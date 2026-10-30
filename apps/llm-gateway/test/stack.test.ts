@@ -152,6 +152,7 @@ describe.skipIf(!gatewayUrl)('llm-gateway [stack]', () => {
       headers: json,
       body: JSON.stringify({
         task: 'стек-тест AC-002-20',
+        budgetMicroUsd: 5_000_000,
         agents: [{ name: 'stack', role: 'проверка шлюза LLM' }],
       }),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -160,6 +161,20 @@ describe.skipIf(!gatewayUrl)('llm-gateway [stack]', () => {
     const { id: swarmId } = (await created.json()) as { id: string };
 
     try {
+      // Спека 004, 4.2: рой регистрируется в gateway до вызовов; без регистрации вызов дал бы 403 caller_not_registered.
+      const registered = await fetch(`${gatewayUrl}/internal/swarms`, {
+        method: 'POST',
+        headers: { ...json, authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          swarmId,
+          budgetMicroUsd: 5_000_000,
+          expiresAt: null,
+          agents: [{ agentId: 'agent-1', model: 'chat-small', budgetMicroUsd: null }],
+        }),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      expect(registered.status).toBe(204);
+
       const since = new Date().toISOString();
       const headers = {
         ...json,
@@ -173,7 +188,7 @@ describe.skipIf(!gatewayUrl)('llm-gateway [stack]', () => {
       const plain = await fetch(`${gatewayUrl}/v1/chat/completions`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ model: 'chat-small', messages }),
+        body: JSON.stringify({ model: 'chat-small', max_tokens: 256, messages }),
         signal: signal(),
       });
       expect(plain.status).toBe(200);
@@ -186,7 +201,7 @@ describe.skipIf(!gatewayUrl)('llm-gateway [stack]', () => {
       const streamed = await fetch(`${gatewayUrl}/v1/chat/completions`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ model: 'chat-small', messages, stream: true }),
+        body: JSON.stringify({ model: 'chat-small', max_tokens: 256, messages, stream: true }),
         signal: signal(),
       });
       expect(streamed.status).toBe(200);
@@ -214,6 +229,11 @@ describe.skipIf(!gatewayUrl)('llm-gateway [stack]', () => {
       const litellm = await run('docker', ['logs', '--since', since, await containerId('litellm')]);
       expect(litellm.stdout + litellm.stderr).toContain('/chat/completions');
     } finally {
+      await fetch(`${gatewayUrl}/internal/swarms/${swarmId}/close`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      }).catch(() => undefined);
       await fetch(`${apiUrl}/swarms/${swarmId}/stop`, {
         method: 'POST',
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),

@@ -5,10 +5,9 @@ import { connectNatsBus } from '@swag/adapter-nats';
 import { startTelemetry, type Telemetry } from '@swag/adapter-telemetry';
 import { BaseConfig, LlmGatewayConfig, loadConfig } from '@swag/config';
 import { eventsSubject, type ModelCatalog } from '@swag/contracts';
-import { createLlmGatewayCore } from '@swag/llm-gateway-core';
 import { buildApp, telemetryAppOptions } from './app.ts';
 import { readCatalog } from './catalog.ts';
-import { startGateway, upstreamSecrets } from './start.ts';
+import { startGateway, startLlmGatewayCore, upstreamSecrets } from './start.ts';
 
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
 
@@ -57,23 +56,27 @@ const bus = await connectNatsBus({
   warn: (message) => log.warn('bus warning', { reason: message }),
 }).catch((error: unknown) => fail('nats connect failed', error));
 
-const core = createLlmGatewayCore({
-  catalog,
-  upstream: createLiteLlmUpstream({
-    baseUrl: config.LITELLM_URL,
-    masterKey: config.LITELLM_MASTER_KEY,
-    idleTimeoutMs: config.LLM_GATEWAY_UPSTREAM_TIMEOUT_MS,
-    secrets: upstreamSecrets(process.env, config.LITELLM_MASTER_KEY),
-  }),
-  events: {
-    publishEvent: (event) => bus.publishJson(eventsSubject(event.swarmId), event),
+// Миграции, пул Postgres и освобождение резервов от прошлого процесса — до приёма запросов (спека 004, REQ-004-14).
+const { core, pool } = await startLlmGatewayCore(
+  { databaseUrl: config.DATABASE_URL },
+  {
+    catalog,
+    upstream: createLiteLlmUpstream({
+      baseUrl: config.LITELLM_URL,
+      masterKey: config.LITELLM_MASTER_KEY,
+      idleTimeoutMs: config.LLM_GATEWAY_UPSTREAM_TIMEOUT_MS,
+      secrets: upstreamSecrets(process.env, config.LITELLM_MASTER_KEY),
+    }),
+    events: {
+      publishEvent: (event) => bus.publishJson(eventsSubject(event.swarmId), event),
+    },
+    clock: { now: () => new Date(), monotonicMs: () => performance.now() },
+    ids: { uuid: () => randomUUID() },
+    trace: telemetry.trace,
+    log,
+    version,
   },
-  clock: { now: () => new Date(), monotonicMs: () => performance.now() },
-  ids: { uuid: () => randomUUID() },
-  trace: telemetry.trace,
-  log,
-  version,
-});
+).catch((error: unknown) => fail('startup failed', error));
 
 // Fastify пишет тем же логгером; каждый запрос, кроме /health, — серверный спан с родителем из traceparent (как в apps/api).
 const app = await buildApp(
@@ -92,6 +95,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       void app
         .close()
         .then(() => bus.close())
+        .then(() => pool.end())
         .then(() => telemetry.shutdown())
         .then(() => process.exit(0)),
   );

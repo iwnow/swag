@@ -216,6 +216,8 @@ services:
       - .env
       - .env.llm
     environment:
+      # Спека 004, 4.11: бюджеты, ledger и цены — в Postgres.
+      DATABASE_URL: ${DATABASE_URL}
       LLM_CATALOG_PATH: /etc/swag/models.json
     ports:
       - 127.0.0.1:${LLM_GATEWAY_PORT}:${LLM_GATEWAY_PORT}
@@ -229,10 +231,12 @@ services:
         condition: service_healthy
       nats:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
       otel-collector:
         condition: service_started
     healthcheck:
-      test: ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:$$LLM_GATEWAY_PORT/health" > /dev/null']
+      test: ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:$LLM_GATEWAY_PORT/health" > /dev/null']
       interval: 2s
       timeout: 3s
       retries: 30

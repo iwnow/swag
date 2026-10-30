@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { tracedHttpServer, type Telemetry } from '@swag/adapter-telemetry';
 import { AGENT_ID_HEADER, SWARM_ID_HEADER, type GatewayErrorCode } from '@swag/contracts';
-import type { CompleteResult, LlmGatewayCore } from '@swag/llm-gateway-core';
+import type { CompleteResult, InternalErrorCode, LlmGatewayCore } from '@swag/llm-gateway-core';
 import Fastify, {
   type FastifyError,
   type FastifyInstance,
@@ -32,13 +32,31 @@ export async function buildApp(
   app.get('/health', { logLevel: 'warn' }, async () => ({ status: 'ok', ...core.info() }));
 
   // Токен проверяется в onRequest: до разбора тела, поэтому чужой запрос не доходит до ядра и не читается целиком.
+  // Тот же токен на /v1/* (002) и /internal/* (004, REQ-004-7).
   const authorize = async (request: FastifyRequest, reply: FastifyReply) => {
     const header = request.headers.authorization ?? '';
     const presented = header.startsWith('Bearer ') ? header.slice('Bearer '.length) : '';
     if (!tokenMatches(presented, gateway.token)) {
-      return reply.code(401).send(gatewayError('Invalid gateway token', 'unauthorized'));
+      return reply.code(401).send(errorBody(request, 'Invalid gateway token', 'unauthorized'));
     }
   };
+
+  // Спека 004, 4.2: регистрация роя и закрытие. Оболочка переводит HTTP в вызов ядра и результат ядра в ответ.
+  app.post('/internal/swarms', { onRequest: authorize }, async (request, reply) => {
+    const result = await core.registerSwarm(request.body);
+    if (result.ok) return reply.code(204).send();
+    return reply.code(result.status).send({ error: result.error });
+  });
+
+  app.post<{ Params: { swarmId: string } }>(
+    '/internal/swarms/:swarmId/close',
+    { onRequest: authorize },
+    async (request, reply) => {
+      const result = await core.closeSwarm(request.params.swarmId);
+      if (result.ok) return reply.code(200).send(result.value);
+      return reply.code(result.status).send({ error: result.error });
+    },
+  );
 
   app.get('/v1/models', { onRequest: authorize }, async () => core.listModels());
 
@@ -74,9 +92,9 @@ export async function buildApp(
     const status = error.statusCode ?? 500;
     if (status >= 500) {
       request.log.error({ err: error }, 'llm gateway internal error');
-      return reply.code(500).send(gatewayError('Internal error', 'upstream_error'));
+      return reply.code(500).send(errorBody(request, 'Internal error', 'upstream_error'));
     }
-    return reply.code(status).send(gatewayError(error.message, 'invalid_request'));
+    return reply.code(status).send(errorBody(request, error.message, 'invalid_request'));
   });
 
   return app;
@@ -123,4 +141,14 @@ const single = (value: string | string[] | undefined) => (typeof value === 'stri
 // Спека 002, 4.2: тело ошибки во всех случаях.
 function gatewayError(message: string, code: GatewayErrorCode) {
   return { error: { message, type: 'swag_gateway_error', code } };
+}
+
+// Спека 004, 4.2: ошибки /internal/* — { error: { message, code } } без type; /v1/* — как в 002.
+function errorBody(
+  request: FastifyRequest,
+  message: string,
+  code: GatewayErrorCode | InternalErrorCode,
+) {
+  if (request.url.startsWith('/internal/')) return { error: { message, code } };
+  return gatewayError(message, code as GatewayErrorCode);
 }

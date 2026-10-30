@@ -8,6 +8,7 @@ const headers = { ...caller, 'content-type': 'application/json' };
 
 const streamBody = (text: string) => ({
   model: 'chat-small',
+  max_tokens: 256,
   messages: [{ role: 'user', content: text }],
   stream: true,
 });

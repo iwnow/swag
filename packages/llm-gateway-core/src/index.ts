@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { LlmCaller, LlmSwarmRegistration } from '@swag/contracts';
+import { LlmCaller, LlmSwarmRegistration, SwarmId } from '@swag/contracts';
 import type {
   ChargeBasis,
   GatewayErrorCode,
@@ -746,6 +746,10 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
     },
 
     async closeSwarm(swarmId) {
+      // Не UUID не может быть ни одним роем: 404, а не ошибка Postgres на приведении типа (4.2).
+      if (!SwarmId.safeParse(swarmId).success) {
+        return internalError(404, 'not_found', 'Swarm not found');
+      }
       const closed = await budgets.close(swarmId, clock.now());
       return closed
         ? { ok: true, value: closed }

@@ -1,5 +1,14 @@
+import { createPostgresBudgetStore, runMigrations } from '@swag/adapter-postgres';
+import {
+  createLlmGatewayCore,
+  type CheckUpstreamResult,
+  type LlmGatewayCore,
+  type LlmGatewayDeps,
+  type Logger,
+} from '@swag/llm-gateway-core';
+import pg from 'pg';
 import type { FastifyInstance } from 'fastify';
-import type { CheckUpstreamResult, LlmGatewayCore, Logger } from '@swag/llm-gateway-core';
+import { catalogPriceBook } from './catalog.ts';
 
 // Спека 002, REQ-002-13: повтор сверки каталога с апстримом раз в секунду.
 const RETRY_MS = 1000;
@@ -35,6 +44,37 @@ export async function waitForUpstream(
     // Попытка, оборванная дедлайном, не отменяет ответа апстрима «нет моделей», полученного раньше.
     if (rest <= 0) return lastMissing ?? result;
     await delay(Math.min(retryMs, rest));
+  }
+}
+
+// Спека 004, 4.4 и 4.11, REQ-004-14: миграции → пул → BudgetStore → ядро → освобождение резервов от прошлого процесса.
+// Вызывается до listen: запросы не принимаются, пока висящие резервы не освобождены. `schema` — только для тестов.
+export async function startLlmGatewayCore(
+  options: { databaseUrl: string; schema?: string },
+  deps: Omit<LlmGatewayDeps, 'budgets' | 'prices'>,
+): Promise<{ core: LlmGatewayCore; pool: pg.Pool }> {
+  const { databaseUrl, schema } = options;
+  try {
+    await runMigrations(databaseUrl, { schema: schema ?? 'public' });
+  } catch (error) {
+    deps.log.error('migrations failed', { err: error });
+    throw error;
+  }
+  const pool = new pg.Pool({
+    connectionString: databaseUrl,
+    options: schema === undefined ? undefined : `-c search_path=${schema}`,
+  });
+  try {
+    const core = createLlmGatewayCore({
+      ...deps,
+      budgets: createPostgresBudgetStore(pool),
+      prices: catalogPriceBook(deps.catalog),
+    });
+    await core.releaseHolds();
+    return { core, pool };
+  } catch (error) {
+    await pool.end();
+    throw error;
   }
 }
 
