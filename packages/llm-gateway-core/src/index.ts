@@ -1,10 +1,13 @@
 import { z } from 'zod';
 import { LlmCaller } from '@swag/contracts';
 import type {
+  ChargeBasis,
   GatewayErrorCode,
   LlmCallData,
+  LlmSwarmRegistration,
   LlmUsage,
   ModelCatalog,
+  ModelId,
   ModelPrices,
   PlatformEventInput,
   ServiceInfo,
@@ -476,4 +479,55 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
       return { kind: 'json', body: response.body };
     },
   };
+}
+
+// Спека 004, 4.4. Порты денег: только интерфейсы, логика — в T-5 (ядро) и в адаптере (T-3).
+export interface RegisteredAgent {
+  model: ModelId;
+  expiresAt: Date | null;
+  closed: boolean;
+}
+
+export type ReserveResult =
+  { ok: true } | { ok: false; code: 'swarm_budget_exceeded' | 'agent_budget_exceeded' };
+
+export interface BudgetStore {
+  // Рой и его агенты одной транзакцией; false — рой уже есть.
+  register(reg: LlmSwarmRegistration, now: Date): Promise<boolean>;
+  findAgent(swarmId: string, agentId: string): Promise<RegisteredAgent | null>;
+  // Атомарно: held += amount у роя и (если бюджет задан) у агента — только если spent + held + amount ≤ budget.
+  reserve(
+    callId: string,
+    caller: LlmCaller,
+    amountMicroUsd: number,
+    now: Date,
+  ): Promise<ReserveResult>;
+  // Одна транзакция: удалить резерв callId, held −= резерв, spent += charge, запись ledger.
+  settle(entry: LedgerEntry): Promise<void>;
+  close(swarmId: string, now: Date): Promise<{ spentMicroUsd: number } | null>; // null — роя нет
+  releaseHolds(): Promise<{ callId: string; swarmId: string; amountMicroUsd: number }[]>;
+}
+
+export interface LedgerEntry {
+  callId: string;
+  ts: string;
+  swarmId: string;
+  agentId: string;
+  model: ModelId;
+  kind: 'llm';
+  amountMicroUsd: number; // = charge.microUsd
+  basis: ChargeBasis;
+  providerCostMicroUsd: number | null;
+}
+
+// Последние успешные цены OpenRouter (4.9), ключ — openRouterModel.
+export interface StoredPrice {
+  openRouterModel: string;
+  prices: ModelPrices;
+  updatedAt: Date;
+}
+
+export interface PriceStore {
+  load(): Promise<StoredPrice[]>;
+  save(prices: StoredPrice[]): Promise<void>; // upsert одной транзакцией
 }
