@@ -10,7 +10,11 @@ const base = {
   agentId: 'agent-1',
   traceId: null,
 };
-const request = (agent: Record<string, unknown>) => ({ task: 'Задача', agents: [agent] });
+const request = (agent: Record<string, unknown>) => ({
+  task: 'Задача',
+  budgetMicroUsd: 500000,
+  agents: [agent],
+});
 const agent = { name: 'Агент', role: 'роль' };
 
 describe('контракты цикла агента (022, 4.1)', () => {
