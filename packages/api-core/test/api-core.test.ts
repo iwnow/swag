@@ -12,6 +12,7 @@ import {
 const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const body = (count: number) => ({
   task: 'Задача',
+  budgetMicroUsd: 1000000,
   agents: Array.from({ length: count }, (_, i) => ({
     name: `Агент ${i + 1}`,
     role: `роль ${i + 1}`,
@@ -92,7 +93,7 @@ function setup(
     ids: { uuid: () => uuid(++counter) },
     log,
     trace: { currentTraceId: () => traceState.current },
-    limits: { maxActiveSwarms: options.maxActiveSwarms ?? 3 },
+    limits: { maxActiveSwarms: options.maxActiveSwarms ?? 3, maxBudgetMicroUsd: 5000000 },
   });
   return { core, launches, stops, logs, entries, traceState };
 }
@@ -132,7 +133,11 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
 
   it('AC-001-4: невалидное тело — validation_error с путём поля', async () => {
     const { core } = setup();
-    const result = await core.createSwarm({ task: 'x', agents: [{ name: 'a', role: '' }] });
+    const result = await core.createSwarm({
+      task: 'x',
+      budgetMicroUsd: 1000000,
+      agents: [{ name: 'a', role: '' }],
+    });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('validation_error');
@@ -602,5 +607,60 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
     );
     expect(seen).toEqual([2]);
     expect(logs).toContain('listener failed');
+  });
+});
+
+describe('api-core — AC-004-2: бюджеты роя и агентов', () => {
+  it('AC-004-2: бюджет роя больше SWARM_MAX_BUDGET_MICRO_USD — validation_error, событий нет, оркестратор не вызван', async () => {
+    const { core, launches } = setup();
+    const result = await core.createSwarm({ ...body(1), budgetMicroUsd: 5000001 });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({
+      code: 'validation_error',
+      message: 'budget exceeds SWARM_MAX_BUDGET_MICRO_USD',
+    });
+    expect(await core.listSwarms()).toEqual([]);
+    expect(launches).toHaveLength(0);
+  });
+
+  it('AC-004-2: бюджет агента больше бюджета роя — validation_error, событий нет, оркестратор не вызван', async () => {
+    const { core, launches } = setup();
+    const result = await core.createSwarm({
+      task: 'Задача',
+      budgetMicroUsd: 500000,
+      agents: [{ name: 'A', role: 'r', budgetMicroUsd: 500001 }],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({
+      code: 'validation_error',
+      message: 'agent budget exceeds swarm budget',
+    });
+    expect(await core.listSwarms()).toEqual([]);
+    expect(launches).toHaveLength(0);
+  });
+
+  it('AC-004-2: бюджет 500000 — swarm.created и SwarmLaunch несут бюджеты роя и агентов', async () => {
+    const { core, launches } = setup();
+    const result = await core.createSwarm({
+      task: 'Задача',
+      budgetMicroUsd: 500000,
+      agents: [
+        { name: 'A', role: 'r1', budgetMicroUsd: 100000 },
+        { name: 'B', role: 'r2' },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const [launch] = launches;
+    expect(launch?.budgetMicroUsd).toBe(500000);
+    expect(launch?.agents.map((a) => a.budgetMicroUsd)).toEqual([100000, null]);
+    const events = await core.getEvents(result.value.id, 0);
+    const created = events.ok ? events.value[0] : undefined;
+    expect(created?.type).toBe('swarm.created');
+    if (created?.type !== 'swarm.created') return;
+    expect(created.data.budgetMicroUsd).toBe(500000);
+    expect(created.data.agents.map((a) => a.budgetMicroUsd)).toEqual([100000, null]);
   });
 });

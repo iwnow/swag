@@ -95,7 +95,7 @@ async function stack() {
     ids,
     log: current.logger,
     trace: current.trace,
-    limits: { maxActiveSwarms: 5 },
+    limits: { maxActiveSwarms: 5, maxBudgetMicroUsd: 5000000 },
   });
   const apiApp = await buildApp(api, {
     loggerInstance: current.logger.pino,
@@ -161,6 +161,7 @@ describe('трассировка HTTP api → orchestrator', () => {
     const marker = 'SECRET-MARKER-016';
     const response = await post(`00-${TRACE}-${REMOTE_SPAN}-01`, {
       task: `Задача ${marker}`,
+      budgetMicroUsd: 1000000,
       agents: [{ name: 'A', role: `роль ${marker}` }],
     });
     expect(response.status).toBe(201);

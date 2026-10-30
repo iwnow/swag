@@ -28,6 +28,8 @@ export const ApiConfig = BaseConfig.extend({
   API_PORT: Port,
   ORCHESTRATOR_URL: z.string().url(),
   MAX_ACTIVE_SWARMS: z.coerce.number().int().min(1),
+  // Спека 004, 4.11: предел бюджета роя в micro-USD (Q-5).
+  SWARM_MAX_BUDGET_MICRO_USD: z.coerce.number().int().min(1),
 });
 export type ApiConfig = z.infer<typeof ApiConfig>;
 
