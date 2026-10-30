@@ -115,13 +115,16 @@
 
 ## Стек-тесты
 
-`apps/llm-gateway/test/stack.test.ts` — AC-002-20 и AC-002-21 против поднятого стека. Без `LLM_GATEWAY_URL` тесты пропускаются.
+`apps/llm-gateway/test/stack.test.ts` — AC-002-20 и AC-002-21 против поднятого стека; `apps/llm-gateway/test/stack-money.test.ts` — AC-004-34 и AC-004-35 (деньги роя: `swarm_budgets`, `swarm_agents`, `ledger_entries` через `DATABASE_URL`, бюджет 1 и `docker ps` с меткой `swag.kind`). Без `LLM_GATEWAY_URL` тесты пропускаются. Общие хелперы (`run`, `containerId`, `apiUrl`) — `test/stack-support.ts`.
 
 ```bash
 npm run up                                   # профиль LLM_PROFILE=test из .env
-LLM_GATEWAY_URL=http://127.0.0.1:3002 node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run apps/llm-gateway/test/stack.test.ts
+LLM_GATEWAY_URL=http://127.0.0.1:3002 node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run apps/llm-gateway/test/stack.test.ts apps/llm-gateway/test/stack-money.test.ts
 npm run down
 ```
+
+- `stack-money.test.ts` ждёт финального статуса роя опросом раз в 0,5 с до 240 с; его тесты идут до 5 минут.
+- AC-004-33 без стека — `apps/llm-gateway/test/security-postgres.test.ts` на Postgres (`POSTGRES_TEST_URL`): вызов с маркером через HTTP, логи и спаны в памяти, таблицы 4.5 и отчёт `money:report` сканируются на токен шлюза.
 
 - `LLM_GATEWAY_TOKEN` — из `.env`; адрес `api` — `STACK_API_URL` (по умолчанию `http://127.0.0.1:3000`), для него тест создаёт рой через `POST /swarms`.
 - AC-002-21: в env `api`, `orchestrator`, `ui` не должно быть `LITELLM_MASTER_KEY` и `*_API_KEY` из `.env.llm`, без исключений (D-73: `api` и `orchestrator` получают явный `environment`, не весь `.env`); значения секретов из `.env.llm` тоже не должны встречаться. Нужен `.env.llm` — его читает compose.

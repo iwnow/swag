@@ -639,6 +639,31 @@ describe('orchestrator-core: регистрация роя в gateway (004, 4.6)
   });
 });
 
+describe('orchestrator-core: токен шлюза (спека 004, AC-004-33)', () => {
+  it('AC-004-33: launch и finish — токен попадает только в env песочниц; в логах, событиях и сообщениях шины его нет', async () => {
+    const fake = setup();
+    expect((await fake.core.launch(launchBody(2))).ok).toBe(true);
+    // Проверка не пустая: токен реально ушёл в песочницы, рой зарегистрирован в gateway.
+    expect([...fake.sandboxes.values()].map((spec) => spec.env['LLM_GATEWAY_TOKEN'])).toEqual([
+      LLM_TOKEN,
+      LLM_TOKEN,
+    ]);
+    expect(fake.registrations).toHaveLength(1);
+
+    expect((await fake.core.stop(SWARM)).ok).toBe(true);
+    expect(fake.closed).toEqual([SWARM]);
+    expect(fake.events.at(-1)).toMatchObject({ type: 'swarm.stopped' });
+
+    const dump = JSON.stringify({
+      logs: fake.entries,
+      events: fake.events,
+      messages: fake.messages,
+      registrations: fake.registrations,
+    });
+    expect(dump).not.toContain(LLM_TOKEN);
+  });
+});
+
 // Даём отработать асинхронным обработчикам после срабатывания таймера.
 async function waitMicrotasks(): Promise<void> {
   for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));

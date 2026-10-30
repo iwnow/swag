@@ -1,63 +1,31 @@
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
+import {
+  apiUrl,
+  containerId,
+  EXEC_TIMEOUT_MS,
+  FETCH_TIMEOUT_MS,
+  required,
+  root,
+  run,
+} from './stack-support.ts';
 
 // Спека 002, AC-002-20 и AC-002-21: настоящий стек (`npm run up`, LLM_PROFILE=test).
 // LLM_GATEWAY_URL, например http://127.0.0.1:3002; без неё тесты пропускаются (как adapter-nats).
 // Остальное из окружения: LLM_GATEWAY_TOKEN (из .env), STACK_API_URL — адрес api (по умолчанию порт 3000).
 // Запуск: см. README пакета.
 const gatewayUrl = process.env['LLM_GATEWAY_URL'];
-const apiUrl = process.env['STACK_API_URL'] ?? 'http://127.0.0.1:3000';
-const root = fileURLToPath(new URL('../../../', import.meta.url));
 const execFileAsync = promisify(execFile);
 const json = { 'content-type': 'application/json' };
-const EXEC_TIMEOUT_MS = 20_000;
-const FETCH_TIMEOUT_MS = 15_000;
 
 // Фейк профиля test: 1000 входных токенов, из них 200 из кэша, 500 выходных.
 // Цены test за 1 млн токенов: вход 3,00, кэш 0,30, выход 15,00. В микродолларах:
 // 800 · 3,00 + 200 · 0,30 + 500 · 15,00 = 2400 + 60 + 7500 = 9960.
 const USAGE = { promptTokens: 1000, cachedPromptTokens: 200, completionTokens: 500 };
 const COST_MICRO_USD = 9960;
-
-function required(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} не задан: нужен для стек-тестов llm-gateway`);
-  return value;
-}
-
-interface RunResult {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
-
-async function run(file: string, args: string[]): Promise<RunResult> {
-  try {
-    const { stdout, stderr } = await execFileAsync(file, args, {
-      cwd: root,
-      timeout: EXEC_TIMEOUT_MS,
-    });
-    return { code: 0, stdout, stderr };
-  } catch (error) {
-    const failure = error as { code?: number | string; stdout?: string; stderr?: string };
-    return {
-      code: typeof failure.code === 'number' ? failure.code : -1,
-      stdout: failure.stdout ?? '',
-      stderr: failure.stderr ?? '',
-    };
-  }
-}
-
-async function containerId(service: string): Promise<string> {
-  const { code, stdout } = await run('docker', ['compose', 'ps', '-q', service]);
-  const id = stdout.trim();
-  if (code !== 0 || !id) throw new Error(`контейнер ${service} не запущен`);
-  return id;
-}
 
 async function containerEnv(id: string): Promise<string[]> {
   const { stdout } = await execFileAsync(
