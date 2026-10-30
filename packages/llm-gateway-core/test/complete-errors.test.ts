@@ -13,7 +13,11 @@ const CALL_ID = '00000000-0000-4000-8000-000000000001';
 const LATENCY_MS = 1234.6; // round → 1235
 const BAD_REQUEST = 'bad request: unsupported tool_choice';
 
-const body = { model: 'chat-small', messages: [{ role: 'user', content: 'привет' }] };
+const body = {
+  model: 'chat-small',
+  messages: [{ role: 'user', content: 'привет' }],
+  max_tokens: 256,
+};
 
 // Апстрим тратит LATENCY_MS на отказ: задержка считается по monotonicMs и попадает в событие.
 function setup(
@@ -129,6 +133,8 @@ describe('complete без потока: ошибки апстрима (табл�
         model: 'chat-small',
         stream: false,
         status: 'error',
+        chargeMicroUsd: 0,
+        chargeBasis: 'none',
         latencyMs: 1235,
         errorCode: code,
         ...(upstreamStatus === undefined ? {} : { upstreamStatus }),

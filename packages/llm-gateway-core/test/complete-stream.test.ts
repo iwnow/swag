@@ -17,6 +17,7 @@ const BAD_REQUEST = 'bad request: unsupported tool_choice';
 const body = {
   model: 'chat-small',
   messages: [{ role: 'user', content: 'привет' }],
+  max_tokens: 1000,
   tools: [{ type: 'function', function: { name: 'lookup', parameters: {} } }],
   stream: true,
 };
@@ -180,6 +181,7 @@ describe('complete с потоком: успешный путь', () => {
         costMicroUsd: 9960,
         providerCostMicroUsd: 8500,
         latencyMs: 1235,
+        charge: { microUsd: 9960, basis: 'usage' },
       },
     });
   });
@@ -212,6 +214,8 @@ describe('complete с потоком: успешный путь', () => {
           completionTokens: 500,
           costMicroUsd: 9960,
           providerCostMicroUsd: 8500,
+          chargeMicroUsd: 9960,
+          chargeBasis: 'usage',
         },
       },
     ]);

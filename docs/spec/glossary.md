@@ -155,10 +155,12 @@
 | Ошибка внутреннего API gateway | `InternalErrorCode`, `swarm_registered` | Коды `/internal/*`: `invalid_request`, `model_not_found`, `swarm_registered`, `not_found` (004, 4.2). |
 | Бюджеты роёв | `swarm_budgets` | Таблица бюджета, трат и резервов роя в gateway (004, 4.5). |
 | Хранилище бюджетов | `BudgetStore`, `RegisteredAgent`, `createPostgresBudgetStore` | Порт `llm-gateway-core` и адаптер Postgres: регистрация, поиск агента, резерв, списание, закрытие, освобождение резервов (004, 4.4, 4.5). |
+| Внутренний API gateway | `InternalResult`, `InternalErrorCode`, `internalError` | Результат внутренних операций `registerSwarm` и `closeSwarm` и коды ошибок `invalid_request`, `model_not_found`, `swarm_registered`, `not_found` (004, 4.4). |
 | Результат резерва | `ReserveResult`, `reserve`, `settle`, `releaseHolds` | `ReserveResult` — `ok: true` или код `swarm_budget_exceeded` / `agent_budget_exceeded`; `reserve` — условный резерв, `settle` — списание с записью ledger, `releaseHolds` — снятие резервов при старте (004, 4.4, 4.5). |
 | Списание вызова | `LlmCharge`, `ChargeBasis`, `charge`, `chargeFor` | Сумма и основание (`usage`, `estimate`, `none`), записанные в ledger и в `llm.call` (004, 4.3). |
 | Оценка байтов вызова | `inputBytes`, `outputBytes` | Длина входа и выхода вызова в UTF-8 — верхняя граница токенов для резерва и оценки списания (004, 4.3). |
 | Причина «бюджет исчерпан» | `budget_exceeded` | Причина `swarm.failed`: агент получил `402` по бюджету роя или агента (004, 4.6). |
+| Отказ вызова до апстрима | `call_refused` | Лог `warn` при отказе `complete` на шагах 2–7 (4.3, 4.4): поле `code` — код ошибки gateway; `swarmId` и `agentId` — только после проверки вызывающего (004, 4.3). Имя на подтверждении, D-92 в `questions.md`. |
 | Причина «шлюз недоступен» | `gateway_unavailable` | Причина `swarm.failed`: регистрация роя в gateway не удалась, песочницы не создаются (004, 4.6). |
 | Регистрация роёв в оркестраторе | `LlmSwarms`, `createGatewaySwarms`, `@swag/adapter-gateway-http` | Порт `orchestrator-core` и HTTP-адаптер к внутреннему API gateway (004, 4.6). |
 | Книга цен | `PriceBook` | Порт `llm-gateway-core`: текущие цены модели, которые обновляются из OpenRouter (004, 4.4, 4.9). |

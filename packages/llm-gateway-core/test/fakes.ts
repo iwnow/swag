@@ -1,4 +1,4 @@
-import type { ModelCatalog, PlatformEventInput } from '@swag/contracts';
+import type { LlmSwarmRegistration, ModelCatalog, PlatformEventInput } from '@swag/contracts';
 import type {
   ChatRequest,
   Clock,
@@ -8,14 +8,26 @@ import type {
   LlmUpstream,
   LogContext,
   Logger,
+  PriceBook,
   TraceContext,
   UpstreamModels,
   UpstreamResponse,
   UpstreamStream,
   UpstreamStreamError,
 } from '../src/index.ts';
+import { type FakeBudgets, fakeBudgets } from './fake-budgets.ts';
 
 // Спека 002, 4.4: фейковые порты ядра в памяти. Сценарии задаёт тест.
+// Спека 004, 4.4: по умолчанию рой TEST_SWARM уже зарегистрирован (registered: false — без регистрации).
+
+export const TEST_SWARM_ID = '6f1c2a4e-8b3d-4e5f-9a1b-2c3d4e5f6a7b';
+
+export const TEST_SWARM: LlmSwarmRegistration = {
+  swarmId: TEST_SWARM_ID,
+  budgetMicroUsd: 1_000_000_000,
+  expiresAt: null,
+  agents: [{ agentId: 'agent-1', model: 'chat-small', budgetMicroUsd: null }],
+};
 
 const PRICES = {
   inputPerMTokUsd: '3.00',
@@ -154,19 +166,39 @@ export function fakeLog(): FakeLog {
   };
 }
 
+// Цены из каталога: в проде их отдаёт PriceBook поверх models.json и OpenRouter (4.9).
+export function fakePrices(catalog: ModelCatalog): PriceBook {
+  return {
+    prices(model) {
+      const entry = catalog.models.find((candidate) => candidate.id === model);
+      if (!entry) throw new Error(`fake prices: модель ${model} не в каталоге`);
+      return entry.prices;
+    },
+  };
+}
+
 export function fakeDeps(
-  options: { upstream?: UpstreamScript; traceId?: string | null; publishFails?: boolean } = {},
+  options: {
+    upstream?: UpstreamScript;
+    traceId?: string | null;
+    publishFails?: boolean;
+    registered?: boolean;
+    settleFails?: boolean;
+  } = {},
 ): {
   deps: LlmGatewayDeps;
   upstream: FakeUpstream;
   events: FakeEvents;
   clock: FakeClock;
   log: FakeLog;
+  budgets: FakeBudgets;
 } {
   const upstream = fakeUpstream(options.upstream);
   const events = fakeEvents({ fail: options.publishFails ?? false });
   const clock = fakeClock();
   const log = fakeLog();
+  const budgets = fakeBudgets({ settleFails: options.settleFails ?? false });
+  if (options.registered ?? true) budgets.seed(TEST_SWARM);
   const deps: LlmGatewayDeps = {
     catalog: testCatalog,
     upstream,
@@ -176,6 +208,8 @@ export function fakeDeps(
     trace: fakeTrace(options.traceId ?? null),
     log,
     version: 'test',
+    budgets,
+    prices: fakePrices(testCatalog),
   };
-  return { deps, upstream, events, clock, log };
+  return { deps, upstream, events, clock, log, budgets };
 }
