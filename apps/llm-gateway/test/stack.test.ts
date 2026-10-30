@@ -119,7 +119,7 @@ describe.skipIf(!gatewayUrl)('llm-gateway [stack]', () => {
       method: 'POST',
       headers: json,
       body: JSON.stringify({
-        task: 'стек-тест AC-002-20',
+        task: 'стек-тест AC-002-20 __hang__',
         budgetMicroUsd: 5_000_000,
         agents: [{ name: 'stack', role: 'проверка шлюза LLM' }],
       }),
@@ -129,20 +129,9 @@ describe.skipIf(!gatewayUrl)('llm-gateway [stack]', () => {
     const { id: swarmId } = (await created.json()) as { id: string };
 
     try {
-      // Спека 004, 4.2: рой регистрируется в gateway до вызовов; без регистрации вызов дал бы 403 caller_not_registered.
-      const registered = await fetch(`${gatewayUrl}/internal/swarms`, {
-        method: 'POST',
-        headers: { ...json, authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          swarmId,
-          budgetMicroUsd: 5_000_000,
-          expiresAt: null,
-          agents: [{ agentId: 'agent-1', model: 'chat-small', budgetMicroUsd: null }],
-        }),
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-      expect(registered.status).toBe(204);
-
+      // Спека 004, 4.6: рой регистрирует оркестратор при запуске и закрывает при завершении; тест регистрацию не делает (иначе 409).
+      // Маркер `__hang__` в задаче: вызов модели агента зависает в фейке до таймаута апстрима (120 с), рой не завершается,
+      // регистрация жива на время вызовов теста. Рой останавливается в finally.
       const since = new Date().toISOString();
       const headers = {
         ...json,

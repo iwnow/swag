@@ -18,6 +18,7 @@
 
 - Повторов нет (4.6): рой с недоступным gateway падает сразу, оболочка переводит исключение в `swarm.failed` `gateway_unavailable`.
 - `close` — успех при `2xx` и `404`; тело не читается.
+- `content-type: application/json` — только у `register` (запрос с телом). Общий заголовок для `close` ломал его: gateway отвечает 400 на пустое JSON-тело (дефект, найден стек-тестом AC-004-34, исправлен в T-17; тест в `test/gateway-swarms.test.ts` проверяет отсутствие заголовка у `close`).
 - Адаптер зависит от `@swag/orchestrator-core` только ради типа порта `LlmSwarms`, как `adapter-orchestrator-http` зависит от `@swag/api-core`.
 
 ## Ограничения

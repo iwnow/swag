@@ -15,6 +15,7 @@ interface Seen {
   method: string;
   url: string;
   authorization: string | undefined;
+  contentType: string | undefined;
   body: string;
 }
 
@@ -37,8 +38,17 @@ async function startFake(reply: Reply): Promise<Fake> {
         method: request.method ?? '',
         url: request.url ?? '',
         authorization: request.headers.authorization,
+        contentType: request.headers['content-type'],
         body,
       });
+      // Как Fastify: JSON-запрос с пустым телом — 400 (тело close без content-type проходит).
+      if (request.headers['content-type']?.startsWith('application/json') && body === '') {
+        response.writeHead(400, { 'content-type': 'application/json' });
+        response.end(
+          JSON.stringify({ error: { message: 'Body cannot be empty', code: 'bad_request' } }),
+        );
+        return;
+      }
       if (reply.hang) {
         pending.push(response);
         return;
@@ -118,6 +128,7 @@ describe('adapter-gateway-http (спека 004, 4.6, REQ-004-3)', () => {
         method: 'POST',
         url: `/internal/swarms/${SWARM_ID}/close`,
         authorization: `Bearer ${TOKEN}`,
+        contentType: undefined,
       });
     },
   );

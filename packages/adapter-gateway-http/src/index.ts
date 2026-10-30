@@ -36,31 +36,26 @@ async function readError(response: Response): Promise<GatewayError> {
 }
 
 export function createGatewaySwarms(options: GatewaySwarmsOptions): LlmSwarms {
-  const headers = {
-    authorization: `Bearer ${options.token}`,
-    'content-type': 'application/json',
-  };
-  const send = (path: string, init: RequestInit) =>
+  const authorization = `Bearer ${options.token}`;
+  // content-type — только у запроса с телом: пустой JSON-запрос close gateway отвергает 400 (Fastify).
+  const send = (path: string, body: string | null) =>
     fetch(`${options.baseUrl}${path}`, {
-      ...init,
-      headers,
+      method: 'POST',
+      headers:
+        body === null ? { authorization } : { authorization, 'content-type': 'application/json' },
+      body,
       signal: AbortSignal.timeout(options.timeoutMs),
     });
 
   return {
     async register(reg: LlmSwarmRegistration): Promise<void> {
-      const response = await send('/internal/swarms', {
-        method: 'POST',
-        body: JSON.stringify(reg),
-      });
+      const response = await send('/internal/swarms', JSON.stringify(reg));
       if (response.status !== 204) throw await readError(response);
     },
 
     // 2xx — успех (4.2 отвечает 200 с LlmSwarmClosed, 4.6 — 204); 404 — рой уже не зарегистрирован, тоже успех.
     async close(swarmId: string): Promise<void> {
-      const response = await send(`/internal/swarms/${encodeURIComponent(swarmId)}/close`, {
-        method: 'POST',
-      });
+      const response = await send(`/internal/swarms/${encodeURIComponent(swarmId)}/close`, null);
       if (response.ok || response.status === 404) {
         await response.body?.cancel();
         return;
