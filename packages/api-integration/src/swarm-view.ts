@@ -13,6 +13,8 @@ export interface SwarmView {
   task: string;
   status: SwarmStatus;
   createdAt: string; // ts события swarm.created
+  budgetMicroUsd?: number; // нет у роёв до 004
+  spentMicroUsd: number; // сумма charge.microUsd событий llm.call роя (без charge — costMicroUsd ?? 0)
   agents: {
     id: AgentId;
     name: string;
@@ -22,6 +24,8 @@ export interface SwarmView {
     messagesIn: number;
     messagesOut: number;
     steps: number; // число agent.step — вызовов модели
+    budgetMicroUsd?: number | null; // нет у агентов до 004; null — только бюджет роя
+    spentMicroUsd: number;
   }[];
   edges: { from: AgentId; to: AgentId; messages: number }[]; // рёбра по фактическим сообщениям агентов
   result: string | null;
@@ -43,9 +47,24 @@ export function applyEvent(view: SwarmView | null, event: PlatformEvent): SwarmV
   if (event.type === 'swarm.created') {
     throw new Error(`повторный swarm.created для роя ${event.swarmId}`);
   }
-  // Итоговый статус окончателен (003, 4.3): событие двигает только lastSeq.
-  if (FINAL_SWARM_STATUSES.includes(view.status)) return { ...view, lastSeq: event.seq };
-  return updateView(view, event);
+  // Итоговый статус окончателен (003, 4.3): событие двигает только lastSeq. Расход приходит и после финала.
+  const next = FINAL_SWARM_STATUSES.includes(view.status)
+    ? { ...view, lastSeq: event.seq }
+    : updateView(view, event);
+  return event.type === 'llm.call' ? addSpend(next, event) : next;
+}
+
+// Расход по событию llm.call (004, 4.7): charge — что списано; у событий до 004 charge нет, берём costMicroUsd.
+function addSpend(view: SwarmView, event: Extract<PlatformEvent, { type: 'llm.call' }>): SwarmView {
+  const micro = event.data.charge?.microUsd ?? event.data.costMicroUsd ?? 0;
+  return {
+    ...view,
+    // Проекции, сохранённые до 004, читаются без полей расхода (D-101): отсутствие — 0.
+    spentMicroUsd: (view.spentMicroUsd ?? 0) + micro,
+    agents: view.agents.map((a) =>
+      a.id === event.agentId ? { ...a, spentMicroUsd: (a.spentMicroUsd ?? 0) + micro } : a,
+    ),
+  };
 }
 
 export function projectSwarm(events: PlatformEvent[]): SwarmView {
@@ -53,11 +72,14 @@ export function projectSwarm(events: PlatformEvent[]): SwarmView {
 }
 
 function createView(event: Extract<PlatformEvent, { type: 'swarm.created' }>): SwarmView {
+  const { budgetMicroUsd } = event.data;
   return {
     id: event.swarmId,
     task: event.data.task,
     status: 'starting',
     createdAt: event.ts,
+    ...(budgetMicroUsd === undefined ? {} : { budgetMicroUsd }),
+    spentMicroUsd: 0,
     agents: event.data.agents.map((agent) => ({
       id: agent.id,
       name: agent.name,
@@ -67,6 +89,8 @@ function createView(event: Extract<PlatformEvent, { type: 'swarm.created' }>): S
       messagesIn: 0,
       messagesOut: 0,
       steps: 0,
+      ...(agent.budgetMicroUsd === undefined ? {} : { budgetMicroUsd: agent.budgetMicroUsd }),
+      spentMicroUsd: 0,
     })),
     edges: [],
     result: null,

@@ -92,15 +92,24 @@ describe('ui-core', () => {
     const { stream } = fakeStream();
     const core = createUiCore({ api, stream, timers: fakeTimers().timers, traces });
 
-    const invalid = await core.createSwarm({ task: '', agents: [{ name: 'A', role: 'r' }] });
+    const invalid = await core.createSwarm({
+      task: '',
+      budgetMicroUsd: 500000,
+      agents: [{ name: 'A', role: 'r' }],
+    });
     expect(invalid.ok).toBe(false);
     expect(api.create).not.toHaveBeenCalled();
 
-    const valid = await core.createSwarm({ task: 'T', agents: [{ name: 'A', role: 'r' }] });
+    const valid = await core.createSwarm({
+      task: 'T',
+      budgetMicroUsd: 500000,
+      agents: [{ name: 'A', role: 'r' }],
+    });
     expect(valid.ok).toBe(true);
     expect(api.create).toHaveBeenCalledWith({
       task: 'T',
-      agents: [{ name: 'A', role: 'r', model: 'chat-small' }],
+      budgetMicroUsd: 500000,
+      agents: [{ name: 'A', role: 'r', model: 'chat-small', budgetMicroUsd: null }],
     });
   });
 
@@ -109,23 +118,31 @@ describe('ui-core', () => {
     const { stream } = fakeStream();
     const core = createUiCore({ api, stream, timers: fakeTimers().timers, traces });
 
-    await core.createSwarm({ task: 'T', agents: [{ name: 'A', role: 'r' }] });
+    await core.createSwarm({
+      task: 'T',
+      budgetMicroUsd: 500000,
+      agents: [{ name: 'A', role: 'r' }],
+    });
     expect(api.create).toHaveBeenLastCalledWith({
       task: 'T',
-      agents: [{ name: 'A', role: 'r', model: 'chat-small' }],
+      budgetMicroUsd: 500000,
+      agents: [{ name: 'A', role: 'r', model: 'chat-small', budgetMicroUsd: null }],
     });
 
     await core.createSwarm({
       task: 'T',
+      budgetMicroUsd: 500000,
       agents: [{ name: 'A', role: 'r', model: 'chat-large' }],
     });
     expect(api.create).toHaveBeenLastCalledWith({
       task: 'T',
-      agents: [{ name: 'A', role: 'r', model: 'chat-large' }],
+      budgetMicroUsd: 500000,
+      agents: [{ name: 'A', role: 'r', model: 'chat-large', budgetMicroUsd: null }],
     });
 
     const invalid = core.validateForm({
       task: 'T',
+      budgetMicroUsd: 500000,
       agents: [{ name: 'A', role: 'r', model: 'gpt-4' }],
     });
     expect(invalid.ok).toBe(false);

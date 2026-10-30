@@ -28,6 +28,8 @@ export const ApiConfig = BaseConfig.extend({
   API_PORT: Port,
   ORCHESTRATOR_URL: z.string().url(),
   MAX_ACTIVE_SWARMS: z.coerce.number().int().min(1),
+  // Спека 004, 4.11: предел бюджета роя в micro-USD (Q-5).
+  SWARM_MAX_BUDGET_MICRO_USD: z.coerce.number().int().min(1),
 });
 export type ApiConfig = z.infer<typeof ApiConfig>;
 
@@ -42,6 +44,8 @@ export const OrchestratorConfig = BaseConfig.extend({
   AGENT_MAX_TOKENS: PositiveInt.min(1),
   LLM_GATEWAY_TOKEN: GatewayToken,
   DOCKER_AGENT_LLM_GATEWAY_URL: z.string().url(),
+  // Спека 004, 4.11: внутренний API gateway (регистрация роёв) — без /v1, как база для /internal/*.
+  LLM_GATEWAY_URL: z.string().url(),
   AGENT_START_TIMEOUT_MS: PositiveInt,
   SWARM_TIMEOUT_MS: PositiveInt,
 });
@@ -102,8 +106,9 @@ export const AgentConfig = z.object({
 });
 export type AgentConfig = z.infer<typeof AgentConfig>;
 
-// Спека 002, 4.9. Без BaseConfig: gateway не нужна DATABASE_URL. Ключи провайдеров — только в .env.llm (4.8).
+// Спека 002, 4.9; спека 004, 4.11: DATABASE_URL — бюджеты, ledger и цены. Без BaseConfig. Ключи провайдеров — только в .env.llm (4.8).
 export const LlmGatewayConfig = z.object({
+  DATABASE_URL: z.string().url(),
   NATS_URL: z.string().url(),
   OTEL_EXPORTER_OTLP_ENDPOINT: OptionalUrl,
   LOG_LEVEL: LogLevel.default('info'),
@@ -116,6 +121,9 @@ export const LlmGatewayConfig = z.object({
   LLM_GATEWAY_UPSTREAM_TIMEOUT_MS: z.coerce.number().int().min(1).default(120000),
   LLM_GATEWAY_STARTUP_TIMEOUT_MS: z.coerce.number().int().min(1).default(60000),
   LLM_GATEWAY_BODY_LIMIT_BYTES: z.coerce.number().int().min(1024).default(8388608),
+  LLM_PROFILE: z.enum(['test', 'dev', 'prod']), // спека 002, 4.8; test не обращается к OpenRouter (004, 4.9)
+  LLM_PRICES_REFRESH_MS: z.coerce.number().int().min(0).default(3600000), // спека 004, 4.11; 0 — выключено
+  OPENROUTER_MODELS_URL: z.string().url().default('https://openrouter.ai/api/v1/models'), // спека 004, 4.11
 });
 export type LlmGatewayConfig = z.infer<typeof LlmGatewayConfig>;
 

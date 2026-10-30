@@ -32,7 +32,7 @@ describe.skipIf(!url)('история роёв на Postgres', () => {
         ids: { uuid: () => randomUUID() },
         log: silentLog,
         trace: { currentTraceId: () => null },
-        limits: { maxActiveSwarms: 3 },
+        limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000 },
       },
     );
     const run = { core, app: await buildApp(core), pool };

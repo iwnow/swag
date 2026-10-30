@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PlatformEvent, PlatformEventInput } from '@swag/contracts';
-import { applyEvent, projectSwarm } from '../src/index.ts';
+import { applyEvent, projectSwarm, type SwarmView } from '../src/index.ts';
 
 const SWARM = '0b6f6d2e-6a4c-4c3e-9f5e-111111111111';
 const MSG = '0b6f6d2e-6a4c-4c3e-9f5e-222222222222';
@@ -281,5 +281,134 @@ describe('projectSwarm, итоговый статус роя (003, 4.3)', () => 
     });
     const view = projectSwarm([created, failed]);
     expect(() => applyEvent(view, again)).toThrow('повторный swarm.created');
+  });
+});
+
+// Вызов модели агента: проекции важны только charge и costMicroUsd (004, 4.7).
+const llmCall = (agentId: 'agent-1' | 'agent-2', data: Record<string, unknown>) =>
+  ev({
+    ...base(agentId),
+    type: 'llm.call',
+    data: {
+      callId: '0b6f6d2e-6a4c-4c3e-9f5e-333333333333',
+      model: 'chat-small',
+      stream: false,
+      status: 'ok',
+      usage: null,
+      costMicroUsd: null,
+      providerCostMicroUsd: null,
+      latencyMs: 1,
+      ...data,
+    },
+  } as PlatformEventInput);
+
+describe('projectSwarm — AC-004-26: деньги роя и агентов', () => {
+  it('AC-004-26: spentMicroUsd роя и агентов — суммы charge; бюджеты из swarm.created', () => {
+    n = 0;
+    const events = [
+      ev({
+        ...base(null, 'api'),
+        type: 'swarm.created',
+        data: {
+          task: 'T',
+          budgetMicroUsd: 500000,
+          agents: [
+            { id: A1, name: 'A', role: 'r1', model: 'chat-small', budgetMicroUsd: 100000 },
+            { id: A2, name: 'B', role: 'r2', model: 'chat-small', budgetMicroUsd: null },
+          ],
+        },
+      }),
+      llmCall(A1, { charge: { microUsd: 30000, basis: 'usage' } }),
+      llmCall(A2, { charge: { microUsd: 20000, basis: 'usage' } }),
+      llmCall(A1, { charge: { microUsd: 5000, basis: 'estimate' } }),
+    ];
+    const view = projectSwarm(events);
+    expect(view.budgetMicroUsd).toBe(500000);
+    expect(view.spentMicroUsd).toBe(55000);
+    expect(view.agents[0]).toMatchObject({ budgetMicroUsd: 100000, spentMicroUsd: 35000 });
+    expect(view.agents[1]).toMatchObject({ budgetMicroUsd: null, spentMicroUsd: 20000 });
+  });
+
+  it('AC-004-26: событие без charge прибавляет costMicroUsd, при null — 0', () => {
+    n = 0;
+    const view = projectSwarm([
+      ev({
+        ...base(null, 'api'),
+        type: 'swarm.created',
+        data: { task: 'T', agents: [{ id: A1, name: 'A', role: 'r1', model: 'chat-small' }] },
+      }),
+      llmCall(A1, { costMicroUsd: 7000 }),
+      llmCall(A1, { costMicroUsd: null }),
+    ]);
+    expect(view.spentMicroUsd).toBe(7000);
+    expect(view.agents[0]?.spentMicroUsd).toBe(7000);
+  });
+
+  it('проекция роя до 004 без бюджетов: budgetMicroUsd нет, spentMicroUsd = 0 (4.7)', () => {
+    n = 0;
+    const view = projectSwarm([
+      ev({
+        ...base(null, 'api'),
+        type: 'swarm.created',
+        data: { task: 'T', agents: [{ id: A1, name: 'A', role: 'r1', model: 'chat-small' }] },
+      }),
+    ]);
+    expect(view).not.toHaveProperty('budgetMicroUsd');
+    expect(view.spentMicroUsd).toBe(0);
+    expect(view.agents[0]).not.toHaveProperty('budgetMicroUsd');
+    expect(view.agents[0]?.spentMicroUsd).toBe(0);
+  });
+
+  it('AC-004-26: расход после итогового статуса учитывается, статус не меняется', () => {
+    n = 0;
+    const view = projectSwarm([
+      ev({
+        ...base(null, 'api'),
+        type: 'swarm.created',
+        data: {
+          task: 'T',
+          budgetMicroUsd: 1000,
+          agents: [{ id: A1, name: 'A', role: 'r1', model: 'chat-small' }],
+        },
+      }),
+      ev({ ...base(null, 'api'), type: 'swarm.failed', data: { reason: 'api_restarted' } }),
+      llmCall(A1, { charge: { microUsd: 400, basis: 'usage' } }),
+    ]);
+    expect(view.status).toBe('failed');
+    expect(view.spentMicroUsd).toBe(400);
+  });
+});
+
+describe('applyEvent — проекция, сохранённая до 004 (4.7, D-101)', () => {
+  it('без полей расхода llm.call даёт число, не NaN (D-101)', () => {
+    n = 0;
+    const view = projectSwarm([
+      ev({
+        ...base(null, 'api'),
+        type: 'swarm.created',
+        data: { task: 'T', agents: [{ id: A1, name: 'A', role: 'r1', model: 'chat-small' }] },
+      }),
+    ]);
+    const stored = JSON.parse(JSON.stringify(view)) as Record<string, unknown>;
+    delete stored['spentMicroUsd'];
+    const next = applyEvent(stored as unknown as SwarmView, llmCall(A1, { costMicroUsd: 300 }));
+    expect(next.spentMicroUsd).toBe(300);
+    expect(next.agents[0]?.spentMicroUsd).toBe(300);
+  });
+});
+
+describe('projectSwarm — AC-004-26: charge важнее costMicroUsd', () => {
+  it('AC-004-26: при charge и costMicroUsd с разными значениями считается charge', () => {
+    n = 0;
+    const view = projectSwarm([
+      ev({
+        ...base(null, 'api'),
+        type: 'swarm.created',
+        data: { task: 'T', agents: [{ id: A1, name: 'A', role: 'r1', model: 'chat-small' }] },
+      }),
+      llmCall(A1, { charge: { microUsd: 900, basis: 'usage' }, costMicroUsd: 1200 }),
+    ]);
+    expect(view.spentMicroUsd).toBe(900);
+    expect(view.agents[0]?.spentMicroUsd).toBe(900);
   });
 });

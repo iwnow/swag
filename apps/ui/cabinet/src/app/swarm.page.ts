@@ -9,7 +9,15 @@ import {
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { PlatformEvent } from '@swag/contracts';
 import type { SwarmView } from '@swag/api-integration';
-import { formatAgentStep, formatLlmCall, unreadMessageIds } from '@swag/ui-core';
+import {
+  failureReasonText,
+  formatAgentStep,
+  formatLlmCall,
+  formatSwarmMoney,
+  formatUsd,
+  spentLastMinute,
+  unreadMessageIds,
+} from '@swag/ui-core';
 import { SwarmGraphComponent } from './swarm-graph.ts';
 import { UI, errorText } from './ui.ts';
 
@@ -20,6 +28,9 @@ const STATUS_LABEL: Record<string, string> = {
   stopped: 'остановлен',
   failed: 'ошибка',
 };
+
+// Спека 004, 4.8: строка денег и «за минуту» обновляются раз в 5 с.
+const MONEY_TICK_MS = 5000;
 
 @Component({
   selector: 'app-swarm-page',
@@ -38,7 +49,22 @@ const STATUS_LABEL: Record<string, string> = {
         Статус: <strong>{{ statusLabel(swarm.status) }}</strong> ·
         {{ connected() ? 'поток подключён' : 'переподключение…' }}
       </p>
+      <p class="money">{{ money() }}</p>
       <app-swarm-graph [view]="swarm" />
+
+      <section>
+        <h2>Агенты</h2>
+        <ul>
+          @for (agent of swarm.agents; track agent.id) {
+            <li>
+              {{ agent.name }} ({{ agent.model }}): потрачено {{ formatUsd(agent.spentMicroUsd) }}
+              @if (agent.budgetMicroUsd != null) {
+                из {{ formatUsd(agent.budgetMicroUsd) }}
+              }
+            </li>
+          }
+        </ul>
+      </section>
 
       @if (swarm.status === 'completed') {
         <section>
@@ -50,7 +76,7 @@ const STATUS_LABEL: Record<string, string> = {
         <section class="error">
           <h2>Ошибка</h2>
           <p>
-            {{ failure.reason }}
+            {{ failureReasonText(failure.reason) }}
             @if (failure.detail) {
               : {{ failure.detail }}
             }
@@ -108,13 +134,24 @@ export class SwarmPageComponent implements OnDestroy {
     const status = this.view()?.status;
     return status === undefined ? new Set<string>() : unreadMessageIds(this.feed(), status);
   });
+  readonly now = signal(Date.now());
+  readonly money = computed(() => {
+    const swarm = this.view();
+    return swarm === null
+      ? null
+      : formatSwarmMoney(swarm, spentLastMinute(this.feed(), this.now()));
+  });
+  readonly formatUsd = formatUsd;
+  readonly failureReasonText = failureReasonText;
 
   private readonly page = this.ui.openSwarm(this.id);
   private readonly unsubscribe = this.page.onChange(() => {
     this.view.set(this.page.view);
     this.feed.set([...this.page.feed]);
     this.connected.set(this.page.connected);
+    this.now.set(Date.now());
   });
+  private readonly moneyTimer = setInterval(() => this.now.set(Date.now()), MONEY_TICK_MS);
 
   traceUrl(event: PlatformEvent): string | null {
     return this.ui.traceUrl(event.traceId);
@@ -131,7 +168,7 @@ export class SwarmPageComponent implements OnDestroy {
       case 'swarm.completed':
         return event.data.result;
       case 'swarm.failed':
-        return event.data.reason;
+        return failureReasonText(event.data.reason);
       case 'agent.step':
         return formatAgentStep(event.data);
       case 'llm.call':
@@ -153,6 +190,7 @@ export class SwarmPageComponent implements OnDestroy {
   }
 
   ngOnDestroy(): void {
+    clearInterval(this.moneyTimer);
     this.unsubscribe();
     this.page.close();
   }

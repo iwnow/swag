@@ -48,6 +48,7 @@ const orchestratorEnv = {
   AGENT_MAX_TOKENS: '2048',
   LLM_GATEWAY_TOKEN: gatewayToken,
   DOCKER_AGENT_LLM_GATEWAY_URL: 'http://llm-gateway:3002/v1',
+  LLM_GATEWAY_URL: 'http://llm-gateway:3002',
 };
 
 describe('loadConfig', () => {
@@ -73,9 +74,29 @@ describe('loadConfig', () => {
       ...validEnv,
       ORCHESTRATOR_URL: 'http://orchestrator:3001',
       MAX_ACTIVE_SWARMS: '3',
+      SWARM_MAX_BUDGET_MICRO_USD: '5000000',
     };
     expect(loadConfig(ApiConfig, { ...apiEnv, API_PORT: '3000' }).API_PORT).toBe(3000);
     expect(() => loadConfig(ApiConfig, { ...apiEnv, API_PORT: 'abc' })).toThrow(/API_PORT/);
+  });
+
+  it('спека 004, 4.11: SWARM_MAX_BUDGET_MICRO_USD — целое не меньше 1', () => {
+    const apiEnv = {
+      ...validEnv,
+      ORCHESTRATOR_URL: 'http://orchestrator:3001',
+      MAX_ACTIVE_SWARMS: '3',
+      API_PORT: '3000',
+    };
+    expect(
+      loadConfig(ApiConfig, { ...apiEnv, SWARM_MAX_BUDGET_MICRO_USD: '5000000' })
+        .SWARM_MAX_BUDGET_MICRO_USD,
+    ).toBe(5000000);
+    expect(() => loadConfig(ApiConfig, { ...apiEnv, SWARM_MAX_BUDGET_MICRO_USD: '0' })).toThrow(
+      /SWARM_MAX_BUDGET_MICRO_USD/,
+    );
+    expect(() => loadConfig(ApiConfig, { ...apiEnv, SWARM_MAX_BUDGET_MICRO_USD: '1.5' })).toThrow(
+      /SWARM_MAX_BUDGET_MICRO_USD/,
+    );
   });
 
   it('спека 022, 4.8: AgentConfig разбирает AGENT_PEERS, умолчания и не знает AGENT_NEXT', () => {
@@ -195,6 +216,7 @@ describe('loadConfig', () => {
       AGENT_MAX_TOKENS: 2048,
       LLM_GATEWAY_TOKEN: gatewayToken,
       DOCKER_AGENT_LLM_GATEWAY_URL: 'http://llm-gateway:3002/v1',
+      LLM_GATEWAY_URL: 'http://llm-gateway:3002',
     });
     expect(config).not.toHaveProperty('AGENT_STEP_DELAY_MS');
     expect(() =>
@@ -206,6 +228,14 @@ describe('loadConfig', () => {
     expect(() =>
       loadConfig(OrchestratorConfig, { ...orchestratorEnv, DOCKER_AGENT_LLM_GATEWAY_URL: 'нет' }),
     ).toThrow(/DOCKER_AGENT_LLM_GATEWAY_URL/);
+  });
+
+  it('спека 004, 4.11: OrchestratorConfig.LLM_GATEWAY_URL — URL; без него или невалидный — ошибка', () => {
+    const { LLM_GATEWAY_URL: _omitted, ...withoutUrl } = orchestratorEnv;
+    expect(() => loadConfig(OrchestratorConfig, withoutUrl)).toThrow(/LLM_GATEWAY_URL/);
+    expect(() =>
+      loadConfig(OrchestratorConfig, { ...orchestratorEnv, LLM_GATEWAY_URL: 'нет' }),
+    ).toThrow(/LLM_GATEWAY_URL/);
   });
 
   it('спека 022, 4.8: .env.example проходит OrchestratorConfig и содержит новые переменные', () => {

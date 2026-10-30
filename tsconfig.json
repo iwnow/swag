@@ -5,6 +5,7 @@
   "references": [
     { "path": "packages/contracts" },
     { "path": "packages/config" },
+    { "path": "packages/helpers" },
     { "path": "packages/api-integration" },
     { "path": "packages/api-core" },
     { "path": "packages/orchestrator-core" },
@@ -17,6 +18,8 @@
     { "path": "packages/adapter-postgres" },
     { "path": "packages/adapter-litellm" },
     { "path": "packages/adapter-openai" },
+    { "path": "packages/adapter-openrouter" },
+    { "path": "packages/adapter-gateway-http" },
     { "path": "packages/adapter-orchestrator-http" },
     { "path": "packages/adapter-docker" },
     { "path": "apps/api" },

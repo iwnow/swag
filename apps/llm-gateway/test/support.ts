@@ -5,15 +5,21 @@ import type { FastifyInstance } from 'fastify';
 import type { PlatformEventInput } from '@swag/contracts';
 import { createLiteLlmUpstream } from '@swag/adapter-litellm';
 import {
+  type BudgetStore,
   createLlmGatewayCore,
   type EventPublisher,
   type Logger,
   type LlmGatewayCore,
+  type PriceBook,
   type TraceContext,
 } from '@swag/llm-gateway-core';
 import { buildApp } from '../src/app.ts';
-import { readCatalog } from '../src/catalog.ts';
+import { createCatalogHolder, readCatalog } from '../src/catalog.ts';
 import { startFakeProvider, type FakeProvider } from '../../../infra/llm/fake-provider/server.ts';
+import {
+  type FakeBudgets,
+  fakeBudgets,
+} from '../../../packages/llm-gateway-core/test/fake-budgets.ts';
 
 // Значения из 4.9 спеки: мастер-ключ LiteLLM и токен шлюза — явно фейковые.
 export const MASTER_KEY = 'sk-swag-local-not-secret';
@@ -24,6 +30,20 @@ export const catalogPath = fileURLToPath(new URL('./fixtures/catalog.json', impo
 export const SWARM_ID = randomUUID();
 export const authorized = { authorization: `Bearer ${GATEWAY_TOKEN}` };
 export const caller = { ...authorized, 'x-swag-swarm-id': SWARM_ID, 'x-swag-agent-id': 'agent-1' };
+
+// Спека 004, 4.4: рой SWARM_ID зарегистрирован в фейке хранилища; тесты 002 на /v1/* вызывают его без регистрации через API.
+export const TEST_REGISTRATION = {
+  swarmId: SWARM_ID,
+  budgetMicroUsd: 1_000_000_000,
+  expiresAt: null,
+  agents: [{ agentId: 'agent-1', model: 'chat-small', budgetMicroUsd: null }],
+};
+
+export function registeredBudgets(): FakeBudgets {
+  const budgets = fakeBudgets();
+  budgets.seed(TEST_REGISTRATION);
+  return budgets;
+}
 
 export interface LogEntry {
   level: 'debug' | 'info' | 'warn' | 'error';
@@ -58,10 +78,13 @@ export function makeCore(
     trace?: TraceContext;
     secrets?: string[];
     masterKey?: string;
+    budgets?: BudgetStore;
+    prices?: PriceBook;
   } = {},
 ): LlmGatewayCore {
+  const catalog = readCatalog(catalogPath);
   return createLlmGatewayCore({
-    catalog: readCatalog(catalogPath),
+    catalog,
     upstream: createLiteLlmUpstream({
       baseUrl: upstreamUrl,
       masterKey: options.masterKey ?? MASTER_KEY,
@@ -74,6 +97,8 @@ export function makeCore(
     trace: options.trace ?? { currentTraceId: () => options.traceId ?? null },
     log,
     version: 'test',
+    budgets: options.budgets ?? registeredBudgets(),
+    prices: options.prices ?? createCatalogHolder(catalog).book,
   });
 }
 
@@ -101,6 +126,7 @@ export interface OpenGateway {
   fake: FakeProvider;
   events: PlatformEventInput[];
   logs: LogEntry[];
+  budgets: FakeBudgets;
 }
 
 const closers: (() => Promise<void>)[] = [];
@@ -118,6 +144,7 @@ export async function openGateway(options: GatewayOptions = {}): Promise<OpenGat
   const events: PlatformEventInput[] = [];
   bus.subscribe(`swarm.${SWARM_ID}.events`, (event) => void events.push(event));
   const { log, entries } = recordingLog();
+  const budgets = registeredBudgets();
   const core = makeCore(
     fake.url,
     log,
@@ -125,6 +152,7 @@ export async function openGateway(options: GatewayOptions = {}): Promise<OpenGat
     {
       ...(options.idleTimeoutMs && { idleTimeoutMs: options.idleTimeoutMs }),
       ...(options.traceId && { traceId: options.traceId }),
+      budgets,
     },
   );
   const app = await buildApp(core, {
@@ -132,7 +160,7 @@ export async function openGateway(options: GatewayOptions = {}): Promise<OpenGat
     ...(options.bodyLimitBytes && { bodyLimitBytes: options.bodyLimitBytes }),
   });
   closers.push(() => app.close());
-  return { app, fake, events, logs: entries };
+  return { app, fake, events, logs: entries, budgets };
 }
 
 // Слушает 127.0.0.1 на свободном порту и возвращает базовый URL без пути.

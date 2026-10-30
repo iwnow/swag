@@ -3,6 +3,7 @@ import {
   ENTRY_AGENT_ID,
   PlatformEventInput,
   SwarmLaunch,
+  type LlmSwarmRegistration,
   type AgentId,
   type AgentSpec,
   type ServiceInfo,
@@ -53,6 +54,12 @@ export interface SandboxProvider {
   list(match: Record<string, string | true>): Promise<string[]>; // id песочниц; true — ключ есть с любым значением
 }
 
+// Спека 004, 4.6: регистрация роя в gateway. register — исключение при отказе; close — после уборки песочниц.
+export interface LlmSwarms {
+  register(reg: LlmSwarmRegistration): Promise<void>;
+  close(swarmId: string): Promise<void>;
+}
+
 export interface OrchestratorBus {
   publishEvent(event: PlatformEventInput): Promise<void>;
   publishMessage(message: BusMessage): Promise<void>;
@@ -68,6 +75,7 @@ export interface OrchestratorCoreDeps {
   ids: IdGenerator;
   log: Logger;
   trace: TraceContext;
+  llmSwarms: LlmSwarms;
   // Значения env 4.8, которые ставит ядро. NATS_URL, OTEL_EXPORTER_OTLP_ENDPOINT, LLM_GATEWAY_URL — дело адаптера.
   agent: {
     template: string;
@@ -111,7 +119,13 @@ type Outcome =
   | {
       type: 'swarm.failed';
       data: {
-        reason: 'agent_start_timeout' | 'swarm_timeout' | 'sandbox_error' | 'agent_failed';
+        reason:
+          | 'agent_start_timeout'
+          | 'swarm_timeout'
+          | 'sandbox_error'
+          | 'agent_failed'
+          | 'budget_exceeded'
+          | 'gateway_unavailable';
         detail?: string;
       };
     };
@@ -129,7 +143,7 @@ const fail = (code: string, message: string, issues?: OrchestratorError['issues'
     : { ok: false, error: { code, message, issues } };
 
 export function createOrchestratorCore(deps: OrchestratorCoreDeps): OrchestratorCore {
-  const { sandboxes, bus, clock, timers, ids, log, trace } = deps;
+  const { sandboxes, bus, clock, timers, ids, log, trace, llmSwarms } = deps;
   const runs = new Map<string, Run>();
 
   // traceId — из порта: таймеры и обработчики событий выполняются в контексте запуска роя (REQ-016-2).
@@ -144,6 +158,18 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
 
   async function publish(event: PlatformEventInput): Promise<void> {
     await bus.publishEvent(event);
+  }
+
+  // stop меняет фазу во время await; TS после проверки выше сузил бы run.phase и счёл бы сравнение с 'finished' ошибкой.
+  const isFinished = (run: Run): boolean => run.phase === 'finished';
+
+  // Закрытие роя в gateway (4.6): сбой логируется и не мешает завершению роя.
+  async function closeInGateway(swarmId: string): Promise<void> {
+    try {
+      await llmSwarms.close(swarmId);
+    } catch (error) {
+      log.warn('gateway_close_failed', { swarmId, err: error });
+    }
   }
 
   // Уборка роя и итоговые события (4.6.2): песочницы → agent.stopped → событие роя.
@@ -163,6 +189,7 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
     for (const agent of run.launch.agents) {
       await publish({ ...envelope(swarmId, agent.id), type: 'agent.stopped', data: {} });
     }
+    await closeInGateway(swarmId);
     if (outcome.type === 'swarm.completed') {
       await publish({ ...envelope(swarmId, null), type: 'swarm.completed', data: outcome.data });
     } else if (outcome.type === 'swarm.stopped') {
@@ -247,6 +274,35 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
       };
       runs.set(launch.swarmId, run);
       log.info('swarm launch', { swarmId: launch.swarmId, agents: launch.agents.length });
+      try {
+        await llmSwarms.register({
+          swarmId: launch.swarmId,
+          budgetMicroUsd: launch.budgetMicroUsd,
+          expiresAt:
+            deps.timeouts.swarmMs === 0
+              ? null
+              : new Date(Date.parse(clock.now()) + deps.timeouts.swarmMs + 60000).toISOString(),
+          agents: launch.agents.map((agent) => ({
+            agentId: agent.id,
+            model: agent.model,
+            budgetMicroUsd: agent.budgetMicroUsd,
+          })),
+        });
+      } catch (error) {
+        await finish(run, {
+          type: 'swarm.failed',
+          data: {
+            reason: 'gateway_unavailable',
+            detail: error instanceof Error ? error.message : String(error),
+          },
+        });
+        return ok();
+      }
+      if (run.phase === 'finished') {
+        // stop пришёл во время регистрации: finish уже закрыл рой, а регистрация могла пройти после закрытия
+        await closeInGateway(launch.swarmId);
+        return ok();
+      }
       run.timers.push(
         timers.setTimeout(() => {
           if (run.phase === 'finished') return;
@@ -267,7 +323,7 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
       for (const agent of launch.agents) {
         try {
           const { sandboxId } = await sandboxes.create(agentSpec(run, agent));
-          if (run.phase === 'finished') {
+          if (isFinished(run)) {
             // рой остановили во время создания — эту песочницу удаляем сразу
             await sandboxes.remove(sandboxId);
             break;
@@ -325,10 +381,25 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
           await finish(run, { type: 'swarm.completed', data: { result: event.data.text } });
         }
       } else if (event.type === 'agent.failed' && run.phase === 'running') {
-        await finish(run, {
-          type: 'swarm.failed',
-          data: { reason: 'agent_failed', detail: `${event.agentId}: ${event.data.reason}` },
-        });
+        // 4.6: отказ по бюджету из gateway приходит как model_error:<код> (022, 4.3)
+        const reason = event.data.reason;
+        if (
+          reason === 'model_error:swarm_budget_exceeded' ||
+          reason === 'model_error:agent_budget_exceeded'
+        ) {
+          await finish(run, {
+            type: 'swarm.failed',
+            data: {
+              reason: 'budget_exceeded',
+              detail: `${event.agentId}: ${reason.slice('model_error:'.length)}`,
+            },
+          });
+        } else {
+          await finish(run, {
+            type: 'swarm.failed',
+            data: { reason: 'agent_failed', detail: `${event.agentId}: ${reason}` },
+          });
+        }
       }
     },
 

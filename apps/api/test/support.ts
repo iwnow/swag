@@ -17,12 +17,13 @@ export function makeCore(
     ids: { uuid: () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}` },
     log: silentLog,
     trace: { currentTraceId: () => null },
-    limits: { maxActiveSwarms: 3 },
+    limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000 },
   });
 }
 
 export const body = (count: number) => ({
   task: 'Задача',
+  budgetMicroUsd: 1000000,
   agents: Array.from({ length: count }, (_, i) => ({
     name: `Агент ${i + 1}`,
     role: `роль ${i + 1}`,

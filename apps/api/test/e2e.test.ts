@@ -205,6 +205,7 @@ function world(log: Logger, trace: TraceContext, script: Script = team) {
     version: 'test',
     sandboxes: sandboxProvider,
     bus: orchestratorBus,
+    llmSwarms: { register: async () => undefined, close: async () => undefined },
     clock,
     timers: {
       setTimeout: (fn, ms) => setTimeout(fn, ms),
@@ -242,7 +243,7 @@ function world(log: Logger, trace: TraceContext, script: Script = team) {
     ids,
     log,
     trace,
-    limits: { maxActiveSwarms: 3 },
+    limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000 },
   });
   hub.subscribe(ALL_EVENTS, (raw) => api.ingestEvent(raw));
   hub.subscribe(ALL_INBOXES, (raw) => api.ingestMessage(raw));
@@ -263,6 +264,7 @@ describe('сквозной скелет без Docker', () => {
 
     const created = await api.createSwarm({
       task: 'T',
+      budgetMicroUsd: 1000000,
       agents: threeAgents((n) => `r${n}`),
     });
     expect(created.ok).toBe(true);
@@ -310,6 +312,7 @@ describe('сквозной скелет без Docker', () => {
 
     const created = await api.createSwarm({
       task: 'T',
+      budgetMicroUsd: 1000000,
       agents: [
         { name: 'A', role: 'r1' },
         { name: 'B', role: 'r2' },
@@ -376,7 +379,7 @@ describe('сквозной скелет с трассировкой', () => {
     const { telemetry: tel, api } = traced();
 
     const first = await tel.inSpan('POST /swarms', { parent: parent(T) }, () =>
-      api.createSwarm({ task: 'T', agents: threeAgents((n) => `r${n}`) }),
+      api.createSwarm({ task: 'T', budgetMicroUsd: 1000000, agents: threeAgents((n) => `r${n}`) }),
     );
     if (!first.ok) throw new Error('не создан');
     await vi.waitFor(
@@ -392,7 +395,7 @@ describe('сквозной скелет с трассировкой', () => {
     expect(events.value.filter((e) => e.traceId !== T)).toEqual([]);
 
     const second = await tel.inSpan('POST /swarms', { parent: null }, () =>
-      api.createSwarm({ task: 'T2', agents: [{ name: 'A', role: 'r1' }] }),
+      api.createSwarm({ task: 'T2', budgetMicroUsd: 1000000, agents: [{ name: 'A', role: 'r1' }] }),
     );
     if (!second.ok) throw new Error('не создан');
     const stopped = await tel.inSpan('POST /swarms/:id/stop', { parent: parent(S) }, () =>
@@ -416,6 +419,7 @@ describe('сквозной скелет с трассировкой', () => {
     const created = await tel.inSpan('POST /swarms', { parent: parent(T) }, () =>
       api.createSwarm({
         task: `Задача ${MARKER}`,
+        budgetMicroUsd: 1000000,
         agents: threeAgents((n) => `роль ${MARKER} ${n}`),
       }),
     );

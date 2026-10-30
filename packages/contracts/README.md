@@ -1,6 +1,6 @@
 # @swag/contracts
 
-Общие схемы Zod и типы, которыми обмениваются сервисы и ядра: запрос на рой, рой, агент, запуск роя, сообщение шины, события платформы, subjects NATS, `ServiceInfo`, `traceId`, схема структурного лога и контракты LLM Gateway (каталог моделей, использование токенов, ошибки, вызывающий).
+Общие схемы Zod и типы, которыми обмениваются сервисы и ядра: запрос на рой, рой, агент, запуск роя, сообщение шины, события платформы, subjects NATS, `ServiceInfo`, `traceId`, схема структурного лога и контракты LLM Gateway (каталог моделей, использование токенов, ошибки, вызывающий, деньги и списания, регистрация роя).
 
 ## Задачи
 
@@ -11,12 +11,12 @@
 
 ## Что внутри сейчас
 
-- `swarm.ts` — `AgentId`, `SwarmId`, `AgentDraft` (с `model: PlatformModel`, по умолчанию `chat-small`), `SwarmCreateRequest`, `AgentSpec`, `ENTRY_AGENT_ID`, `SwarmStatus`, `AgentStatus`, `SwarmLaunch`, `SwarmSummary`, `LlmCaller`.
+- `swarm.ts` — `AgentId`, `SwarmId`, `AgentDraft` (с `model: PlatformModel`, по умолчанию `chat-small`, и `budgetMicroUsd`, по умолчанию `null`), `SwarmCreateRequest` (с обязательным `budgetMicroUsd`), `AgentSpec`, `ENTRY_AGENT_ID`, `SwarmStatus`, `AgentStatus`, `SwarmLaunch` (с `budgetMicroUsd`), `SwarmSummary`, `LlmCaller`, `LlmSwarmRegistration` и `LlmSwarmClosed` (регистрация роя в gateway и ответ закрытия).
 - `bus.ts` — `BusMessage`, subjects `inboxSubject`, `eventsSubject`, `ALL_INBOXES`, `ALL_EVENTS`.
-- `events.ts` — `TraceId`, `PlatformEventInput` (дискриминированное объединение по `type`, в конверте `traceId: TraceId | null`; вариант `llm.call` с `LlmCallData`, источник `llm-gateway`; `agent.step`, `agent.idle`; причины `agent_failed` и `api_restarted` в `swarm.failed`), `PlatformEvent` (с `seq`).
+- `events.ts` — `TraceId`, `PlatformEventInput` (дискриминированное объединение по `type`, в конверте `traceId: TraceId | null`; вариант `llm.call` с `LlmCallData`, источник `llm-gateway`; `agent.step`, `agent.idle`; `swarm.created` с необязательными бюджетами, у событий до 004 их нет; причины `agent_failed`, `api_restarted`, `budget_exceeded` и `gateway_unavailable` в `swarm.failed`), `PlatformEvent` (с `seq`).
 - `log.ts` — `LogLevel`, `ServiceName` (с `llm-gateway`), `LogError`, `LogRecord`.
 - `service-info.ts` — `ServiceInfo` (`service` с `llm-gateway`).
-- `llm.ts` — `ModelId`, `PricePerMTok`, `ModelPrices`, `CatalogModel`, `ModelCatalog` (`models.json`), `LlmUsage`, `GatewayErrorCode`, `LlmCallStatus`, `LlmCallData`, `PlatformModel` (`chat-small`, `chat-large`), заголовки `SWARM_ID_HEADER`, `AGENT_ID_HEADER`.
+- `llm.ts` — `ModelId`, `PricePerMTok`, `ModelPrices`, `CatalogModel` (с `openRouterModel`), `ModelCatalog` (`models.json`), `MicroUsd`, `BudgetMicroUsd` (1…1_000_000_000), `LlmUsage`, `GatewayErrorCode` (с кодами 403 и 402 из 004), `ChargeBasis`, `LlmCharge`, `LlmCallStatus`, `LlmCallData` (с `charge`, необязательным), `PlatformModel` (`chat-small`, `chat-large`), заголовки `SWARM_ID_HEADER`, `AGENT_ID_HEADER`. `LlmSwarmRegistration` и `LlmSwarmClosed` намеренно лежат в `swarm.ts`, а не здесь: `swarm.ts` импортирует `llm.ts`, обратный импорт дал бы цикл.
 
 ## Ограничения
 
@@ -39,6 +39,9 @@
 - LLM: `usage` и `costMicroUsd` в `LlmCallData` — `null`, если провайдер не прислал usage или поток оборван до него; `costMicroUsd` задан тогда и только тогда, когда задан `usage` (по комментарию в схеме, схема этого не проверяет).
 - LLM: `providerCostMicroUsd` — фактическая стоимость у провайдера для счёта платформы (D-38); на `costMicroUsd` не влияет.
 - LLM: заголовки `x-swag-swarm-id` и `x-swag-agent-id` — до спеки 004 агент называет себя сам (Q-3).
+- Деньги (004, 4.1): суммы — целые micro-USD (`MicroUsd`), бюджет — `BudgetMicroUsd` от 1 до 1_000_000_000 (верхняя граница контракта, рабочий предел — `SWARM_MAX_BUDGET_MICRO_USD`). Бюджет роя в `SwarmCreateRequest` обязателен (Q-5), бюджет агента `null` — только бюджет роя.
+- Деньги: `LlmCharge` — то же, что запись ledger; `charge` в `LlmCallData` необязателен, потому что события до 004 его не несут. `costMicroUsd` остаётся стоимостью по `usage`.
+- Регистрация роя: `LlmSwarmRegistration` и `LlmSwarmClosed` лежат в `swarm.ts`, а не в `llm.ts` по 004, 4.1: `llm.ts` не должен импортировать `swarm.ts` (цикл из-за `AgentId` и `SwarmId`). Это отклонение от буквы 4.1, которое принято при реализации T-1 — тот же приём, что у `LlmCaller`.
 - 022: `PlatformModel` в `llm.ts`; `model` агента и `ENTRY_AGENT_ID` в `swarm.ts`; `agent.step`, `agent.idle` и причина `agent_failed` (4.1). `LlmCaller` переехал из `llm.ts` в `swarm.ts`: `swarm.ts` импортирует `PlatformModel` из `llm.ts`, обратный импорт `llm.ts` → `swarm.ts` дал бы цикл модулей.
 
 ## Спеки
@@ -47,5 +50,6 @@
 - 001 — разделы 4.1–4.3.
 - 002 — раздел 4.1 (`llm.ts`, `LlmCaller` в `swarm.ts`).
 - 022 — раздел 4.1 (T-1).
+- 004 — раздел 4.1 (T-1): бюджеты, `charge`, коды ошибок, регистрация роя; `LlmSwarmRegistration` в `swarm.ts`.
 - 016 — разделы 4.1, 4.2.
 - 003 — раздел 4.1: причина `api_restarted` в `swarm.failed` (T-1).

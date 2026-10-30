@@ -17,7 +17,7 @@ const catalogIds = (profile: string) =>
   readCatalog(profileFile(profile, 'models.json')).models.map((model) => model.id);
 
 interface LiteLlmConfig {
-  model_list: { model_name: string; litellm_params: { api_key?: unknown } }[];
+  model_list: { model_name: string; litellm_params: { api_key?: unknown; model?: string } }[];
   general_settings?: { master_key?: unknown };
 }
 const liteLlmText = (profile: string) => readFileSync(profileFile(profile, 'litellm.yaml'), 'utf8');
@@ -111,6 +111,24 @@ describe('политики репозитория', () => {
       .map(([name]) => name)
       .sort();
     expect(withKeys).toEqual(['litellm', 'llm-gateway']);
+  });
+
+  it('AC-004-30: openRouterModel у каждой модели dev и prod равен litellm_params.model без openrouter/; в test поля нет', () => {
+    for (const profile of ['dev', 'prod']) {
+      const models = new Map(
+        liteLlmConfig(profile).model_list.map((entry) => [
+          entry.model_name,
+          entry.litellm_params.model,
+        ]),
+      );
+      for (const model of readCatalog(profileFile(profile, 'models.json')).models) {
+        const upstream = String(models.get(model.id)).replace(/^openrouter\//, '');
+        expect(model.openRouterModel, `${profile}/${model.id}`).toBe(upstream);
+      }
+    }
+    for (const model of readCatalog(profileFile('test', 'models.json')).models) {
+      expect(model.openRouterModel, 'test/' + model.id).toBeUndefined();
+    }
   });
 
   it('AC-002-19: database_url в litellm.yaml нет', () => {

@@ -53,3 +53,36 @@ describe('formatLlmCall', () => {
     expect(formatLlmCall(data)).toBe(expected);
   });
 });
+
+describe('formatLlmCall, спека 004 (4.8)', () => {
+  const estimate = { ...base, usage: null, costMicroUsd: null };
+  it.each<[string, LlmCallData, string]>([
+    [
+      'AC-004-27: charge.basis usage',
+      { ...base, charge: { microUsd: 9960, basis: 'usage' } },
+      `${withUsage} · $0.009960`,
+    ],
+    [
+      'AC-004-27: charge приоритетнее costMicroUsd',
+      { ...base, charge: { microUsd: 5000, basis: 'usage' } },
+      `${withUsage} · $0.005000`,
+    ],
+    [
+      'AC-004-27: usage null, estimate, aborted',
+      {
+        ...estimate,
+        status: 'aborted',
+        charge: { microUsd: 4500, basis: 'estimate' },
+      },
+      'chat-small · прерван · без usage · ≈$0.004500',
+    ],
+    [
+      'AC-004-27: usage null, estimate, ok',
+      { ...estimate, charge: { microUsd: 30, basis: 'estimate' } },
+      'chat-small · без usage · ≈$0.000030',
+    ],
+    ['AC-004-27: charge нет (до 004), usage null', estimate, 'chat-small · без usage'],
+  ])('%s', (_name, data, expected) => {
+    expect(formatLlmCall(data)).toBe(expected);
+  });
+});

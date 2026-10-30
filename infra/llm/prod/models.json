@@ -2,6 +2,7 @@
   "models": [
     {
       "id": "chat-small",
+      "openRouterModel": "deepseek/deepseek-v4-flash",
       "prices": {
         "inputPerMTokUsd": "0.047",
         "cachedInputPerMTokUsd": "0.0095",
@@ -10,6 +11,7 @@
     },
     {
       "id": "chat-large",
+      "openRouterModel": "deepseek/deepseek-v4-pro",
       "prices": {
         "inputPerMTokUsd": "0.877",
         "cachedInputPerMTokUsd": "0.073",

@@ -59,7 +59,7 @@ export interface ApiCoreDeps {
   ids: IdGenerator;
   log: Logger;
   trace: TraceContext;
-  limits: { maxActiveSwarms: number };
+  limits: { maxActiveSwarms: number; maxBudgetMicroUsd: number }; // maxBudgetMicroUsd — SWARM_MAX_BUDGET_MICRO_USD (004, 4.7)
 }
 
 export interface ApiError {
@@ -168,6 +168,17 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
           })),
         );
       }
+      const { budgetMicroUsd } = parsed.data;
+      if (budgetMicroUsd > deps.limits.maxBudgetMicroUsd) {
+        return fail('validation_error', 'budget exceeds SWARM_MAX_BUDGET_MICRO_USD');
+      }
+      if (
+        parsed.data.agents.some(
+          (a) => a.budgetMicroUsd !== null && a.budgetMicroUsd > budgetMicroUsd,
+        )
+      ) {
+        return fail('validation_error', 'agent budget exceeds swarm budget');
+      }
       const views = await store.views();
       const active = views.filter((v) => v.status === 'starting' || v.status === 'running').length;
       if (active + reserving >= deps.limits.maxActiveSwarms) {
@@ -193,7 +204,7 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
           agentId: null,
           traceId: trace.currentTraceId(),
           type: 'swarm.created',
-          data: { task: parsed.data.task, agents },
+          data: { task: parsed.data.task, budgetMicroUsd, agents },
         });
         if (created === null) throw new Error('swarm.created не записан');
       } finally {
@@ -202,7 +213,7 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
       log.info('swarm created', { swarmId, agents: agents.length });
 
       try {
-        await orchestrator.launch({ swarmId, task: parsed.data.task, agents });
+        await orchestrator.launch({ swarmId, task: parsed.data.task, budgetMicroUsd, agents });
       } catch (error) {
         log.error('orchestrator unavailable', { swarmId, err: error });
         await commit(swarmId, {

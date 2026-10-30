@@ -17,6 +17,7 @@ const LATENCY_MS = 1234.6; // round → 1235
 const body = {
   model: 'chat-small',
   messages: [{ role: 'user', content: 'привет' }],
+  max_tokens: 1000,
   tools: [{ type: 'function', function: { name: 'lookup', parameters: {} } }],
   tool_choice: 'auto',
   temperature: 0.2,
@@ -84,6 +85,7 @@ describe('complete без потока: успешный путь', () => {
         costMicroUsd: 9960,
         providerCostMicroUsd: 8500,
         latencyMs: 1235,
+        charge: { microUsd: 9960, basis: 'usage' },
       },
     });
   });
@@ -114,6 +116,8 @@ describe('complete без потока: успешный путь', () => {
           completionTokens: 500,
           costMicroUsd: 9960,
           providerCostMicroUsd: 8500,
+          chargeMicroUsd: 9960,
+          chargeBasis: 'usage',
         },
       },
     ]);
@@ -156,6 +160,8 @@ describe('complete без потока: usage отсутствует', () => {
         stream: false,
         status: 'ok',
         latencyMs: 1235,
+        chargeMicroUsd: expect.any(Number),
+        chargeBasis: 'estimate',
       },
     });
   });

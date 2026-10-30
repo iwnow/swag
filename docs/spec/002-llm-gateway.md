@@ -149,6 +149,10 @@ export const GatewayErrorCode = z.enum([
   'invalid_caller',
   'invalid_request',
   'model_not_found',
+  'caller_not_registered', // изменено спекой 004, 4.12: 403, роя или агента нет в регистрации
+  'model_not_allowed', // изменено спекой 004, 4.12: 403, модель не модель агента
+  'swarm_budget_exceeded', // изменено спекой 004, 4.12: 402
+  'agent_budget_exceeded', // изменено спекой 004, 4.12: 402
   'upstream_bad_request',
   'rate_limited',
   'upstream_error',
@@ -170,10 +174,11 @@ export const LlmCallData = z.strictObject({
   providerCostMicroUsd: z.number().int().min(0).nullable(),
   latencyMs: z.number().int().min(0), // от приёма запроса до последнего байта ответа клиенту
   errorCode: GatewayErrorCode.optional(), // есть при status 'error' и при 'aborted' из-за ошибки после первого фрагмента
+  charge: LlmCharge.optional(), // изменено спекой 004, 4.1: что списано в ledger; нет только у событий до 004
 });
 export type LlmCallData = z.infer<typeof LlmCallData>;
 
-// Заголовки вызывающего (Q-3): до спеки 004 агент называет себя сам.
+// Заголовки вызывающего (Q-3). С 004 рой и агент должны быть зарегистрированы оркестратором (004, 4.2, 4.3).
 export const SWARM_ID_HEADER = 'x-swag-swarm-id';
 export const AGENT_ID_HEADER = 'x-swag-agent-id';
 export const LlmCaller = z.strictObject({ swarmId: SwarmId, agentId: AgentId });
@@ -216,13 +221,18 @@ export const CLIENT_CREDENTIAL_FIELDS = [
 
 Сообщение при таком поле — `Client-side provider credentials are not allowed: <поле>`.
 
-Проверки идут по порядку, первая не прошедшая даёт ответ:
+Проверки идут по порядку, первая не прошедшая даёт ответ (*шаги 5–8 изменены спекой 004, 4.3*):
 1. токен → `401 unauthorized`;
 2. заголовки вызывающего → `400 invalid_caller`;
 3. схема `ChatRequest` и отсутствие полей `CLIENT_CREDENTIAL_FIELDS` → `400 invalid_request`;
-4. модель в каталоге → `400 model_not_found`.
+4. модель в каталоге → `400 model_not_found`;
+5. рой и агент есть в регистрации (004, 4.2), рой не закрыт и не истёк → `403 caller_not_registered`;
+6. модель запроса равна модели агента из регистрации → `403 model_not_allowed`;
+7. `max_tokens` (или `max_completion_tokens`) — целое ≥ 1 → `400 invalid_request`;
+8. резерв бюджета роя и агента до LiteLLM (004, 4.3) → `402 swarm_budget_exceeded` или `agent_budget_exceeded`;
+9. вызов LiteLLM.
 
-По этим отказам LiteLLM не вызывается и событие не публикуется.
+По отказам 1–8 LiteLLM не вызывается и событие не публикуется.
 
 Токен сравнивается через `crypto.timingSafeEqual`. Если длины не совпадают — сразу `401`.
 
@@ -314,6 +324,7 @@ export interface LlmGatewayDeps {
   upstream: LlmUpstream;
   events: EventPublisher;
   clock: Clock; ids: Ids; trace: TraceContext; log: Logger;
+  budgets: BudgetStore; prices: PriceBook; // изменено спекой 004, 4.4: цены из PriceBook, catalog остаётся списком моделей
   version: string;
 }
 
@@ -329,6 +340,10 @@ export interface LlmGatewayCore {
   checkUpstream(signal: AbortSignal): Promise<{ ok: true } | { ok: false; missing: string[] } | { ok: false; failure: UpstreamFailure }>;
   // rawCaller — значения заголовков как пришли; signal — обрыв клиентом.
   complete(rawCaller: { swarmId?: string; agentId?: string }, rawBody: unknown, signal: AbortSignal): Promise<CompleteResult>;
+  // изменено спекой 004, 4.4: регистрация роя, закрытие и снятие резервов прошлого процесса
+  registerSwarm(raw: unknown): Promise<InternalResult<void>>;
+  closeSwarm(swarmId: string): Promise<InternalResult<LlmSwarmClosed>>;
+  releaseHolds(): Promise<number>;
 }
 
 export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore;
@@ -338,7 +353,7 @@ export function parseProviderCost(raw: unknown): number | null; // 4.3, аргу
 ```
 
 **Обычный вызов в ядре, по шагам:**
-1. Проверки 2–4 из 4.2.
+1. Проверки 2–9 из 4.2 (*изменено спекой 004, 4.3*): резерв до апстрима, после ответа — списание `charge` и запись ledger, в одной транзакции с резервом (`BudgetStore`, 004, 4.4).
 2. `callId = ids.uuid()`, `t0 = clock.monotonicMs()`.
 3. `upstream.complete(body, signal)`.
 4. Успех:
@@ -374,7 +389,7 @@ export function parseProviderCost(raw: unknown): number | null; // 4.3, аргу
   traceId: trace.currentTraceId(), type: 'llm.call', data: LlmCallData }
 ```
 
-`costMicroUsd` считается по ценам модели запроса, если `usage` не null.
+`costMicroUsd` считается по ценам модели запроса, если `usage` не null. *Изменено спекой 004, 4.3:* цены берутся из `PriceBook`; `costMicroUsd` остаётся стоимостью по `usage`, а поле `charge` события — что списано (по `usage`, по оценке байтов или `none`, 004, 4.3).
 
 ### 4.5. Адаптер `packages/adapter-litellm`
 
@@ -425,6 +440,11 @@ export function redact(text: string, secrets: string[]): string; // пустые
 | заголовки вызывающего не проходят `LlmCaller` | 400 | `invalid_caller` | `Missing or invalid x-swag-swarm-id / x-swag-agent-id` |
 | тело не проходит `ChatRequest` | 400 | `invalid_request` | первые 3 ошибки Zod: `path: message`, через `; ` |
 | модели нет в каталоге | 400 | `model_not_found` | `Unknown model: <model>` (имя обрезается до 100 символов) |
+| *изменено спекой 004, 4.12:* роя нет в регистрации, рой закрыт или срок регистрации истёк, агента нет в регистрации роя | 403 | `caller_not_registered` | `Swarm or agent is not registered` |
+| *изменено спекой 004, 4.12:* модель запроса не модель агента из регистрации | 403 | `model_not_allowed` | `Model is not allowed for this agent` |
+| *изменено спекой 004, 4.12:* нет `max_tokens` и `max_completion_tokens` или они не целые ≥ 1 | 400 | `invalid_request` | `max_tokens is required` |
+| *изменено спекой 004, 4.12:* не хватает бюджета роя | 402 | `swarm_budget_exceeded` | `Swarm budget exceeded` |
+| *изменено спекой 004, 4.12:* не хватает бюджета агента | 402 | `agent_budget_exceeded` | `Agent budget exceeded` |
 | LiteLLM `400` или `422` | 400 | `upstream_bad_request` | `message` из адаптера (уже без секретов) |
 | LiteLLM `429` | 429 | `rate_limited` | `Provider rate limit` |
 | LiteLLM другой не-`2xx`, сеть, поток оборван LiteLLM | 502 | `upstream_error` | `Upstream error` (статус LiteLLM — только в лог) |
@@ -450,6 +470,8 @@ infra/llm/
 - `chat-large` — `0` / `0` / `0`.
 
 Цены `dev` и `prod` берутся со страницы цен провайдера. Дата и ссылка — в README `apps/llm-gateway`.
+
+*Изменено спекой 004, 4.7 и 4.9:* в `dev` и `prod` у каждой модели каталога есть `openRouterModel` — id модели OpenRouter (равен `litellm_params.model` без префикса `openrouter/`). Цены из файла — стартовые: при старте и каждые `LLM_PRICES_REFRESH_MS` они обновляются из OpenRouter, последние успешные хранятся в Postgres (`model_prices`). В `test` поля нет, OpenRouter не вызывается.
 
 `litellm.yaml` любого профиля:
 
@@ -516,7 +538,7 @@ LLM_GATEWAY_STARTUP_TIMEOUT_MS=60000
 LLM_GATEWAY_BODY_LIMIT_BYTES=8388608
 ```
 
-`packages/config` — `LlmGatewayConfig`. Без `BaseConfig`: gateway не нужна `DATABASE_URL`.
+`packages/config` — `LlmGatewayConfig`. Без `BaseConfig`. *Изменено спекой 004, 4.9:* `DATABASE_URL` нужна gateway (бюджеты, ledger, цены), это не ключ провайдера и в песочницу не передаётся.
 
 ```ts
 export const LlmGatewayConfig = z.object({
@@ -526,6 +548,9 @@ export const LlmGatewayConfig = z.object({
   TELEMETRY_FLUSH_TIMEOUT_MS: FlushTimeoutMs,
   LLM_GATEWAY_PORT: Port,
   LLM_GATEWAY_TOKEN: z.string().min(32),
+  DATABASE_URL: z.string().url(), // изменено спекой 004, 4.9/4.11: бюджеты, ledger и цены
+  LLM_PRICES_REFRESH_MS: z.coerce.number().int().min(0).default(3600000), // 004, 4.11
+  OPENROUTER_MODELS_URL: z.string().url().default('https://openrouter.ai/api/v1/models'), // 004, 4.11
   LLM_CATALOG_PATH: z.string().min(1),
   LITELLM_URL: z.string().url(),
   LITELLM_MASTER_KEY: z.string().startsWith('sk-').min(16),
@@ -543,7 +568,7 @@ export const LlmGatewayConfig = z.object({
 
 - Оболочка подключает `adapter-telemetry` так же, как `apps/api`: `startTelemetry` с сервисом `llm-gateway`, хуки Fastify, логгер pino, `TraceContext`.
 - Публикация события — через `adapter-nats`, спан публикации уже есть.
-- Запись `llm call`, уровень `info` при `ok`, `warn` при `error` и `aborted`; *изменено спекой [030](030-agent-dialog.md)*: `aborted` обычного вызова (клиент ушёл, 4.4 шаг 5) — `info`. Поля: `callId`, `swarmId`, `agentId`, `model`, `stream`, `status`, `latencyMs`, `promptTokens`, `cachedPromptTokens`, `completionTokens`, `costMicroUsd`, `providerCostMicroUsd`, `errorCode`, `upstreamStatus`.
+- Запись `llm call`, уровень `info` при `ok`, `warn` при `error` и `aborted`; *изменено спекой [030](030-agent-dialog.md)*: `aborted` обычного вызова (клиент ушёл, 4.4 шаг 5) — `info`. Поля: `callId`, `swarmId`, `agentId`, `model`, `stream`, `status`, `latencyMs`, `promptTokens`, `cachedPromptTokens`, `completionTokens`, `costMicroUsd`, `providerCostMicroUsd`, `chargeMicroUsd`, `chargeBasis`, `errorCode`, `upstreamStatus`. *Изменено спекой 004, 4.4:* `chargeMicroUsd` и `chargeBasis` — то же, что `charge` события.
 - Отсутствующие значения — поле не пишется.
 - Текстов сообщений и ответа модели нет ни в одном логе и спане (правило Q-4 спеки 016).
 
@@ -557,9 +582,11 @@ export const LlmGatewayConfig = z.object({
 | `usage` есть, `status: 'aborted'` | то же + ` · прерван` |
 | `usage` null, `status: 'ok'` | `chat-small · без usage` |
 | `usage` null, `status: 'aborted'` | `chat-small · прерван · без usage` |
+| *изменено спекой 004, 4.8:* `charge.basis: 'estimate'`, `status: 'aborted'` | `chat-small · прерван · без usage · ≈$0.004500` |
+| *изменено спекой 004, 4.8:* `charge.basis: 'estimate'`, `status: 'ok'` | `chat-small · без usage · ≈$0.000030` |
 | `status: 'error'` | `chat-small · ошибка upstream_timeout` |
 
-Сумма — `costMicroUsd / 1e6`, ровно 6 знаков после точки.
+Сумма — `costMicroUsd / 1e6`, ровно 6 знаков после точки. *Изменено спекой 004, 4.8:* сумма — из `charge.microUsd`, если `charge` есть, иначе из `costMicroUsd`; при `charge.basis: 'estimate'` перед суммой «≈».
 
 `apps/ui/cabinet/src/app/swarm.page.ts`, метод `detail`: `case 'llm.call': return formatLlmCall(event.data);`.
 
@@ -596,6 +623,7 @@ export const LlmGatewayConfig = z.object({
 - `POST http://127.0.0.1:${LLM_GATEWAY_PORT}/v1/chat/completions`;
 - заголовки: токен, `x-swag-swarm-id` — случайный UUID, `x-swag-agent-id: agent-1`;
 - сообщение пользователя: `Ответь одним словом: пинг`.
+- *Изменено спекой 004, 4.13:* перед запросом регистрирует рой (`POST /internal/swarms`: бюджет 1000000, `agent-1` с моделью, `expiresAt` через 5 минут) и после ответа закрывает его (`POST /internal/swarms/:swarmId/close`); `x-swag-swarm-id` — id этого роя.
 
 Печатает текст ответа, `usage` и задержку. Стоимость не печатает: она в событии, а `api` отбросит событие неизвестного роя — это ожидаемо. Код выхода — 0 при `200`, иначе 1 и тело ошибки.
 
@@ -665,7 +693,7 @@ export const LlmGatewayConfig = z.object({
   - каждый `id` есть как `model_name` в `litellm.yaml` своего профиля;
   - во всех `litellm.yaml` значения `api_key` и `master_key` начинаются с `os.environ/`;
   - ключа `database_url` нет.
-- **AC-002-20** `[stack]` — *Given* `npm run up` с `LLM_PROFILE=test` и рой, созданный через `POST /swarms` в `api`. *When* через gateway вызов без потока и потоком с `x-swag-swarm-id` этого роя. *Then*:
+- **AC-002-20** `[stack]` — *Given* `npm run up` с `LLM_PROFILE=test` и рой, созданный через `POST /swarms` в `api` и зарегистрированный оркестратором в gateway (*изменено спекой 004, 4.6*: тест регистрацию не делает). *When* через gateway вызов без потока и потоком с `x-swag-swarm-id` этого роя. *Then*:
   - оба `200` через настоящий LiteLLM;
   - `GET /swarms/:id/events` в `api` содержит два события `llm.call` со `status: 'ok'`, `usage` от фейка и `costMicroUsd: 9960`.
 - **AC-002-21** `[stack]` — *Given* поднятый стек. *When* `docker inspect` контейнеров `api`, `orchestrator`, `ui` и exec `getent hosts litellm` в контейнере `api`. *Then* в env нет `LITELLM_MASTER_KEY` и переменных `*_API_KEY`, имя `litellm` не разрешается.
@@ -674,7 +702,7 @@ export const LlmGatewayConfig = z.object({
   - есть ровно одна запись `llm call`, она проходит `LogRecord` с `service: 'llm-gateway'`, поля — по 4.10;
   - маркер не встречается ни в одном логе и ни в одном атрибуте спана.
 - **AC-002-24** — *Given* пять случаев таблицы 4.11. *When* `formatLlmCall`. *Then* строки ровно как в таблице.
-- **AC-002-25** `[manual]` — *Given* `LLM_PROFILE=dev`, ключ провайдера dev в `.env.llm`, `npm run up`. *When* `npm run llm:ping` и `npm run llm:ping -- --stream`. *Then* обе команды печатают ответ модели и `usage` с ненулевыми токенами, код выхода 0. Затем `npm run llm:ping -- chat-large`. Проверка: вывод команд и строка `llm call` из `docker compose logs llm-gateway` — в журнал.
+- **AC-002-25** `[manual]` — *Given* `LLM_PROFILE=dev`, ключ провайдера dev в `.env.llm`, `npm run up`. *When* `npm run llm:ping` и `npm run llm:ping -- --stream` (*изменено спекой 004, 4.13*: команда регистрирует рой и закрывает его; автотест — AC-004-39). *Then* обе команды печатают ответ модели и `usage` с ненулевыми токенами, код выхода 0. Затем `npm run llm:ping -- chat-large`. Проверка: вывод команд и строка `llm call` из `docker compose logs llm-gateway` — в журнал.
 - **AC-002-26** — *Given* рой есть в `api-core`. *When* из шины приходит `llm.call` от `llm-gateway`. *Then* событие сохранено с очередным `seq` и выдаётся подписчикам. Событие с `source: 'llm-gateway'` и неизвестным роем отбрасывается с `unknown_swarm`.
 - **AC-002-28** — *Given* тело с `api_key: 'sk-x'`, отдельно с `api_base: 'http://evil.test'` и с `extra_headers`. *When* вызов. *Then* `400 invalid_request`, в `message` имя поля, фейк не вызван, событий нет.
 - **AC-002-29** — *Given* ответ фейка по умолчанию с `usage.cost: 0.0085`, без потока и потоком. *When* вызов. *Then* событие: `providerCostMicroUsd: 8500`, `costMicroUsd: 9960`. Сценарий `__no_cost__` — `providerCostMicroUsd: null`, `costMicroUsd: 9960`. Тест `parseProviderCost`: `0.0085` → 8500, `0` → 0, `-1`, `'0.1'`, `NaN`, нет поля → `null`.
@@ -859,3 +887,4 @@ export const LlmGatewayConfig = z.object({
 | 2026-10-28 | `spec/002-acceptance` | Приёмка: решения человека по D-40…D-75 записаны в Q-5, вопросы убраны из `questions.md`, новый D-76 (умный выбор модели). Код: D-48 (`redact` до обрезки, тест), D-66 (500 без текста исключения, тест в `routes.test.ts`), D-73 (`environment:` вместо `env_file` у `api` и `orchestrator`, AC-002-21 без allowlist), D-71 (образ `main-v1.83.14-stable.patch.3`, стек `test`: `npm run up` → healthy, `stack.test.ts` 2 passed), D-69/D-70 (`prod` на `deepseek/deepseek-v4-flash` и `deepseek/deepseek-v4-pro`, цены OpenRouter 2026-10-28, без ступеней). По решению человека поправлены REQ-002-17 (без стоимости), 4.5 (порядок `redact`), 4.8 (патч-тег) и 4.6 спеки 000 (`spec:check` без `in-progress`). `npm run check` — exit 0. | Отклонение: D-66 использует код `upstream_error` для внутренней ошибки. `llm-gateway` по-прежнему получает `.env` целиком (AC-002-21 его не проверяет). |
 | 2026-10-28 | `spec/002-done` | Спека принята человеком: статус `done`. | — |
 | 2026-10-29 | `spec/030-t9` | Спека 030, T-9: 4.4 шаг 5 (неудача обычного вызова) — при `failure.kind === 'aborted'` (клиент ушёл) событие `llm.call` `status: 'aborted'` без `errorCode`, лог `info`, клиенту 502 `upstream_error` (REQ-030-7). Трактовка D-58 «обычный вызов, клиент ушёл → upstream_error» заменена спекой 030 на `aborted`. 4.10 — уровень лога `aborted` обычного вызова `info`. Потоковый путь (4.4 «Поток», AC-002-13) не менялся. Правки помечены «изменено спекой 030». | 4.5 (адаптер, обрыв при `complete`) — `{ kind: 'aborted' }` вместо `network` (030, 4.5): в «Меняет 002» спеки 030 назван только 4.4, но контракт 030, 4.5 прямо меняет адаптер, и текст 4.5 приведён к нему |
+| 2026-10-30 | `spec/004-t19` | Тексты изменены спекой 004 (пометка «изменено спекой 004»): 4.1 (четыре кода `GatewayErrorCode`, `charge` в `LlmCallData`, комментарий Q-3), 4.2 (шаги 5–9 порядка проверок, отказы 1–8 без LiteLLM), 4.4 (`BudgetStore`, `PriceBook`, `registerSwarm`, `closeSwarm`, `releaseHolds`, шаг 1 обычного вызова, `charge`), 4.6 (строки 403, 402, 400 `max_tokens`), 4.7 (`openRouterModel`, обновление цен), 4.9 (`DATABASE_URL`, `LLM_PRICES_REFRESH_MS`, `OPENROUTER_MODELS_URL`), 4.10 (`chargeMicroUsd`, `chargeBasis`), 4.11 (строки оценки и `charge`), 4.13 (`llm:ping` регистрирует рой), AC-002-20, AC-002-25. Разделы 1, 3, 5 (кроме двух AC), 6–9 и статус не менялись. | Отклонение от 004 нет. Код сверен: `packages/llm-gateway-core` (порядок проверок, `max_tokens is required`, тексты 402 и 403), `packages/config` (`LlmGatewayConfig`), `infra/llm/{dev,prod}/models.json` (`openRouterModel`), `scripts/llm-ping.ts` (регистрация и закрытие). |

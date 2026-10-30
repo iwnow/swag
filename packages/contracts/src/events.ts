@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { AgentId, AgentSpec, SwarmId } from './swarm.ts';
-import { LlmCallData } from './llm.ts';
+import { BudgetMicroUsd, LlmCallData } from './llm.ts';
 
 // Спека 016, 4.1. W3C trace-id: 32 hex в нижнем регистре, не нули.
 export const TraceId = z
@@ -23,7 +23,12 @@ export const PlatformEventInput = z.discriminatedUnion('type', [
   z.strictObject({
     ...Envelope,
     type: z.literal('swarm.created'),
-    data: z.strictObject({ task: z.string(), agents: z.array(AgentSpec) }),
+    // До спеки 004 бюджетов в событии нет (004, 4.1).
+    data: z.strictObject({
+      task: z.string(),
+      budgetMicroUsd: BudgetMicroUsd.optional(),
+      agents: z.array(AgentSpec.partial({ budgetMicroUsd: true })),
+    }),
   }),
   z.strictObject({ ...Envelope, type: z.literal('swarm.started'), data: z.strictObject({}) }),
   z.strictObject({
@@ -47,6 +52,8 @@ export const PlatformEventInput = z.discriminatedUnion('type', [
         'sandbox_error',
         'agent_failed',
         'api_restarted',
+        'budget_exceeded',
+        'gateway_unavailable',
       ]),
       detail: z.string().optional(),
     }),
