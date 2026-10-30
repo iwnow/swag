@@ -24,9 +24,11 @@ let server: Server;
 let port: number;
 let received: Received[];
 let respond: (res: ServerResponse) => void;
+let closeStatus: number;
 
 beforeEach(async () => {
   received = [];
+  closeStatus = 200;
   respond = (res) => json(res, 200, { choices: [{ message: { content: 'пинг' } }], usage: {} });
   server = createServer((req, res) => {
     let raw = '';
@@ -40,7 +42,11 @@ beforeEach(async () => {
         body: raw ? JSON.parse(raw) : undefined,
       });
       if (url === '/internal/swarms') return res.writeHead(204).end();
-      if (url.endsWith('/close')) return json(res, 200, { spentMicroUsd: 0 });
+      if (url.endsWith('/close')) {
+        return closeStatus === 200
+          ? json(res, 200, { spentMicroUsd: 0 })
+          : json(res, closeStatus, { error: { message: 'close failed', code: 'internal' } });
+      }
       respond(res);
     });
   });
@@ -148,5 +154,28 @@ describe('llm:ping', () => {
     expect(output).toContain('HTTP 401');
     expect(output).toContain('Invalid gateway token');
     expect(received.at(-1)?.url).toBe(`/internal/swarms/${swarmIdOf()}/close`);
+  });
+
+  it('AC-004-39: вызов 401 и закрытие 500 — код 1, ошибка вызова в выводе, ошибка закрытия в stderr', async () => {
+    respond = (res) => json(res, 401, { error: { message: 'Invalid gateway token' } });
+    closeStatus = 500;
+
+    const { code, output } = await runPing([]);
+
+    expect(code).toBe(1);
+    expect(output).toContain('HTTP 401');
+    expect(output).toContain('Invalid gateway token');
+    expect(output).toContain('закрытие роя: HTTP 500');
+    expect(received.at(-1)?.url).toBe(`/internal/swarms/${swarmIdOf()}/close`);
+  });
+
+  it('AC-004-39: вызов прошёл, закрытие 500 — код 1, ошибка закрытия в выводе', async () => {
+    closeStatus = 500;
+
+    const { code, output } = await runPing([]);
+
+    expect(code).toBe(1);
+    expect(output).toContain('ответ: пинг');
+    expect(output).toContain('закрытие роя: HTTP 500');
   });
 });

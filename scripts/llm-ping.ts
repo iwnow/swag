@@ -165,11 +165,19 @@ async function main(): Promise<void> {
   const swarmId = randomUUID();
 
   await registerSwarm(gateway, swarmId, model);
+  let callFailed: { error: unknown } | undefined;
   try {
     await callModel(gateway, swarmId, model, stream);
-  } finally {
-    await closeSwarm(gateway, swarmId);
+  } catch (error) {
+    callFailed = { error };
   }
+  try {
+    await closeSwarm(gateway, swarmId);
+  } catch (closeError) {
+    if (!callFailed) throw closeError;
+    console.error(closeError instanceof Error ? closeError.message : String(closeError));
+  }
+  if (callFailed) throw callFailed.error;
 }
 
 main().catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));
