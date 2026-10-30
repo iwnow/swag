@@ -93,7 +93,11 @@ function setup(
     ids: { uuid: () => uuid(++counter) },
     log,
     trace: { currentTraceId: () => traceState.current },
-    limits: { maxActiveSwarms: options.maxActiveSwarms ?? 3, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
+    limits: {
+      maxActiveSwarms: options.maxActiveSwarms ?? 3,
+      maxBudgetMicroUsd: 5000000,
+      maxTokens: 65536,
+    },
   });
   return { core, launches, stops, logs, entries, traceState };
 }
