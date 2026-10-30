@@ -56,7 +56,7 @@
 | Общее состояние роя | `SwarmState` | NATS KV роя, обновление через compare-and-set. |
 | LLM Gateway | `llm-gateway`, `LlmGatewayCore` | Единственная точка выхода к моделям: OpenAI-совместимый API, ключи провайдеров за ним, стоимость вызова по ценам платформы, событие `llm.call` (спека 002). |
 | LiteLLM | `LiteLLM`, `LlmUpstream`, `@swag/adapter-litellm` | Адаптер форматов провайдеров за LLM Gateway; виртуальные ключи, бюджеты и БД LiteLLM не используются (D-21, спека 002). |
-| Профиль моделей | `LLM_PROFILE` | `test`, `dev`, `prod`: каталог `infra/llm/<профиль>/` с конфигом LiteLLM и ценами. |
+| Профиль моделей | `LLM_PROFILE` | `test`, `dev`, `test-pay`, `prod`; `test-pay` — дешёвые платные модели без reasoning для платных проверок (032): каталог `infra/llm/<профиль>/` с конфигом LiteLLM и ценами. |
 | Модель платформы | `ModelId` | Имя модели в плане и запросе (`chat-small`, `chat-large`), одинаковое во всех профилях; провайдерскую модель за ним выбирает профиль. |
 | Каталог моделей | `ModelCatalog`, `CatalogModel` | Модели профиля с ценами платформы, `models.json`. |
 | Цены модели | `ModelPrices`, `PricePerMTok` | USD за 1 млн токенов: вход, вход из кэша, выход — десятичные строки. |
