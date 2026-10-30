@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GatewayErrorCode, LlmCharge, ModelCatalog } from '../src/index.ts';
+import { CatalogModel, GatewayErrorCode, LlmCharge, ModelCatalog } from '../src/index.ts';
 
 const model = (
   id: string,
@@ -31,9 +31,35 @@ describe('каталог моделей', () => {
     const upperCaseId = { models: [model('Chat_Small')] };
     expect(ModelCatalog.safeParse(upperCaseId).success).toBe(false);
   });
+
+  it('CatalogModel: openRouterModel необязателен, пустая строка отклоняется, непустая проходит', () => {
+    const base = model('chat-small');
+    expect(CatalogModel.safeParse(base).success).toBe(true);
+    expect(CatalogModel.safeParse({ ...base, openRouterModel: '' }).success).toBe(false);
+    expect(CatalogModel.safeParse({ ...base, openRouterModel: 'openai/gpt-4o' }).success).toBe(
+      true,
+    );
+  });
 });
 
 describe('коды ошибок и списание 004', () => {
+  it('GatewayErrorCode: полный список кодов в порядке спеки 004, 4.1', () => {
+    expect(GatewayErrorCode.options).toEqual([
+      'unauthorized',
+      'invalid_caller',
+      'invalid_request',
+      'model_not_found',
+      'caller_not_registered',
+      'model_not_allowed',
+      'swarm_budget_exceeded',
+      'agent_budget_exceeded',
+      'upstream_bad_request',
+      'rate_limited',
+      'upstream_error',
+      'upstream_timeout',
+    ]);
+  });
+
   it('коды 004 принимаются GatewayErrorCode', () => {
     for (const code of [
       'caller_not_registered',

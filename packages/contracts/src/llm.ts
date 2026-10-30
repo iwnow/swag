@@ -34,7 +34,6 @@ export const CatalogModel = z.strictObject({
   prices: ModelPrices,
   openRouterModel: z.string().min(1).optional(),
 });
-export type CatalogModel = z.infer<typeof CatalogModel>;
 
 // infra/llm/<профиль>/models.json; id уникальны, порядок задаёт порядок в GET /v1/models.
 export const ModelCatalog = z
