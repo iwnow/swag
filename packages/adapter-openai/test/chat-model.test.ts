@@ -50,8 +50,9 @@ async function fake(): Promise<FakeProvider> {
 }
 
 // Подставной gateway с одним ответом; эхо токена в теле проверяет редактирование в message.
-async function stubGateway(status: number, body: unknown): Promise<string> {
+async function stubGateway(status: number, body: unknown, hits: string[] = []): Promise<string> {
   const server = createServer((req, res) => {
+    hits.push(req.url ?? '');
     const auth = req.headers.authorization ?? '';
     const text = JSON.stringify(body).replaceAll('TOKEN_ECHO', auth);
     res.writeHead(status, { 'content-type': 'application/json' });
@@ -140,6 +141,24 @@ describe('createOpenAiChatModel', () => {
     expect(result.error.message).toContain('***');
     expect(result.error.message).not.toContain(TOKEN);
   });
+
+  // Повторы включены (maxRetries: 2): без них тест ничего не докажет про SDK.
+  it.each([
+    [402, 'swarm_budget_exceeded'],
+    [403, 'caller_not_registered'],
+  ])(
+    'AC-004-25: %i с code %s — ok false с тем же кодом, один запрос без повторов',
+    async (status, code) => {
+      const hits: string[] = [];
+      const baseUrl = await stubGateway(status, { error: { code, message: 'отказ' } }, hits);
+      const model = createOpenAiChatModel(optionsFor(baseUrl, { maxRetries: 2 }));
+
+      const result = await model.complete(request('привет'));
+
+      expect(result).toMatchObject({ ok: false, error: { code } });
+      expect(hits).toHaveLength(1);
+    },
+  );
 
   it('AC-022-19: без сервера — network', async () => {
     const provider = await fake();
