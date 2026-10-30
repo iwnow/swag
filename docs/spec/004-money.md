@@ -869,7 +869,7 @@ charged vs provider по тем же вызовам: $0.0418 vs $0.0415 · +0.72
   - README `contracts`, глоссарий.
 
   Закрывает: REQ-004-2, AC-004-1, AC-004-3. Готово, когда: тесты контрактов зелёные, `npm run typecheck` зелёный там, где не ждёт T-13 и T-15.
-- [ ] **T-2.** Пакет `packages/helpers` по 4.10 (из N-10):
+- [x] **T-2.** Пакет `packages/helpers` по 4.10 (из N-10):
   - `retry` в `@swag/helpers`, `HttpError`, `httpRetryable` и `parseRetryAfter` в `@swag/helpers/server`;
   - без зависимостей;
   - README, строка в разделе «Пакеты» `docs/architecture.md`, глоссарий. Закрывает: REQ-004-21, AC-004-31. Готово, когда: тесты пакета зелёные.
