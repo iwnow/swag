@@ -77,15 +77,54 @@ export function formatAgentStep(data: AgentStepData): string {
   return `шаг ${data.stepIndex}${text}${tools}`;
 }
 
-// Спека 002, 4.11: строка вызова модели в ленте роя. Стоимость — микродоллары / 1e6, 6 знаков.
+// Спека 004, 4.8: микродоллары → строка с 4 знаками, округление вверх; целочисленная арифметика.
+export function formatUsd(microUsd: number): string {
+  const units = Math.floor((microUsd + 99) / 100);
+  return `$${Math.floor(units / 10000)}.${String(units % 10000).padStart(4, '0')}`;
+}
+
+// Спека 004, 4.8: вход поля «Бюджет, $» → Math.round(usd × 10⁶). Некорректный ввод → NaN, отсекает SwarmCreateRequest.
+export function usdToMicro(usd: string): number {
+  return Math.round(Number(usd) * 1e6);
+}
+
+// Спека 004, 4.8: charge событий llm.call с ts в (nowMs − 60000, nowMs]; без charge — costMicroUsd ?? 0 (как в 4.7).
+export function spentLastMinute(events: readonly PlatformEvent[], nowMs: number): number {
+  let spent = 0;
+  for (const event of events) {
+    if (event.type !== 'llm.call') continue;
+    const ts = Date.parse(event.ts);
+    if (ts <= nowMs - 60000 || ts > nowMs) continue;
+    spent += event.data.charge?.microUsd ?? event.data.costMicroUsd ?? 0;
+  }
+  return spent;
+}
+
+// Спека 004, 4.8: строка панели роя.
+export function formatSwarmMoney(view: SwarmView, lastMinuteMicroUsd: number): string {
+  const spent = formatUsd(view.spentMicroUsd);
+  const minute = `${formatUsd(lastMinuteMicroUsd)} за минуту`;
+  if (view.budgetMicroUsd === undefined) return `${spent} · бюджет — · ${minute}`;
+  const left = Math.floor(Math.max(0, view.budgetMicroUsd - view.spentMicroUsd) / 100) * 100;
+  return `${spent} из ${formatUsd(view.budgetMicroUsd)} · остаток ${formatUsd(left)} · ${minute}`;
+}
+
+function formatMicroUsd6(microUsd: number): string {
+  return `$${Math.floor(microUsd / 1e6)}.${String(microUsd % 1e6).padStart(6, '0')}`;
+}
+
+// Спека 002, 4.11 (изменено 004, 4.8): строка вызова модели в ленте роя. Сумма — charge, иначе costMicroUsd.
 export function formatLlmCall(data: LlmCallData): string {
   if (data.status === 'error') return `${data.model} · ошибка ${data.errorCode}`;
   const aborted = data.status === 'aborted';
-  if (data.usage === null) return `${data.model} · ${aborted ? 'прерван · ' : ''}без usage`;
+  const micro = data.charge?.microUsd ?? data.costMicroUsd ?? 0;
+  if (data.usage === null) {
+    const head = `${data.model} · ${aborted ? 'прерван · ' : ''}без usage`;
+    return data.charge?.basis === 'estimate' ? `${head} · ≈${formatMicroUsd6(micro)}` : head;
+  }
   const { promptTokens, cachedPromptTokens, completionTokens } = data.usage;
-  const cost = ((data.costMicroUsd ?? 0) / 1e6).toFixed(6);
   const abortedMark = aborted ? ' · прерван' : '';
-  return `${data.model} · ${promptTokens} (кэш ${cachedPromptTokens}) → ${completionTokens} ток. · $${cost}${abortedMark}`;
+  return `${data.model} · ${promptTokens} (кэш ${cachedPromptTokens}) → ${completionTokens} ток. · ${formatMicroUsd6(micro)}${abortedMark}`;
 }
 
 const FINAL_SWARM_STATUSES: ReadonlySet<SwarmStatus> = new Set(['completed', 'failed', 'stopped']);
