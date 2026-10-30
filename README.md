@@ -54,7 +54,7 @@ npm run infra:check
 
 **Проверка.**
 
-- `npm run llm:ping [model] [-- --stream]` — один вызов через gateway с хоста: печатает ответ, `usage` и задержку.
+- `npm run llm:ping [model] [-- --stream]` — с хоста регистрирует рой со случайным `swarmId` (бюджет 1000000, `agent-1`, истекает через 5 минут), делает один вызов через gateway, печатает ответ, `usage` и задержку, затем закрывает рой (спека 004, 4.13).
 - `npm run infra:check` — проверяет `/health` у `llm-gateway` (`service: llm-gateway`).
 - Замер задержки NFR-002-1 (p95 поверх апстрима, порог 20 мс в спеке, в CI не проверяется): `LLM_GATEWAY_BENCH=1 npx vitest run apps/llm-gateway/test/nfr-latency.test.ts`. Без переменной тест пропускается.
 - Стек-тесты `apps/llm-gateway/test/stack.test.ts` идут против поднятого стека при `LLM_GATEWAY_URL=http://127.0.0.1:3002`; без неё пропускаются.
@@ -76,7 +76,7 @@ npm run infra:check
 | `npm run down`         | Остановить систему                                                                                                                                                                                                                                             |
 | `npm run infra:check`  | Проверить с хоста Postgres, NATS, `/health` у `api`, доступность `ui`, `/api/health` у Grafana; `/health` у `orchestrator` — изнутри контейнера, `otel-collector` — из сети compose (порты не публикуются); `/health` у `llm-gateway` с `service: llm-gateway` |
 | `npm run db:migrate`   | Применить миграции схемы роёв (`packages/adapter-postgres`) к базе из `DATABASE_URL`, адрес хоста — `127.0.0.1`, как у `infra:check` (спека 003, 4.6)                                                                                                          |
-| `npm run llm:ping`     | Один вызов через LLM Gateway с хоста: `npm run llm:ping [model] [-- --stream]`, печатает ответ, `usage` и задержку; модель по умолчанию `chat-small` (спека 002, 4.13)                                                                                         |
+| `npm run llm:ping`     | Регистрирует рой, один вызов через LLM Gateway с хоста и закрытие роя: `npm run llm:ping [model] [-- --stream]`, печатает ответ, `usage` и задержку; модель по умолчанию `chat-small` (спека 002, 4.13; регистрация и закрытие — спека 004, 4.13)              |
 | `npm run agent:image`  | Собрать образ агента `swag-agent:dev` для песочниц                                                                                                                                                                                                             |
 | `npm run images:prune` | Удалить старые образы swag без тега (`<none>`), оставшиеся от пересборок                                                                                                                                                                                       |
 
