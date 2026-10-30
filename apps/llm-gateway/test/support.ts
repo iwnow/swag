@@ -10,6 +10,7 @@ import {
   type EventPublisher,
   type Logger,
   type LlmGatewayCore,
+  type PriceBook,
   type TraceContext,
 } from '@swag/llm-gateway-core';
 import { buildApp } from '../src/app.ts';
@@ -78,6 +79,7 @@ export function makeCore(
     secrets?: string[];
     masterKey?: string;
     budgets?: BudgetStore;
+    prices?: PriceBook;
   } = {},
 ): LlmGatewayCore {
   const catalog = readCatalog(catalogPath);
@@ -96,7 +98,7 @@ export function makeCore(
     log,
     version: 'test',
     budgets: options.budgets ?? registeredBudgets(),
-    prices: createCatalogHolder(catalog).book,
+    prices: options.prices ?? createCatalogHolder(catalog).book,
   });
 }
 

@@ -38,6 +38,8 @@ export interface FakeOpenRouter {
   url: string;
   requests(): number;
   reply(status: number, body?: unknown): void;
+  // Удержать ответы до вызова release: запрос в полёте, клиент ждёт.
+  hold(): () => void;
   close(): Promise<void>;
 }
 
@@ -48,8 +50,11 @@ export async function startFakeOpenRouter(
 ): Promise<FakeOpenRouter> {
   let current = { status, body };
   let count = 0;
-  const server = createServer((_request, response) => {
+  let held: Promise<void> | null = null;
+  const server = createServer(async (_request, response) => {
     count += 1;
+    const gate = held;
+    if (gate) await gate;
     response.writeHead(current.status, { 'content-type': 'application/json' });
     response.end(JSON.stringify(current.body ?? {}));
   });
@@ -61,6 +66,17 @@ export async function startFakeOpenRouter(
     reply(next, nextBody) {
       current = { status: next, body: nextBody };
     },
+    hold() {
+      let open: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      held = gate;
+      return () => {
+        open();
+        if (held === gate) held = null;
+      };
+    },
     close: () =>
       new Promise<void>((resolve) => {
         server.closeAllConnections();
@@ -69,7 +85,7 @@ export async function startFakeOpenRouter(
   };
 }
 
-// Хранилище цен в памяти: сохраняет вызовы save; failSave бросает.
+// Хранилище цен в памяти: сохраняет вызовы save; setFailSave бросает.
 export function memoryPriceStore(initial: StoredPrice[] = []): {
   store: PriceStore;
   saves: StoredPrice[][];

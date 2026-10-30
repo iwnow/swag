@@ -1,11 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createOpenRouterPrices } from '@swag/adapter-openrouter';
-import { createPostgresBudgetStore, createPostgresPriceStore } from '@swag/adapter-postgres';
+import {
+  createPostgresBudgetStore,
+  createPostgresPriceStore,
+  runMigrations,
+} from '@swag/adapter-postgres';
 import type { Logger, PriceStore } from '@swag/llm-gateway-core';
-import type { CatalogHolder } from '../src/catalog.ts';
 import { fakeClock } from '../../../packages/llm-gateway-core/test/fakes.ts';
+import type { CatalogHolder } from '../src/catalog.ts';
 import { startPriceRefresh } from '../src/prices.ts';
 import { assembleCore, startLlmGatewayCore } from '../src/start.ts';
 import { recordingLog } from './support.ts';
@@ -17,19 +21,21 @@ import {
 } from './prices-support.ts';
 
 // Спека 004, AC-004-40 и 4.9. Нужен Postgres: POSTGRES_TEST_URL, без него тесты пропускаются.
+// Каждый тест — своя схема: порядок тестов и запуск `-t` по одному не меняют результат.
 const url = process.env['POSTGRES_TEST_URL'];
 
 describe.skipIf(!url)('цены из OpenRouter с Postgres (спека 004, AC-004-40)', () => {
-  const schema = `test_${randomUUID().replaceAll('-', '')}`;
+  let schema = '';
   let admin: pg.Client;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
+    schema = `test_${randomUUID().replaceAll('-', '')}`;
     admin = new pg.Client({ connectionString: url ?? '' });
     await admin.connect();
     await admin.query(`create schema ${schema}`);
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     await admin.query(`drop schema ${schema} cascade`);
     await admin.end();
   });
@@ -107,7 +113,16 @@ describe.skipIf(!url)('цены из OpenRouter с Postgres (спека 004, AC-
   it('AC-004-40: ошибка PriceStore.save — warn price_save_failed, цена прежняя, в следующем цикле save вызван снова', async () => {
     const fake = await startFakeOpenRouter(200, openRouterBody('0.000005'));
     const pool = new pg.Pool({ connectionString: url, options: `-c search_path=${schema}` });
+    await runMigrations(url ?? '', { schema });
     const real = createPostgresPriceStore(pool);
+    // Сохранённая цена 4 — своя подготовка теста, без опоры на другой тест.
+    await real.save([
+      {
+        openRouterModel: 'vendor/small',
+        prices: { inputPerMTokUsd: '4', cachedInputPerMTokUsd: '0.3', outputPerMTokUsd: '15' },
+        updatedAt: new Date('2026-10-30T10:00:00.000Z'),
+      },
+    ]);
     let saveCalls = 0;
     const failing: PriceStore = {
       load: () => real.load(),
