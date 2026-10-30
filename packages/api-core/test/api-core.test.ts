@@ -93,7 +93,7 @@ function setup(
     ids: { uuid: () => uuid(++counter) },
     log,
     trace: { currentTraceId: () => traceState.current },
-    limits: { maxActiveSwarms: options.maxActiveSwarms ?? 3, maxBudgetMicroUsd: 5000000 },
+    limits: { maxActiveSwarms: options.maxActiveSwarms ?? 3, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
   });
   return { core, launches, stops, logs, entries, traceState };
 }
@@ -662,5 +662,65 @@ describe('api-core — AC-004-2: бюджеты роя и агентов', () =>
     if (created?.type !== 'swarm.created') return;
     expect(created.data.budgetMicroUsd).toBe(500000);
     expect(created.data.agents.map((a) => a.budgetMicroUsd)).toEqual([100000, null]);
+  });
+});
+
+describe('api-core — AC-031: лимит ответа агента и роя', () => {
+  it('AC-031-2: maxTokens роя больше AGENT_MAX_TOKENS_LIMIT — validation_error, событий нет, оркестратор не вызван', async () => {
+    const { core, launches } = setup();
+    const result = await core.createSwarm({ ...body(1), maxTokens: 65537 });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({
+      code: 'validation_error',
+      message: 'max_tokens exceeds AGENT_MAX_TOKENS_LIMIT',
+    });
+    expect(await core.listSwarms()).toEqual([]);
+    expect(launches).toHaveLength(0);
+  });
+
+  it('AC-031-2: maxTokens агента больше AGENT_MAX_TOKENS_LIMIT — validation_error, событий нет, оркестратор не вызван', async () => {
+    const { core, launches } = setup();
+    const result = await core.createSwarm({
+      task: 'Задача',
+      budgetMicroUsd: 500000,
+      agents: [{ name: 'A', role: 'r', maxTokens: 65537 }],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({
+      code: 'validation_error',
+      message: 'max_tokens exceeds AGENT_MAX_TOKENS_LIMIT',
+    });
+    expect(await core.listSwarms()).toEqual([]);
+    expect(launches).toHaveLength(0);
+  });
+
+  it('AC-031-2: maxTokens ровно 65536 проходит', async () => {
+    const { core } = setup();
+    const result = await core.createSwarm({ ...body(1), maxTokens: 65536 });
+    expect(result.ok).toBe(true);
+  });
+
+  it('AC-031-3: maxTokens роя 4096 и агентов 16384 и без поля — swarm.created и SwarmLaunch несут их', async () => {
+    const { core, launches } = setup();
+    const result = await core.createSwarm({
+      task: 'Задача',
+      budgetMicroUsd: 500000,
+      maxTokens: 4096,
+      agents: [
+        { name: 'A', role: 'r1', maxTokens: 16384 },
+        { name: 'B', role: 'r2' },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(launches[0]?.maxTokens).toBe(4096);
+    expect(launches[0]?.agents.map((a) => a.maxTokens)).toEqual([16384, null]);
+    const events = await core.getEvents(result.value.id, 0);
+    const created = events.ok ? events.value[0] : undefined;
+    if (created?.type !== 'swarm.created') throw new Error('swarm.created не записан');
+    expect(created.data.maxTokens).toBe(4096);
+    expect(created.data.agents.map((a) => a.maxTokens)).toEqual([16384, null]);
   });
 });

@@ -17,7 +17,7 @@ export function makeCore(
     ids: { uuid: () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}` },
     log: silentLog,
     trace: { currentTraceId: () => null },
-    limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000 },
+    limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
   });
 }
 
