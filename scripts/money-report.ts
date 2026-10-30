@@ -2,9 +2,10 @@
 import { pathToFileURL } from 'node:url';
 import pg from 'pg';
 import { ledgerReport, type LedgerReport } from '@swag/adapter-postgres';
-import { ConfigError, LlmGatewayConfig, loadConfig } from '@swag/config';
+import { BaseConfig, ConfigError, loadConfig } from '@swag/config';
 import type { ChargeBasis } from '@swag/contracts';
 import { formatUsd } from '@swag/ui-core';
+import { onHost } from './host-url.ts';
 
 const USAGE = 'Использование: npm run money:report -- [--swarm <uuid>] [--since <ISO>]';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -30,7 +31,7 @@ export function parseMoneyReportArgs(args: string[]): MoneyReportFilter {
       if (!UUID_RE.test(value)) throw new Error(`--swarm: не uuid: ${value}`);
       filter.swarmId = value;
     } else if (flag === '--since') {
-      if (Number.isNaN(Date.parse(value))) throw new Error(`--since: не ISO-дата: ${value}`);
+      if (Number.isNaN(Date.parse(value))) throw new Error(`--since: не дата: ${value}`);
       filter.since = new Date(value);
     } else {
       throw new Error(`неизвестный аргумент: ${flag}\n${USAGE}`);
@@ -63,7 +64,7 @@ export function formatMoneyReport(report: LedgerReport): string {
 
 function readDatabaseUrl(): string {
   try {
-    return loadConfig(LlmGatewayConfig.pick({ DATABASE_URL: true })).DATABASE_URL;
+    return loadConfig(BaseConfig.pick({ DATABASE_URL: true })).DATABASE_URL;
   } catch (error) {
     if (error instanceof ConfigError) fail(`${error.message}\nСкопируйте .env.example в .env.`);
     throw error;
@@ -72,7 +73,7 @@ function readDatabaseUrl(): string {
 
 async function main(): Promise<void> {
   const filter = parseMoneyReportArgs(process.argv.slice(2));
-  const pool = new pg.Pool({ connectionString: readDatabaseUrl() });
+  const pool = new pg.Pool({ connectionString: onHost(readDatabaseUrl()) });
   try {
     console.log(formatMoneyReport(await ledgerReport(pool, filter)));
   } finally {

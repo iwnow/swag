@@ -142,7 +142,7 @@ describe.skipIf(!url)('money:report на Postgres (спека 004, 4.13)', () =>
     });
     expect(() => parseMoneyReportArgs(['--swarm'])).toThrow('нужно значение');
     expect(() => parseMoneyReportArgs(['--swarm', 'не-uuid'])).toThrow('не uuid');
-    expect(() => parseMoneyReportArgs(['--since', 'вчера'])).toThrow('не ISO-дата');
+    expect(() => parseMoneyReportArgs(['--since', 'вчера'])).toThrow('не дата');
     expect(() => parseMoneyReportArgs(['--limit', '5'])).toThrow('неизвестный аргумент');
   });
 });
