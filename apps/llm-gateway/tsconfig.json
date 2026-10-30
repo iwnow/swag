@@ -9,6 +9,7 @@
   "include": ["src"],
   "references": [
     { "path": "../../packages/adapter-litellm" },
+    { "path": "../../packages/adapter-openrouter" },
     { "path": "../../packages/adapter-nats" },
     { "path": "../../packages/adapter-postgres" },
     { "path": "../../packages/adapter-telemetry" },

@@ -1,0 +1,13 @@
+{
+  "name": "@swag/adapter-openrouter",
+  "version": "0.0.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@swag/helpers": "0.0.0"
+  }
+}

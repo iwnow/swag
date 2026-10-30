@@ -18,6 +18,7 @@
     { "path": "packages/adapter-postgres" },
     { "path": "packages/adapter-litellm" },
     { "path": "packages/adapter-openai" },
+    { "path": "packages/adapter-openrouter" },
     { "path": "packages/adapter-orchestrator-http" },
     { "path": "packages/adapter-docker" },
     { "path": "apps/api" },
