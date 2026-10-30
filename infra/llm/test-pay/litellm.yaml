@@ -1,0 +1,12 @@
+# Профиль test-pay (спека 032): OpenRouter, дешёвые платные модели без reasoning для платных проверок. Ключ — из окружения.
+model_list:
+  - model_name: chat-small
+    litellm_params:
+      model: openrouter/mistralai/mistral-nemo
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: chat-large
+    litellm_params:
+      model: openrouter/meta-llama/llama-3.1-8b-instruct
+      api_key: os.environ/OPENROUTER_API_KEY
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

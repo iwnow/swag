@@ -1,0 +1,22 @@
+{
+  "models": [
+    {
+      "id": "chat-small",
+      "openRouterModel": "mistralai/mistral-nemo",
+      "prices": {
+        "inputPerMTokUsd": "0.029",
+        "cachedInputPerMTokUsd": "0.029",
+        "outputPerMTokUsd": "0.03"
+      }
+    },
+    {
+      "id": "chat-large",
+      "openRouterModel": "meta-llama/llama-3.1-8b-instruct",
+      "prices": {
+        "inputPerMTokUsd": "0.05",
+        "cachedInputPerMTokUsd": "0.05",
+        "outputPerMTokUsd": "0.08"
+      }
+    }
+  ]
+}
