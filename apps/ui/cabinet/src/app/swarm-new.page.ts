@@ -8,7 +8,13 @@ const DEFAULT_MODEL: PlatformModel = 'chat-small';
 // Спека 004, Q-5: бюджет роя по умолчанию — $0.50.
 const DEFAULT_BUDGET_USD = '0.50';
 
-const newAgent = (): AgentInput => ({ name: '', role: '', model: DEFAULT_MODEL, budget: '' });
+const newAgent = (): AgentInput => ({
+  name: '',
+  role: '',
+  model: DEFAULT_MODEL,
+  budget: '',
+  maxTokens: '',
+});
 
 @Component({
   selector: 'app-swarm-new-page',
@@ -24,6 +30,18 @@ const newAgent = (): AgentInput => ({ name: '', role: '', model: DEFAULT_MODEL, 
       <label>
         Бюджет, $
         <input type="number" min="0" step="0.01" [value]="budget()" (input)="setBudget($event)" />
+      </label>
+      <label>
+        Лимит ответа, токенов
+        <input
+          type="number"
+          min="1"
+          step="1"
+          placeholder="по умолчанию"
+          aria-label="Лимит ответа, токенов"
+          [value]="maxTokens()"
+          (input)="setMaxTokens($event)"
+        />
       </label>
 
       <h2>Агенты</h2>
@@ -48,6 +66,15 @@ const newAgent = (): AgentInput => ({ name: '', role: '', model: DEFAULT_MODEL, 
             aria-label="Бюджет агента, $"
             [value]="agent.budget"
             (input)="setAgent(i, 'budget', $event)"
+          />
+          <input
+            type="number"
+            min="1"
+            step="1"
+            placeholder="Лимит ответа, токенов"
+            aria-label="Лимит ответа, токенов"
+            [value]="agent.maxTokens"
+            (input)="setAgent(i, 'maxTokens', $event)"
           />
           <select (change)="setModel(i, $event)" aria-label="Модель">
             @for (model of models; track model) {
@@ -88,6 +115,7 @@ export class SwarmNewPageComponent {
   readonly models = PlatformModel.options;
   readonly task = signal('');
   readonly budget = signal(DEFAULT_BUDGET_USD);
+  readonly maxTokens = signal('');
   readonly agents = signal<AgentInput[]>([newAgent()]);
   readonly issues = signal<FormIssue[]>([]);
   readonly serverError = signal<string | null>(null);
@@ -99,6 +127,10 @@ export class SwarmNewPageComponent {
 
   setBudget(event: Event): void {
     this.budget.set((event.target as HTMLInputElement).value);
+  }
+
+  setMaxTokens(event: Event): void {
+    this.maxTokens.set((event.target as HTMLInputElement).value);
   }
 
   setAgent(index: number, field: keyof AgentInput, event: Event): void {
@@ -125,7 +157,7 @@ export class SwarmNewPageComponent {
 
   async submit(): Promise<void> {
     this.serverError.set(null);
-    const form = swarmFormInput(this.task(), this.budget(), this.agents());
+    const form = swarmFormInput(this.task(), this.budget(), this.maxTokens(), this.agents());
     const check = this.ui.validateForm(form);
     if (!check.ok) {
       this.issues.set(check.issues);
