@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ModelCatalog } from '../src/index.ts';
+import { GatewayErrorCode, LlmCharge, ModelCatalog } from '../src/index.ts';
 
 const model = (
   id: string,
@@ -30,5 +30,27 @@ describe('каталог моделей', () => {
 
     const upperCaseId = { models: [model('Chat_Small')] };
     expect(ModelCatalog.safeParse(upperCaseId).success).toBe(false);
+  });
+});
+
+describe('коды ошибок и списание 004', () => {
+  it('коды 004 принимаются GatewayErrorCode', () => {
+    for (const code of [
+      'caller_not_registered',
+      'model_not_allowed',
+      'swarm_budget_exceeded',
+      'agent_budget_exceeded',
+    ]) {
+      expect(GatewayErrorCode.safeParse(code).success, code).toBe(true);
+    }
+    expect(GatewayErrorCode.safeParse('budget_exceeded').success).toBe(false);
+  });
+
+  it('LlmCharge: сумма целая ≥ 0, основание из трёх значений', () => {
+    expect(LlmCharge.safeParse({ microUsd: 0, basis: 'none' }).success).toBe(true);
+    expect(LlmCharge.safeParse({ microUsd: 1200, basis: 'estimate' }).success).toBe(true);
+    expect(LlmCharge.safeParse({ microUsd: -1, basis: 'usage' }).success).toBe(false);
+    expect(LlmCharge.safeParse({ microUsd: 1.5, basis: 'usage' }).success).toBe(false);
+    expect(LlmCharge.safeParse({ microUsd: 1, basis: 'other' }).success).toBe(false);
   });
 });

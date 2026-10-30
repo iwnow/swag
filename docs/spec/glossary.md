@@ -151,7 +151,7 @@
 | Grafana LGTM | `grafana/otel-lgtm` | Бэкенд наблюдаемости: Loki (логи), Grafana, Tempo (трейсы), позже метрики Prometheus. Локально — один контейнер. |
 | Журнал инструментов | `ToolJournal` | Записи `started` / результат по каждому `tool_call_id`. |
 | Бюджет | `Budget`, `budgetMicroUsd`, `BudgetMicroUsd`, `spentMicroUsd` | Лимит расходов роя (обязателен) или агента (необязателен) в micro-USD; `spentMicroUsd` — потрачено (004, 4.1, 4.7). |
-| Регистрация роя в gateway | `LlmSwarmRegistration`, `LlmSwarmClosed`, `registerSwarm`, `closeSwarm`, `swarm_agents`, `RegisteredAgent`, `findAgent`, `caller_not_registered` | Внутренний API gateway `/internal/swarms`: бюджет и срок роя, агенты с моделями и бюджетами, закрытие роя; вызов не из регистрации — `403 caller_not_registered` (004, 4.2, 4.5). |
+| Регистрация роя в gateway | `LlmSwarmRegistration`, `LlmSwarmClosed` (в `swarm.ts`), `registerSwarm`, `closeSwarm`, `swarm_agents`, `RegisteredAgent`, `findAgent`, `caller_not_registered` | Внутренний API gateway `/internal/swarms`: бюджет и срок роя, агенты с моделями и бюджетами, закрытие роя; вызов не из регистрации — `403 caller_not_registered` (004, 4.2, 4.5). |
 | Ошибка внутреннего API gateway | `InternalErrorCode`, `swarm_registered` | Коды `/internal/*`: `invalid_request`, `model_not_found`, `swarm_registered`, `not_found` (004, 4.2). |
 | Бюджеты роёв | `swarm_budgets` | Таблица бюджета, трат и резервов роя в gateway (004, 4.5). |
 | Хранилище бюджетов | `BudgetStore`, `createPostgresBudgetStore` | Порт `llm-gateway-core` и адаптер Postgres: регистрация, поиск агента, резерв, списание, закрытие, освобождение резервов (004, 4.4, 4.5). |
