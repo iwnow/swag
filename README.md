@@ -50,6 +50,8 @@ npm run infra:check
 - `dev` — бесплатные модели OpenRouter с суффиксом `:free`, цены `0`. Суточные лимиты бесплатных моделей допустимы для разработки.
 - `prod` — платные модели OpenRouter, цены из `models.json`. Модели, даты и источники цен — в [README `apps/llm-gateway`](apps/llm-gateway/README.md).
 
+Цены моделей `dev` и `prod` обновляются из OpenRouter без ключа: `llm-gateway` читает `OPENROUTER_MODELS_URL` (по умолчанию `https://openrouter.ai/api/v1/models`) каждые `LLM_PRICES_REFRESH_MS` мс (по умолчанию 3600000; `0` — выключено; профиль `test` запросов не делает). Переменные — в `.env` (спека 004, 4.9, 4.11).
+
 Профиль `dev` или `prod` требует `OPENROUTER_API_KEY` в `.env.llm`. Ключ должен быть обычным API-ключом: management-ключ OpenRouter модели не вызывает (журнал спеки 002, T-31).
 
 **Проверка.**

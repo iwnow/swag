@@ -16,13 +16,26 @@ export function readCatalog(path: string): ModelCatalog {
   return parsed.data;
 }
 
-// Спека 004, 4.4 и 4.9: PriceBook из цен каталога. Обновление из OpenRouter — T-9; до него цены — из models.json.
-export function catalogPriceBook(catalog: ModelCatalog): PriceBook {
+// Спека 004, 4.4 и 4.9: текущий каталог процесса. PriceBook читает цены из него; обновление цен подменяет каталог целиком.
+export interface CatalogHolder {
+  book: PriceBook;
+  current(): ModelCatalog;
+  replace(next: ModelCatalog): void;
+}
+
+export function createCatalogHolder(initial: ModelCatalog): CatalogHolder {
+  let current = initial;
   return {
-    prices(model) {
-      const entry = catalog.models.find((candidate) => candidate.id === model);
-      if (!entry) throw new Error(`model ${model} not in catalog`);
-      return entry.prices;
+    book: {
+      prices(model) {
+        const entry = current.models.find((candidate) => candidate.id === model);
+        if (!entry) throw new Error(`model ${model} not in catalog`);
+        return entry.prices;
+      },
+    },
+    current: () => current,
+    replace(next) {
+      current = next;
     },
   };
 }

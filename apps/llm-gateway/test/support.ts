@@ -13,7 +13,7 @@ import {
   type TraceContext,
 } from '@swag/llm-gateway-core';
 import { buildApp } from '../src/app.ts';
-import { catalogPriceBook, readCatalog } from '../src/catalog.ts';
+import { createCatalogHolder, readCatalog } from '../src/catalog.ts';
 import { startFakeProvider, type FakeProvider } from '../../../infra/llm/fake-provider/server.ts';
 import {
   type FakeBudgets,
@@ -96,7 +96,7 @@ export function makeCore(
     log,
     version: 'test',
     budgets: options.budgets ?? registeredBudgets(),
-    prices: catalogPriceBook(catalog),
+    prices: createCatalogHolder(catalog).book,
   });
 }
 

@@ -1,14 +1,21 @@
-import { createPostgresBudgetStore, runMigrations } from '@swag/adapter-postgres';
 import {
+  createPostgresBudgetStore,
+  createPostgresPriceStore,
+  runMigrations,
+} from '@swag/adapter-postgres';
+import {
+  applyStoredPrices,
   createLlmGatewayCore,
+  type BudgetStore,
   type CheckUpstreamResult,
   type LlmGatewayCore,
   type LlmGatewayDeps,
   type Logger,
+  type PriceStore,
 } from '@swag/llm-gateway-core';
 import pg from 'pg';
 import type { FastifyInstance } from 'fastify';
-import { catalogPriceBook } from './catalog.ts';
+import { createCatalogHolder, type CatalogHolder } from './catalog.ts';
 
 // Спека 002, REQ-002-13: повтор сверки каталога с апстримом раз в секунду.
 const RETRY_MS = 1000;
@@ -47,12 +54,30 @@ export async function waitForUpstream(
   }
 }
 
+// Спека 004, 4.9: каталог — models.json с сохранёнными ценами поверх; потом ядро и освобождение резервов.
+// Ошибка чтения сохранённых цен — исключение, как при миграциях: старт не продолжается.
+export async function assembleCore(
+  deps: Omit<LlmGatewayDeps, 'budgets' | 'prices'>,
+  stores: { budgets: BudgetStore; priceStore: PriceStore },
+): Promise<{ core: LlmGatewayCore; holder: CatalogHolder }> {
+  const catalog = applyStoredPrices(deps.catalog, await stores.priceStore.load());
+  const holder = createCatalogHolder(catalog);
+  const core = createLlmGatewayCore({
+    ...deps,
+    catalog,
+    budgets: stores.budgets,
+    prices: holder.book,
+  });
+  await core.releaseHolds();
+  return { core, holder };
+}
+
 // Спека 004, 4.4 и 4.11, REQ-004-14: миграции → пул → BudgetStore → ядро → освобождение резервов от прошлого процесса.
 // Вызывается до listen: запросы не принимаются, пока висящие резервы не освобождены. `schema` — только для тестов.
 export async function startLlmGatewayCore(
   options: { databaseUrl: string; schema?: string },
   deps: Omit<LlmGatewayDeps, 'budgets' | 'prices'>,
-): Promise<{ core: LlmGatewayCore; pool: pg.Pool }> {
+): Promise<{ core: LlmGatewayCore; pool: pg.Pool; holder: CatalogHolder; priceStore: PriceStore }> {
   const { databaseUrl, schema } = options;
   try {
     await runMigrations(databaseUrl, { schema: schema ?? 'public' });
@@ -64,14 +89,13 @@ export async function startLlmGatewayCore(
     connectionString: databaseUrl,
     options: schema === undefined ? undefined : `-c search_path=${schema}`,
   });
+  const priceStore = createPostgresPriceStore(pool);
   try {
-    const core = createLlmGatewayCore({
-      ...deps,
+    const { core, holder } = await assembleCore(deps, {
       budgets: createPostgresBudgetStore(pool),
-      prices: catalogPriceBook(deps.catalog),
+      priceStore,
     });
-    await core.releaseHolds();
-    return { core, pool };
+    return { core, pool, holder, priceStore };
   } catch (error) {
     await pool.end();
     throw error;

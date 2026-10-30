@@ -2,10 +2,12 @@
   "models": [
     {
       "id": "chat-small",
+      "openRouterModel": "openrouter/free",
       "prices": { "inputPerMTokUsd": "0", "cachedInputPerMTokUsd": "0", "outputPerMTokUsd": "0" }
     },
     {
       "id": "chat-large",
+      "openRouterModel": "nvidia/nemotron-3-ultra-550b-a55b:free",
       "prices": { "inputPerMTokUsd": "0", "cachedInputPerMTokUsd": "0", "outputPerMTokUsd": "0" }
     }
   ]

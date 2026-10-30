@@ -22,7 +22,7 @@
 ```
 apps/<имя>/             оболочка
 packages/<имя>-core/    ядро
-packages/adapter-<технология>/   адаптер инфраструктуры
+packages/adapter-<технология>/   адаптер инфраструктуры; пример на `fetch` без SDK — `adapter-openrouter` (источник цен, спека 004, 4.9)
 packages/contracts/     общие схемы и типы
 packages/api-integration/  общая чистая логика ядер, работающих с API платформы; правила ядра
 packages/config/        чтение env, только для оболочек
