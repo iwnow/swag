@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { BusMessage, PlatformEventInput } from '@swag/contracts';
+import type { BusMessage, LlmSwarmRegistration, PlatformEventInput } from '@swag/contracts';
 import {
   createOrchestratorCore,
+  type LlmSwarms,
   type LogContext,
   type OrchestratorBus,
   type OrchestratorCore,
@@ -24,10 +25,12 @@ interface Entry {
 interface Fake {
   core: OrchestratorCore;
   entries: Entry[]; // логи ядра
-  log: string[]; // порядок публикаций: 'event:<type>' или 'message:<to>'
+  log: string[]; // порядок: 'event:<type>', 'message:<to>', 'sandbox:create|remove', 'gateway:register|close'
   events: PlatformEventInput[];
   messages: BusMessage[];
   sandboxes: Map<string, SandboxSpec>;
+  registrations: LlmSwarmRegistration[];
+  closed: string[]; // swarmId вызовов close
   runTimers: (ms: number) => void; // срабатывают активные таймеры с этим ms
 }
 
@@ -39,6 +42,9 @@ function setup(
     initial?: Map<string, SandboxSpec>;
     createError?: Error;
     removeError?: Error;
+    registerError?: Error;
+    registerHold?: Promise<void>;
+    closeError?: Error;
   } = {},
 ): Fake {
   let counter = 0;
@@ -58,10 +64,12 @@ function setup(
     create: async (spec) => {
       if (options.createError && sandboxes.size > 0) throw options.createError; // падает второй
       const sandboxId = `sb-${++counter}`;
+      log.push('sandbox:create');
       sandboxes.set(sandboxId, spec);
       return { sandboxId };
     },
     remove: async (sandboxId) => {
+      log.push('sandbox:remove');
       if (options.removeError) throw options.removeError;
       sandboxes.delete(sandboxId);
     },
@@ -84,10 +92,26 @@ function setup(
       log.push(`message:${message.to}`);
     },
   };
+  const registrations: LlmSwarmRegistration[] = [];
+  const closed: string[] = [];
+  const llmSwarms: LlmSwarms = {
+    register: async (reg) => {
+      log.push('gateway:register');
+      if (options.registerHold) await options.registerHold;
+      if (options.registerError) throw options.registerError;
+      registrations.push(reg);
+    },
+    close: async (swarmId) => {
+      log.push('gateway:close');
+      if (options.closeError) throw options.closeError;
+      closed.push(swarmId);
+    },
+  };
   const core = createOrchestratorCore({
     version: 'test',
     sandboxes: provider,
     bus,
+    llmSwarms,
     clock: { now: () => '2026-10-22T10:00:00.000Z' },
     timers: {
       setTimeout: (fn, ms) => {
@@ -118,6 +142,8 @@ function setup(
     events,
     messages,
     sandboxes,
+    registrations,
+    closed,
     runTimers: (ms) => {
       for (const timer of timers) {
         if (timer.active && timer.ms === ms) {
@@ -135,7 +161,12 @@ const agents = (count: number) =>
     name: `A${i + 1}`,
     role: `r${i + 1}`,
   }));
-const launchBody = (count: number) => ({ swarmId: SWARM, task: 'T', agents: agents(count) });
+const launchBody = (count: number) => ({
+  swarmId: SWARM,
+  task: 'T',
+  budgetMicroUsd: 500000,
+  agents: agents(count),
+});
 
 let seq = 0;
 const agentEvent = (
@@ -180,6 +211,7 @@ describe('orchestrator-core', () => {
     const body = {
       swarmId: SWARM,
       task: 'T',
+      budgetMicroUsd: 500000,
       agents: agents(3).map((agent, i) => ({ ...agent, model: models[i] })),
     };
     expect((await fake.core.launch(body)).ok).toBe(true);
@@ -458,6 +490,152 @@ describe('orchestrator-core', () => {
         else process.env[key] = value;
       }
     }
+  });
+});
+
+describe('orchestrator-core: регистрация роя в gateway (004, 4.6)', () => {
+  it('AC-004-21: register до первого create; expiresAt = часы + swarmMs + 60 с; модели и бюджеты агентов из плана; при swarmMs 0 — null', async () => {
+    const fake = setup({ swarmMs: 600000 });
+    const body = {
+      ...launchBody(2),
+      agents: agents(2).map((agent, i) => (i === 0 ? { ...agent, budgetMicroUsd: 100000 } : agent)),
+    };
+    expect((await fake.core.launch(body)).ok).toBe(true);
+    expect(fake.registrations).toEqual([
+      {
+        swarmId: SWARM,
+        budgetMicroUsd: 500000,
+        expiresAt: '2026-10-22T10:11:00.000Z',
+        agents: [
+          { agentId: 'agent-1', model: 'chat-small', budgetMicroUsd: 100000 },
+          { agentId: 'agent-2', model: 'chat-small', budgetMicroUsd: null },
+        ],
+      },
+    ]);
+    expect(fake.log.indexOf('gateway:register')).toBeLessThan(fake.log.indexOf('sandbox:create'));
+
+    const unlimited = setup({ swarmMs: 0 });
+    await unlimited.core.launch(launchBody(1));
+    expect(unlimited.registrations[0]?.expiresAt).toBeNull();
+  });
+
+  it('AC-004-22: register бросает — swarm.failed gateway_unavailable с detail, create не вызван, песочниц нет', async () => {
+    const fake = setup({ registerError: new Error('gateway down') });
+    const result = await fake.core.launch(launchBody(2));
+    expect(result.ok).toBe(true);
+    expect(fake.log).not.toContain('sandbox:create');
+    expect(fake.sandboxes.size).toBe(0);
+    expect(fake.events.at(-1)).toMatchObject({
+      type: 'swarm.failed',
+      data: { reason: 'gateway_unavailable', detail: 'gateway down' },
+    });
+    expect(fake.closed).toEqual([SWARM]);
+  });
+
+  it('AC-004-23: итог completed, stopped, swarm_timeout и agent_failed — close один раз после уборки песочниц и до итогового события', async () => {
+    const endings: { name: string; final: string; run: (fake: Fake) => Promise<void> }[] = [
+      {
+        name: 'completed',
+        final: 'swarm.completed',
+        run: (fake) => fake.core.handleEvent(agentEvent('agent.result', 'agent-1', { text: 'R' })),
+      },
+      {
+        name: 'stopped',
+        final: 'swarm.stopped',
+        run: async (fake) => {
+          await fake.core.stop(SWARM);
+        },
+      },
+      {
+        name: 'swarm_timeout',
+        final: 'swarm.failed',
+        run: async (fake) => {
+          fake.runTimers(300000);
+          await waitMicrotasks();
+        },
+      },
+      {
+        name: 'agent_failed',
+        final: 'swarm.failed',
+        run: (fake) =>
+          fake.core.handleEvent(agentEvent('agent.failed', 'agent-2', { reason: 'max_steps' })),
+      },
+    ];
+    for (const ending of endings) {
+      const fake = setup();
+      await fake.core.launch(launchBody(2));
+      for (const id of ['agent-1', 'agent-2'])
+        await fake.core.handleEvent(agentEvent('agent.started', id, {}));
+      await ending.run(fake);
+      expect(fake.closed, ending.name).toEqual([SWARM]);
+      const closeAt = fake.log.indexOf('gateway:close');
+      expect(fake.log.lastIndexOf('sandbox:remove'), ending.name).toBeLessThan(closeAt);
+      expect(closeAt, ending.name).toBeLessThan(fake.log.indexOf(`event:${ending.final}`));
+    }
+  });
+
+  it('stop во время регистрации: без песочниц и таймеров, рой закрыт', async () => {
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fake = setup({ registerHold: hold, swarmMs: 300000 });
+    const launching = fake.core.launch(launchBody(2));
+    await waitMicrotasks();
+    expect((await fake.core.stop(SWARM)).ok).toBe(true);
+    release();
+    expect((await launching).ok).toBe(true);
+    expect(fake.log).not.toContain('sandbox:create');
+    expect(fake.sandboxes.size).toBe(0);
+    fake.runTimers(300000);
+    await waitMicrotasks();
+    expect(fake.closed).toEqual([SWARM, SWARM]);
+    expect(fake.events.filter((e) => e.type === 'swarm.stopped')).toHaveLength(1);
+    expect(fake.events.filter((e) => e.type === 'swarm.failed')).toHaveLength(0);
+    expect(fake.events.at(-1)).toMatchObject({ type: 'swarm.stopped' });
+  });
+
+  it('AC-004-23: close бросает — лог warn gateway_close_failed, итоговое событие опубликовано', async () => {
+    const closeError = new Error('gateway 500');
+    const fake = setup({ closeError });
+    await fake.core.launch(launchBody(1));
+    await fake.core.handleEvent(agentEvent('agent.started', 'agent-1', {}));
+    await fake.core.stop(SWARM);
+    expect(fake.entries).toContainEqual({
+      level: 'warn',
+      msg: 'gateway_close_failed',
+      ctx: { swarmId: SWARM, err: closeError },
+    });
+    expect(fake.events.at(-1)).toMatchObject({ type: 'swarm.stopped' });
+  });
+
+  it('AC-004-24: agent.failed с model_error:swarm_budget_exceeded и model_error:agent_budget_exceeded — swarm.failed budget_exceeded, песочницы убраны; прочие model_error — agent_failed', async () => {
+    for (const code of ['swarm_budget_exceeded', 'agent_budget_exceeded']) {
+      const fake = setup();
+      await fake.core.launch(launchBody(3));
+      for (const id of ['agent-1', 'agent-2', 'agent-3'])
+        await fake.core.handleEvent(agentEvent('agent.started', id, {}));
+      await fake.core.handleEvent(
+        agentEvent('agent.failed', 'agent-2', { reason: `model_error:${code}` }),
+      );
+      expect(fake.events.at(-1)).toMatchObject({
+        type: 'swarm.failed',
+        data: { reason: 'budget_exceeded', detail: `agent-2: ${code}` },
+      });
+      expect(fake.sandboxes.size).toBe(0);
+    }
+
+    const other = setup();
+    await other.core.launch(launchBody(2));
+    for (const id of ['agent-1', 'agent-2'])
+      await other.core.handleEvent(agentEvent('agent.started', id, {}));
+    await other.core.handleEvent(
+      agentEvent('agent.failed', 'agent-2', { reason: 'model_error:upstream_timeout' }),
+    );
+    expect(other.events.at(-1)).toMatchObject({
+      type: 'swarm.failed',
+      data: { reason: 'agent_failed', detail: 'agent-2: model_error:upstream_timeout' },
+    });
   });
 });
 

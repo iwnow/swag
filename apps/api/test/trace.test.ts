@@ -58,6 +58,7 @@ async function stack() {
   };
   const orchestrator = createOrchestratorCore({
     version: 'test',
+    llmSwarms: { register: async () => undefined, close: async () => undefined },
     sandboxes,
     bus: {
       publishEvent: async (event) => void published.push(event),
