@@ -220,9 +220,7 @@ function pricesFromPricing(pricing: Record<string, unknown>): PricesParse {
   const outputPerMTokUsd = perMTokPrice(pricing.completion);
   if (outputPerMTokUsd === null) return { reason: 'invalid pricing.completion' };
   const cachedInputPerMTokUsd =
-    pricing.input_cache_read === undefined
-      ? inputPerMTokUsd
-      : perMTokPrice(pricing.input_cache_read);
+    pricing.input_cache_read == null ? inputPerMTokUsd : perMTokPrice(pricing.input_cache_read);
   if (cachedInputPerMTokUsd === null) return { reason: 'invalid pricing.input_cache_read' };
   return { prices: { inputPerMTokUsd, cachedInputPerMTokUsd, outputPerMTokUsd } };
 }

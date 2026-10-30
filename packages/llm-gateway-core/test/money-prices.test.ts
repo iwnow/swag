@@ -55,6 +55,56 @@ describe('AC-004-28: applyOpenRouterPrices по таблице 4.9', () => {
       { prompt: 'abc', completion: '0.000015' },
       { skipped: 'invalid pricing.prompt' },
     ],
+    [
+      'input_cache_read null — как отсутствие, кэш равен prompt',
+      { prompt: '0.000003', completion: '0.000015', input_cache_read: null },
+      { to: { inputPerMTokUsd: '3', cachedInputPerMTokUsd: '3', outputPerMTokUsd: '15' } },
+    ],
+    [
+      'длинная дробь 0.000000000000000001 — округление вверх до 0.0001',
+      { prompt: '0.000000000000000001', completion: '0' },
+      { to: { inputPerMTokUsd: '0.0001', cachedInputPerMTokUsd: '0.0001', outputPerMTokUsd: '0' } },
+    ],
+    [
+      'prompt 1e-7 — не разбирается',
+      { prompt: '1e-7', completion: '0' },
+      { skipped: 'invalid pricing.prompt' },
+    ],
+    [
+      'prompt -1 — не разбирается',
+      { prompt: '-1', completion: '0' },
+      { skipped: 'invalid pricing.prompt' },
+    ],
+    [
+      'prompt пустая строка — не разбирается',
+      { prompt: '', completion: '0' },
+      { skipped: 'invalid pricing.prompt' },
+    ],
+    [
+      'prompt с пробелами " 0.1 " — не разбирается',
+      { prompt: ' 0.1 ', completion: '0' },
+      { skipped: 'invalid pricing.prompt' },
+    ],
+    [
+      'completion отсутствует — не разбирается',
+      { prompt: '0.000003' },
+      { skipped: 'invalid pricing.completion' },
+    ],
+    [
+      'image 0.01 — пропуск',
+      { prompt: '0.000003', completion: '0.000015', image: '0.01' },
+      { skipped: 'non-zero pricing.image' },
+    ],
+    [
+      'web_search 0.5 — пропуск',
+      { prompt: '0.000003', completion: '0.000015', web_search: '0.5' },
+      { skipped: 'non-zero pricing.web_search' },
+    ],
+    [
+      'request abc — не разбирается',
+      { prompt: '0.000003', completion: '0.000015', request: 'abc' },
+      { skipped: 'invalid pricing.request' },
+    ],
   ])('AC-004-28: %s', (_, pricing, expected) => {
     const result = applyOpenRouterPrices(
       catalogOf(smallModel()),
