@@ -1,7 +1,7 @@
 ---
 id: "032"
 title: Профиль моделей test-pay
-status: in-progress
+status: review
 roadmap_stage: 4
 depends_on: ["002", "004"]
 superseded_by: null
@@ -121,7 +121,7 @@ general_settings:
 - [x] **T-1.** Каталог `infra/llm/test-pay/` по 4.2–4.3; `scripts/repo.test.ts` по 4.4. Закрывает: REQ-032-1, AC-032-1. Готово, когда: `npx vitest run scripts/repo.test.ts` зелёный.
 - [x] **T-2.** `packages/config/src/index.ts` и `apps/llm-gateway/src/prices.ts` по 4.1; тест AC-032-2 в `packages/config/test/config.test.ts`; комментарий профилей в `compose.yaml` (`test, dev, test-pay, prod`); README `config` и `llm-gateway` (раздел «Профили моделей»), корневой README (профили). Закрывает: REQ-032-1, REQ-032-3, AC-032-2. Готово, когда: `npm run check` зелёный.
 - [x] **T-3.** Тексты: спека 002 — REQ-002-12 и раздел 4.7 перечисляют `test-pay` (пометка «изменено спекой 032»), строка в журнале 002; глоссарий «Профиль моделей» уже исправлен; S-2 шаг 3 — профиль `test-pay`. Закрывает: — . Готово, когда: `npm run spec:check` зелёный.
-- [ ] **T-4.** Ручные проверки AC-032-3 и AC-032-4, замер NFR-032-1, результаты в журнал. Закрывает: REQ-032-2, REQ-032-4, AC-032-3, AC-032-4, NFR-032-1. Готово, когда: результаты в журнале.
+- [x] **T-4.** Ручные проверки AC-032-3 и AC-032-4, замер NFR-032-1, результаты в журнал. Закрывает: REQ-032-2, REQ-032-4, AC-032-3, AC-032-4, NFR-032-1. Готово, когда: результаты в журнале.
 
 ## 9. Открытые вопросы
 
@@ -147,3 +147,4 @@ general_settings:
 | 2026-10-30 | `spec/032-t1`, T-2 (`aa0e1e3`) | `LLM_PROFILE` = `test`, `dev`, `test-pay`, `prod` (`packages/config`); тип профиля в `apps/llm-gateway/src/prices.ts`; тест AC-032-2 в `packages/config/test/config.test.ts` (вынесен общий `gatewayExamples`); комментарий в `compose.yaml`; README `config`, `llm-gateway`, корневой. | — |
 | 2026-10-30 | `spec/032-t1`, T-3 (`668b376`) | Спека 002: REQ-002-12 и 4.7 с пометкой «изменено спекой 032», строка журнала 002; `scenarios.md` S-2 шаг 3 — `test-pay`. | — |
 | 2026-10-30 | `spec/032-t1`, замечания ревью | Перечни профилей с `test-pay`: блок «Коротко», AC-002-19 и шаблон `.env.example` спеки 002, `.env.example`, реестр спек (строка 002), имя теста AC-002-19; в спеке 004 (D-111) пометка, что профиль для S-2 сделан спекой 032; раздел «Профили моделей» README `llm-gateway` — `test-pay` пунктом списка | — |
+| 2026-10-30 | `spec/032-t4`, T-4 | AC-032-3: `GET https://openrouter.ai/api/v1/models` — `mistralai/mistral-nemo` prompt `0.000000029`, completion `0.00000003` $/токен, `tools` есть, `reasoning` нет; `meta-llama/llama-3.1-8b-instruct` prompt `0.00000005`, completion `0.00000008`, `tools` есть, `reasoning` нет — пройдено. AC-032-4: `LLM_PROFILE=test-pay npm run up` (смонтированы `infra/llm/test-pay/litellm.yaml` и `models.json`); в логе gateway `price_updated` для `chat-large` (кэш входа `0.05` → `0.025` из OpenRouter), цены `chat-small` совпали с каталогом; `npm run llm:ping` — `chat-small` ответил, `usage.cost` `3.06e-7`, 1662 мс; рой S-3 «четверостишие про осень» (`8215a180-…`), «Автор» и «Редактор» на `chat-small`, без `maxTokens`: три `llm.call` со статусом `ok` и `costMicroUsd` 11, 11, 17, `swarm finished` `completed` за 8 с, `model_error`/`max_tokens` в логе gateway — 0 — пройдено. NFR-032-1: рой по `llm.call` — 39 µUSD ($0.000039); кредиты OpenRouter `total_usage` до `0.000524124`, после `0.000546796`, разница $0.0000227 вместе с `llm:ping` — меньше $0.01, пройдено | Рой создан запросом `POST /api/swarms` (тот же контракт, что у формы), а не через UI. Замечено: `LLM_PROFILE` в контейнере gateway берётся из `.env` (`dev`), а не из оболочки — на проверку не влияет, заметка N-19 |
