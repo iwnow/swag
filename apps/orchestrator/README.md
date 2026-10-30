@@ -11,8 +11,8 @@
 ## Что внутри сейчас
 
 - `src/app.ts` — маршруты.
-- `src/main.ts` — телеметрия (`adapter-telemetry`), `OrchestratorConfig`, адаптер Docker (`@swag/adapter-docker`, с адресом Collector для песочниц и адресом llm-gateway), шина NATS, часы и таймеры, `deps.agent` ядра (лимиты агента, токен gateway, таймаут flush из конфигурации), запуск, остановка со сбросом телеметрии.
-- Тесты: `test/health.test.ts` (AC-000-5, AC-001-12).
+- `src/main.ts` — телеметрия (`adapter-telemetry`), `OrchestratorConfig`, адаптер Docker (`@swag/adapter-docker`, с адресом Collector для песочниц и адресом llm-gateway), адаптер регистрации роёв в gateway (`@swag/adapter-gateway-http`, `LLM_GATEWAY_URL`, `LLM_GATEWAY_TOKEN`, таймаут 10 с — константа `GATEWAY_TIMEOUT_MS`, D-99), шина NATS, часы и таймеры, `deps.agent` ядра (лимиты агента, токен gateway, таймаут flush из конфигурации), запуск, остановка со сбросом телеметрии.
+- Тесты: `test/health.test.ts` (AC-000-5, AC-001-12; фейк `llmSwarms`).
 
 ## Ограничения
 
@@ -21,7 +21,7 @@
 
 ## Связи
 
-- Ядро: `@swag/orchestrator-core`. Адаптеры: `@swag/adapter-docker`, `@swag/adapter-nats`, `@swag/adapter-telemetry`.
+- Ядро: `@swag/orchestrator-core`. Адаптеры: `@swag/adapter-docker`, `@swag/adapter-gateway-http`, `@swag/adapter-nats`, `@swag/adapter-telemetry`.
 - HTTP-цепочка `api` → `orchestrator` с трассировкой проверяется в `apps/api/test/trace.test.ts` (AC-016-9).
 - Конфигурация: `@swag/config`.
 
@@ -37,4 +37,4 @@
 
 ## Спеки
 
-- 000 — `/health`. 001 — 4.6, T-8. 022 — 4.8, 4.9 (env агента, `LLM_GATEWAY_URL` из конфигурации, AC-022-17 — часть оболочки). 016 — 4.5, 4.7, REQ-016-5. 002 — оболочка получает только `.env` (REQ-002-5, AC-002-21); AC-002-22 — в `orchestrator-core`.
+- 000 — `/health`. 004 — 4.6 (регистрация роя в gateway при `launch`, закрытие при `finish`), 4.11 (`LLM_GATEWAY_URL`), REQ-004-3. 001 — 4.6, T-8. 022 — 4.8, 4.9 (env агента, `LLM_GATEWAY_URL` из конфигурации, AC-022-17 — часть оболочки). 016 — 4.5, 4.7, REQ-016-5. 002 — оболочка получает только `.env` (REQ-002-5, AC-002-21); AC-002-22 — в `orchestrator-core`.

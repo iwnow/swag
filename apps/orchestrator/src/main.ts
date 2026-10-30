@@ -5,6 +5,7 @@ import { ALL_EVENTS, eventsSubject, inboxSubject } from '@swag/contracts';
 import { BaseConfig, OrchestratorConfig, loadConfig } from '@swag/config';
 import { connectNatsBus } from '@swag/adapter-nats';
 import { createDockerSandboxProvider } from '@swag/adapter-docker';
+import { createGatewaySwarms } from '@swag/adapter-gateway-http';
 import { startTelemetry, tracedHttpServer } from '@swag/adapter-telemetry';
 import { buildApp } from './app.ts';
 
@@ -53,6 +54,13 @@ const sandboxes = createDockerSandboxProvider({
   llmGatewayUrl: config.DOCKER_AGENT_LLM_GATEWAY_URL,
   otlpEndpoint: config.DOCKER_AGENT_OTLP_ENDPOINT,
 });
+// Спека 004, 4.6: таймаут одного запроса к внутреннему API gateway; в 4.11 переменной нет (D-99).
+const GATEWAY_TIMEOUT_MS = 10000;
+const llmSwarms = createGatewaySwarms({
+  baseUrl: config.LLM_GATEWAY_URL,
+  token: config.LLM_GATEWAY_TOKEN,
+  timeoutMs: GATEWAY_TIMEOUT_MS,
+});
 const ports: OrchestratorBus = {
   publishEvent: async (event) => bus.publishJson(eventsSubject(event.swarmId), event),
   publishMessage: async (message) =>
@@ -69,6 +77,7 @@ const core = createOrchestratorCore({
     clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
   },
   ids: { uuid: () => randomUUID() },
+  llmSwarms,
   log,
   trace: telemetry.trace,
   agent: {

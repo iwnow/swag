@@ -9,6 +9,7 @@
   "include": ["src"],
   "references": [
     { "path": "../../packages/adapter-docker" },
+    { "path": "../../packages/adapter-gateway-http" },
     { "path": "../../packages/adapter-nats" },
     { "path": "../../packages/adapter-telemetry" },
     { "path": "../../packages/config" },
