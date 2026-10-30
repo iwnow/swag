@@ -118,9 +118,9 @@ general_settings:
 
 ## 8. Задачи для агента
 
-- [ ] **T-1.** Каталог `infra/llm/test-pay/` по 4.2–4.3; `scripts/repo.test.ts` по 4.4. Закрывает: REQ-032-1, AC-032-1. Готово, когда: `npx vitest run scripts/repo.test.ts` зелёный.
-- [ ] **T-2.** `packages/config/src/index.ts` и `apps/llm-gateway/src/prices.ts` по 4.1; тест AC-032-2 в `packages/config/test/config.test.ts`; комментарий профилей в `compose.yaml` (`test, dev, test-pay, prod`); README `config` и `llm-gateway` (раздел «Профили моделей»), корневой README (профили). Закрывает: REQ-032-1, REQ-032-3, AC-032-2. Готово, когда: `npm run check` зелёный.
-- [ ] **T-3.** Тексты: спека 002 — REQ-002-12 и раздел 4.7 перечисляют `test-pay` (пометка «изменено спекой 032»), строка в журнале 002; глоссарий «Профиль моделей» уже исправлен; S-2 шаг 3 — профиль `test-pay`. Закрывает: — . Готово, когда: `npm run spec:check` зелёный.
+- [x] **T-1.** Каталог `infra/llm/test-pay/` по 4.2–4.3; `scripts/repo.test.ts` по 4.4. Закрывает: REQ-032-1, AC-032-1. Готово, когда: `npx vitest run scripts/repo.test.ts` зелёный.
+- [x] **T-2.** `packages/config/src/index.ts` и `apps/llm-gateway/src/prices.ts` по 4.1; тест AC-032-2 в `packages/config/test/config.test.ts`; комментарий профилей в `compose.yaml` (`test, dev, test-pay, prod`); README `config` и `llm-gateway` (раздел «Профили моделей»), корневой README (профили). Закрывает: REQ-032-1, REQ-032-3, AC-032-2. Готово, когда: `npm run check` зелёный.
+- [x] **T-3.** Тексты: спека 002 — REQ-002-12 и раздел 4.7 перечисляют `test-pay` (пометка «изменено спекой 032»), строка в журнале 002; глоссарий «Профиль моделей» уже исправлен; S-2 шаг 3 — профиль `test-pay`. Закрывает: — . Готово, когда: `npm run spec:check` зелёный.
 - [ ] **T-4.** Ручные проверки AC-032-3 и AC-032-4, замер NFR-032-1, результаты в журнал. Закрывает: REQ-032-2, REQ-032-4, AC-032-3, AC-032-4, NFR-032-1. Готово, когда: результаты в журнале.
 
 ## 9. Открытые вопросы
@@ -143,3 +143,6 @@ general_settings:
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+| 2026-10-30 | `spec/032-t1`, T-1 (`a021632`) | Каталог `infra/llm/test-pay/`: `litellm.yaml` (модели `mistralai/mistral-nemo`, `meta-llama/llama-3.1-8b-instruct`, ключи через `os.environ/`) и `models.json` (цены по 4.3). `scripts/repo.test.ts`: профили `test`, `dev`, `test-pay`, `prod`; AC-004-30 по `dev`, `test-pay`, `prod`; новый тест AC-032-1. | — |
+| 2026-10-30 | `spec/032-t1`, T-2 (`aa0e1e3`) | `LLM_PROFILE` = `test`, `dev`, `test-pay`, `prod` (`packages/config`); тип профиля в `apps/llm-gateway/src/prices.ts`; тест AC-032-2 в `packages/config/test/config.test.ts` (вынесен общий `gatewayExamples`); комментарий в `compose.yaml`; README `config`, `llm-gateway`, корневой. | — |
+| 2026-10-30 | `spec/032-t1`, T-3 (`668b376`) | Спека 002: REQ-002-12 и 4.7 с пометкой «изменено спекой 032», строка журнала 002; `scenarios.md` S-2 шаг 3 — `test-pay`. | — |
