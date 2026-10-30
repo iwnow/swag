@@ -1,7 +1,7 @@
 ---
 id: "031"
 title: Лимит ответа агента
-status: in-progress
+status: review
 roadmap_stage: 4
 depends_on: ["004"]
 superseded_by: null
