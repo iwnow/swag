@@ -359,6 +359,7 @@ interface Settlement {
   prices: ModelPrices;
   bytesIn: number;
   holdMicroUsd: number;
+  settled: boolean; // settle уже вызван: повторно не списываем (4.3)
 }
 
 type LlmCallBase = Omit<LlmCallData, 'charge'>;
@@ -399,14 +400,15 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
     prices: priceBook,
   } = deps;
 
-  // Спека 004, 4.4: отказ на шагах 5–8 — без события, лог warn с кодом.
+  // Спека 004, 4.3 и 4.4: отказ на шагах 2–7 — без события, лог warn `call_refused` с кодом.
+  // До разбора вызывающего (шаг 2) ids неизвестны и в лог не пишутся.
   function refuseCall(
     status: number,
     code: GatewayErrorCode,
     message: string,
-    caller: LlmCaller,
+    caller?: LlmCaller,
   ): CompleteResult {
-    log.warn('call_refused', { code, swarmId: caller.swarmId, agentId: caller.agentId });
+    log.warn('call_refused', { code, ...caller });
     return refusal(status, code, message);
   }
 
@@ -426,6 +428,7 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
     );
     const data: LlmCallData = { ...base, charge };
     const ts = clock.now().toISOString();
+    settlement.settled = true;
     try {
       await budgets.settle({
         callId: base.callId,
@@ -538,8 +541,8 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
             usage = chunk.usage;
             providerCost = chunk.providerCost;
           }
-          yield payload;
           bytesOut += chunk?.deltaBytes ?? 0;
+          yield payload;
         }
       } catch (err) {
         // Спека 002, 4.4 (шаг 5): обрыв апстрима после старта отдаём клиенту последним payload; клиент ушёл — исключение дальше.
@@ -574,6 +577,45 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
     return { kind: 'stream', chunks: relay() };
   }
 
+  // Спека 002, 4.4 (шаги 5–6) и 004, 4.3: обычный вызов; списание и событие — до ответа клиенту.
+  async function jsonReply(
+    callId: string,
+    t0: number,
+    body: ChatRequest,
+    settlement: Settlement,
+    signal: UpstreamSignal,
+  ): Promise<CompleteResult> {
+    const response = await upstream.complete(body, signal);
+    const latencyMs = Math.round(clock.monotonicMs() - t0); // D-57: до публикации события
+
+    if (!response.ok) {
+      return upstreamFailed(
+        { callId, model: body.model, stream: false, latencyMs },
+        settlement,
+        response.failure,
+      );
+    }
+
+    const rawUsage = isRecord(response.body) ? response.body.usage : undefined;
+    const usage = parseUsage(rawUsage);
+    if (!usage) log.warn('usage_missing', { callId });
+    await publishCall(
+      {
+        callId,
+        model: body.model,
+        stream: false,
+        status: 'ok',
+        usage,
+        costMicroUsd: usage ? costMicroUsd(usage, settlement.prices) : null,
+        providerCostMicroUsd: usage ? parseProviderCost(rawUsage) : null,
+        latencyMs,
+      },
+      settlement,
+      choicesOutputBytes(response.body, 'message'),
+    );
+    return { kind: 'json', body: response.body };
+  }
+
   return {
     info: () => ({ service: 'llm-gateway', version }),
 
@@ -600,14 +642,14 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
         agentId: rawCaller.agentId,
       });
       if (!caller.success) {
-        return refusal(400, 'invalid_caller', CALLER_MESSAGE);
+        return refuseCall(400, 'invalid_caller', CALLER_MESSAGE);
       }
       const parsed = parseChatRequest(rawBody);
-      if (!parsed.ok) return refusal(400, 'invalid_request', parsed.message);
+      if (!parsed.ok) return refuseCall(400, 'invalid_request', parsed.message, caller.data);
       const body = parsed.value;
       if (!catalog.models.some((model) => model.id === body.model)) {
         const name = Array.from(body.model).slice(0, MODEL_NAME_LIMIT).join('');
-        return refusal(400, 'model_not_found', `Unknown model: ${name}`);
+        return refuseCall(400, 'model_not_found', `Unknown model: ${name}`, caller.data);
       }
 
       // Спека 004, 4.2 (шаг 5) и 4.3 (шаги 7–8): регистрация роя и агента, max_tokens, резерв до апстрима.
@@ -629,77 +671,57 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
         );
       }
       const maxOut = body.max_tokens ?? body.max_completion_tokens;
-      if (maxOut === undefined) {
-        return refuseCall(400, 'invalid_request', 'max_tokens is required', caller.data);
-      }
       if (!isCount(maxOut) || maxOut < 1) {
-        return refuseCall(
-          400,
-          'invalid_request',
-          'max_tokens must be an integer >= 1',
-          caller.data,
-        );
+        return refuseCall(400, 'invalid_request', 'max_tokens is required', caller.data);
       }
       const modelPrices = priceBook.prices(body.model);
       const bytesIn = inputBytes(body);
       const hold = holdMicroUsd(bytesIn, maxOut, modelPrices);
       const callId = ids.uuid();
-      const reserved = await budgets.reserve(callId, caller.data, hold, clock.now());
-      if (!reserved.ok) {
-        log.warn('budget_exceeded', {
-          swarmId: caller.data.swarmId,
-          agentId: caller.data.agentId,
-          holdMicroUsd: hold,
-          code: reserved.code,
-        });
-        return refusal(
-          402,
-          reserved.code,
-          reserved.code === 'swarm_budget_exceeded'
-            ? 'Swarm budget exceeded'
-            : 'Agent budget exceeded',
-        );
-      }
+      const t0 = clock.monotonicMs();
       const settlement: Settlement = {
         caller: caller.data,
         prices: modelPrices,
         bytesIn,
         holdMicroUsd: hold,
+        settled: false,
       };
-
-      const t0 = clock.monotonicMs();
-      if (body.stream === true) {
-        return streamReply(callId, t0, body, settlement, signal);
+      try {
+        const reserved = await budgets.reserve(callId, caller.data, hold, clock.now());
+        if (!reserved.ok) {
+          log.warn('budget_exceeded', {
+            swarmId: caller.data.swarmId,
+            agentId: caller.data.agentId,
+            holdMicroUsd: hold,
+            code: reserved.code,
+          });
+          return refusal(
+            402,
+            reserved.code,
+            reserved.code === 'swarm_budget_exceeded'
+              ? 'Swarm budget exceeded'
+              : 'Agent budget exceeded',
+          );
+        }
+        return body.stream === true
+          ? await streamReply(callId, t0, body, settlement, signal)
+          : await jsonReply(callId, t0, body, settlement, signal);
+      } catch (err) {
+        // Сбой вне порта апстрима: резерв закрывается как сетевой отказ (charge 0, 4.3), ошибка уходит дальше.
+        if (!settlement.settled) {
+          await upstreamFailed(
+            {
+              callId,
+              model: body.model,
+              stream: body.stream === true,
+              latencyMs: Math.round(clock.monotonicMs() - t0),
+            },
+            settlement,
+            { kind: 'network' },
+          );
+        }
+        throw err;
       }
-      const response = await upstream.complete(body, signal);
-      const latencyMs = Math.round(clock.monotonicMs() - t0); // D-57: до публикации события
-
-      if (!response.ok) {
-        return upstreamFailed(
-          { callId, model: body.model, stream: false, latencyMs },
-          settlement,
-          response.failure,
-        );
-      }
-
-      const rawUsage = isRecord(response.body) ? response.body.usage : undefined;
-      const usage = parseUsage(rawUsage);
-      if (!usage) log.warn('usage_missing', { callId });
-      await publishCall(
-        {
-          callId,
-          model: body.model,
-          stream: false,
-          status: 'ok',
-          usage,
-          costMicroUsd: usage ? costMicroUsd(usage, modelPrices) : null,
-          providerCostMicroUsd: usage ? parseProviderCost(rawUsage) : null,
-          latencyMs,
-        },
-        settlement,
-        choicesOutputBytes(response.body, 'message'),
-      );
-      return { kind: 'json', body: response.body };
     },
 
     async registerSwarm(raw) {

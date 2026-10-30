@@ -25,6 +25,29 @@ async function refuse(rawCaller: { swarmId?: string; agentId?: string }, rawBody
   return result;
 }
 
+describe('complete: лог отказов шагов 2–4 (4.3, 4.4)', () => {
+  it.each([
+    ['шаг 2: вызывающий', { agentId: 'agent-1' }, body, { code: 'invalid_caller' }],
+    [
+      'шаг 3: тело',
+      caller,
+      { model: 'chat-small', messages: [] },
+      { code: 'invalid_request', ...caller },
+    ],
+    [
+      'шаг 4: модель',
+      caller,
+      { ...body, model: 'gpt-unknown' },
+      { code: 'model_not_found', ...caller },
+    ],
+  ])('%s — warn call_refused с кодом, без события', async (_, rawCaller, rawBody, ctx) => {
+    const { deps, events, log } = fakeDeps();
+    await createLlmGatewayCore(deps).complete(rawCaller, rawBody, signal);
+    expect(log.entries).toContainEqual({ level: 'warn', msg: 'call_refused', ctx });
+    expect(events.published).toEqual([]);
+  });
+});
+
 describe('complete: проверка вызывающего (LlmCaller)', () => {
   it.each([
     ['нет x-swag-swarm-id', { agentId: 'agent-1' }],

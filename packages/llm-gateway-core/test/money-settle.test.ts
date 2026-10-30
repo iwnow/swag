@@ -39,6 +39,9 @@ describe('запрос без max_tokens', () => {
   it.each([
     ['нет max_tokens', { model: 'chat-small', messages: body.messages }],
     ['max_tokens 0', { ...body, max_tokens: 0 }],
+    ['max_tokens 1.5', { ...body, max_tokens: 1.5 }],
+    ['max_tokens "10"', { ...body, max_tokens: '10' }],
+    ['max_tokens null', { ...body, max_tokens: null }],
   ])('AC-004-10: %s — 400 invalid_request, фейк не вызван', async (_, raw) => {
     const { deps, upstream, events } = fakeDeps({ upstream: { complete: OK } });
     const result = await createLlmGatewayCore(deps).complete(caller, raw, signal);
@@ -124,6 +127,8 @@ describe('списание после вызова', () => {
         providerCostMicroUsd: data.providerCostMicroUsd,
       }),
     ]);
+    expect(budgets.holdCallIds()).toEqual([]);
+    expect(budgets.swarm(TEST_SWARM_ID)?.heldMicroUsd).toBe(0);
   });
 
   it('AC-004-15: поток с usage — charge usage', async () => {
@@ -137,7 +142,10 @@ describe('списание после вызова', () => {
     expect(events.published[0]?.data).toMatchObject({
       charge: { microUsd: 9960, basis: 'usage' },
     });
+    expect(budgets.ledger).toHaveLength(1);
     expect(budgets.ledger[0]).toMatchObject({ amountMicroUsd: 9960, basis: 'usage' });
+    expect(budgets.holdCallIds()).toEqual([]);
+    expect(budgets.swarm(TEST_SWARM_ID)?.heldMicroUsd).toBe(0);
   });
 
   it('AC-004-15: поток без usage, оборван после двух фрагментов — estimate по байтам дошедших фрагментов, status aborted', async () => {
@@ -160,7 +168,71 @@ describe('списание после вызова', () => {
       status: 'aborted',
       charge: { microUsd: expected, basis: 'estimate' },
     });
+    expect(budgets.ledger).toHaveLength(1);
     expect(budgets.ledger[0]).toMatchObject({ amountMicroUsd: expected, basis: 'estimate' });
+    expect(budgets.holdCallIds()).toEqual([]);
+    expect(budgets.swarm(TEST_SWARM_ID)?.heldMicroUsd).toBe(0);
+  });
+
+  it('AC-004-15: потребитель взял первый фрагмент и вызвал return() — байты фрагмента в estimate, одна запись ledger, held 0', async () => {
+    const { deps, events, budgets } = fakeDeps({
+      upstream: { stream: { ok: true, chunks: chunksThen([delta('абв'), delta('где')]) } },
+    });
+    const result = await createLlmGatewayCore(deps).complete(caller, streamBody, signal);
+    if (result.kind !== 'stream') throw new Error(`ожидался поток, пришло: ${result.kind}`);
+    const iterator = result.chunks[Symbol.asyncIterator]();
+    await iterator.next();
+    await iterator.return?.(undefined);
+    const expected = Math.ceil(
+      (inputBytes(streamBody) * 30_000 + Buffer.byteLength('абв') * 150_000) / 10_000,
+    );
+    expect(events.published[0]?.data).toMatchObject({
+      status: 'aborted',
+      charge: { microUsd: expected, basis: 'estimate' },
+    });
+    expect(budgets.ledger).toHaveLength(1);
+    expect(budgets.ledger[0]).toMatchObject({ amountMicroUsd: expected, basis: 'estimate' });
+    expect(budgets.holdCallIds()).toEqual([]);
+    expect(budgets.swarm(TEST_SWARM_ID)?.heldMicroUsd).toBe(0);
+  });
+
+  it('AC-004-15: обычный вызов бросает не-UpstreamFailure — резерв закрыт, charge 0, ровно одна запись ledger, исключение проброшено', async () => {
+    const { deps, events, budgets } = fakeDeps();
+    deps.upstream = {
+      ...deps.upstream,
+      complete: async () => {
+        throw new Error('boom');
+      },
+    };
+    await expect(createLlmGatewayCore(deps).complete(caller, body, signal)).rejects.toThrow('boom');
+    expect(events.published[0]?.data).toMatchObject({
+      status: 'error',
+      charge: { microUsd: 0, basis: 'none' },
+    });
+    expect(budgets.ledger).toHaveLength(1);
+    expect(budgets.ledger[0]).toMatchObject({ amountMicroUsd: 0, basis: 'none' });
+    expect(budgets.holdCallIds()).toEqual([]);
+    expect(budgets.swarm(TEST_SWARM_ID)).toEqual({ spentMicroUsd: 0, heldMicroUsd: 0 });
+  });
+
+  it('AC-004-15: поток бросает до первого фрагмента — резерв закрыт, charge 0, ровно одна запись ledger, исключение проброшено', async () => {
+    const { deps, events, budgets } = fakeDeps();
+    deps.upstream = {
+      ...deps.upstream,
+      stream: async () => {
+        throw new Error('boom');
+      },
+    };
+    await expect(createLlmGatewayCore(deps).complete(caller, streamBody, signal)).rejects.toThrow(
+      'boom',
+    );
+    expect(events.published[0]?.data).toMatchObject({
+      status: 'error',
+      charge: { microUsd: 0, basis: 'none' },
+    });
+    expect(budgets.ledger).toHaveLength(1);
+    expect(budgets.holdCallIds()).toEqual([]);
+    expect(budgets.swarm(TEST_SWARM_ID)).toEqual({ spentMicroUsd: 0, heldMicroUsd: 0 });
   });
 
   it('AC-004-15: отказ апстрима 500 — charge 0, основание none', async () => {
@@ -188,9 +260,13 @@ describe('списание после вызова', () => {
   });
 
   it('AC-004-17: settle бросает — ответ клиенту 200, событие с charge опубликовано, лог error settle_failed', async () => {
-    const { deps, events, log } = fakeDeps({ upstream: { complete: OK }, settleFails: true });
+    const { deps, events, log, budgets } = fakeDeps({
+      upstream: { complete: OK },
+      settleFails: true,
+    });
     const result = await createLlmGatewayCore(deps).complete(caller, body, signal);
     expect(result).toEqual({ kind: 'json', body: OK.body });
+    expect(budgets.holdCallIds()).toHaveLength(1);
     expect(events.published[0]?.data).toMatchObject({
       charge: { microUsd: 9960, basis: 'usage' },
     });

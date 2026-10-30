@@ -84,7 +84,7 @@ export function fakeBudgets(options: { settleFails?: boolean } = {}): FakeBudget
         return { ok: false, code: 'swarm_budget_exceeded' };
       }
       const agent = swarm.agents.get(caller.agentId);
-      if (!agent) throw new Error(`fake budgets: агент ${caller.agentId} не зарегистрирован`);
+      if (!agent) return { ok: false, code: 'agent_budget_exceeded' };
       if (agent.budget !== null && agent.spent + agent.held + amount > agent.budget) {
         return { ok: false, code: 'agent_budget_exceeded' };
       }
