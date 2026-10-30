@@ -42,15 +42,33 @@ async function createSwarm(
 // Ожидание финального статуса роя: опрос раз в полсекунды до дедлайна (стек работает асинхронно).
 async function waitForTerminal(swarmId: string): Promise<SwarmView> {
   const deadline = Date.now() + SWARM_TIMEOUT_MS;
-  for (;;) {
+  let last = 'unknown';
+  while (Date.now() <= deadline) {
     const response = await fetch(`${apiUrl}/swarms/${swarmId}`, {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     expect(response.status).toBe(200);
     const view = (await response.json()) as SwarmView;
-    if (TERMINAL_STATUSES.includes(view.status) || Date.now() > deadline) return view;
+    if (TERMINAL_STATUSES.includes(view.status)) return view;
+    last = view.status;
     await new Promise((resolve) => setTimeout(resolve, POLL_MS));
   }
+  throw new Error(`таймаут ожидания роя ${swarmId}, последний статус ${last}`);
+}
+
+// События роя из API: сумма charge.microUsd по llm.call (REQ-004-11, 4.10).
+async function chargeSum(swarmId: string): Promise<number> {
+  const response = await fetch(`${apiUrl}/swarms/${swarmId}/events`, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  expect(response.status).toBe(200);
+  const events = (await response.json()) as {
+    type: string;
+    data: { charge?: { microUsd: number } | null };
+  }[];
+  return events
+    .filter((event) => event.type === 'llm.call')
+    .reduce((total, event) => total + (event.data.charge?.microUsd ?? 0), 0);
 }
 
 async function withDb<T>(use: (db: pg.Client) => Promise<T>): Promise<T> {
@@ -93,6 +111,8 @@ describe.skipIf(!gatewayUrl)('деньги роя на стеке [stack] (сп�
         [swarmId],
       );
       expect(Number(ledger.rows[0]?.sum)).toBe(view.spentMicroUsd);
+      // REQ-004-18: та же сумма — по charge событий llm.call роя (событие и запись ledger пишутся из одного charge).
+      expect(Number(ledger.rows[0]?.sum)).toBe(await chargeSum(swarmId));
     });
 
     const after = await fetch(`${gatewayUrl}/v1/chat/completions`, {

@@ -119,11 +119,11 @@
 
 ```bash
 npm run up                                   # профиль LLM_PROFILE=test из .env
-LLM_GATEWAY_URL=http://127.0.0.1:3002 node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run apps/llm-gateway/test/stack.test.ts apps/llm-gateway/test/stack-money.test.ts
+LLM_GATEWAY_URL=http://127.0.0.1:3002 node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --no-file-parallelism apps/llm-gateway/test/stack.test.ts apps/llm-gateway/test/stack-money.test.ts
 npm run down
 ```
 
-- `stack-money.test.ts` ждёт финального статуса роя опросом раз в 0,5 с до 240 с; его тесты идут до 5 минут.
+- `stack-money.test.ts` ждёт финального статуса роя опросом раз в 0,5 с до 240 с; его тесты идут до 5 минут. Без `--no-file-parallelism` рой из `stack.test.ts` может жить во время глобальной проверки `docker ps -a --filter label=swag.kind` в AC-004-35 и дать ложный провал, поэтому файлы идут по одному.
 - AC-004-33 без стека — `apps/llm-gateway/test/security-postgres.test.ts` на Postgres (`POSTGRES_TEST_URL`): вызов с маркером через HTTP, логи и спаны в памяти, таблицы 4.5 и отчёт `money:report` сканируются на токен шлюза.
 
 - `LLM_GATEWAY_TOKEN` — из `.env`; адрес `api` — `STACK_API_URL` (по умолчанию `http://127.0.0.1:3000`), для него тест создаёт рой через `POST /swarms`.
