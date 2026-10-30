@@ -873,7 +873,7 @@ charged vs provider по тем же вызовам: $0.0418 vs $0.0415 · +0.72
   - `retry` в `@swag/helpers`, `HttpError`, `httpRetryable` и `parseRetryAfter` в `@swag/helpers/server`;
   - без зависимостей;
   - README, строка в разделе «Пакеты» `docs/architecture.md`, глоссарий. Закрывает: REQ-004-21, AC-004-31. Готово, когда: тесты пакета зелёные.
-- [ ] **T-3.** `adapter-postgres`:
+- [x] **T-3.** `adapter-postgres`:
   - миграция `0002_money.sql` по 4.5;
   - `createPostgresBudgetStore` (`register`, `findAgent`, `reserve`, `settle`, `close`, `releaseHolds`), `createPostgresPriceStore` и `ledgerReport` — SQL ровно по 4.5;
   - типы `BudgetStore` и `PriceStore` импортируются из `@swag/llm-gateway-core`, порты объявить там же в этом коммите — только интерфейсы 4.4, без логики;
