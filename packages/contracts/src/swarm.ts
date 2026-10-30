@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BudgetMicroUsd, MicroUsd, ModelId, PlatformModel } from './llm.ts';
+import { BudgetMicroUsd, MaxTokens, MicroUsd, ModelId, PlatformModel } from './llm.ts';
 
 // Спека 001, 4.1. Лимиты длин полей — предложение, утверждено в Q-3.
 export const AgentId = z.string().regex(/^agent-[1-9][0-9]?$/); // agent-1 … agent-99, назначает api по порядку
@@ -13,12 +13,14 @@ export const AgentDraft = z.strictObject({
   role: z.string().trim().min(1).max(500), // роль агента: текст обязанностей, не путать с ролью пользователя
   model: PlatformModel.default('chat-small'),
   budgetMicroUsd: BudgetMicroUsd.nullable().default(null), // null — только бюджет роя (004, 4.1)
+  maxTokens: MaxTokens.nullable().default(null), // null — значение роя (031, 4.4)
 });
 export type AgentDraft = z.infer<typeof AgentDraft>;
 
 export const SwarmCreateRequest = z.strictObject({
   task: z.string().trim().min(1).max(4000),
   budgetMicroUsd: BudgetMicroUsd, // обязателен (004, Q-5)
+  maxTokens: MaxTokens.nullable().default(null), // null — AGENT_MAX_TOKENS оркестратора (031, 4.4)
   agents: z.array(AgentDraft).min(1).max(8),
 });
 export type SwarmCreateRequest = z.infer<typeof SwarmCreateRequest>;
@@ -39,6 +41,7 @@ export const SwarmLaunch = z.strictObject({
   swarmId: SwarmId,
   task: z.string(),
   budgetMicroUsd: BudgetMicroUsd,
+  maxTokens: MaxTokens.nullable(),
   agents: z.array(AgentSpec).min(1),
 });
 export type SwarmLaunch = z.infer<typeof SwarmLaunch>;
