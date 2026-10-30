@@ -3,14 +3,13 @@ import { Router, RouterLink } from '@angular/router';
 import { PlatformModel } from '@swag/contracts';
 import type { FormIssue } from '@swag/ui-core';
 import { UI, errorText } from './ui.ts';
-
-interface AgentField {
-  name: string;
-  role: string;
-  model: PlatformModel;
-}
+import { swarmFormInput, type AgentInput } from './money.ts';
 
 const DEFAULT_MODEL: PlatformModel = 'chat-small';
+// Спека 004, Q-5: бюджет роя по умолчанию — $0.50.
+const DEFAULT_BUDGET_USD = '0.50';
+
+const newAgent = (): AgentInput => ({ name: '', role: '', model: DEFAULT_MODEL, budget: '' });
 
 @Component({
   selector: 'app-swarm-new-page',
@@ -22,6 +21,10 @@ const DEFAULT_MODEL: PlatformModel = 'chat-small';
       <label>
         Задача
         <textarea rows="3" [value]="task()" (input)="setTask($event)"></textarea>
+      </label>
+      <label>
+        Бюджет, $
+        <input type="number" min="0" step="0.01" [value]="budget()" (input)="setBudget($event)" />
       </label>
 
       <h2>Агенты</h2>
@@ -37,6 +40,15 @@ const DEFAULT_MODEL: PlatformModel = 'chat-small';
             placeholder="Роль: что делает агент"
             [value]="agent.role"
             (input)="setAgent(i, 'role', $event)"
+          />
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="Бюджет агента, $"
+            aria-label="Бюджет агента, $"
+            [value]="agent.budget"
+            (input)="setAgent(i, 'budget', $event)"
           />
           <select (change)="setModel(i, $event)" aria-label="Модель">
             @for (model of models; track model) {
@@ -76,7 +88,8 @@ export class SwarmNewPageComponent {
 
   readonly models = PlatformModel.options;
   readonly task = signal('');
-  readonly agents = signal<AgentField[]>([{ name: '', role: '', model: DEFAULT_MODEL }]);
+  readonly budget = signal(DEFAULT_BUDGET_USD);
+  readonly agents = signal<AgentInput[]>([newAgent()]);
   readonly issues = signal<FormIssue[]>([]);
   readonly serverError = signal<string | null>(null);
   readonly submitting = signal(false);
@@ -85,7 +98,11 @@ export class SwarmNewPageComponent {
     this.task.set((event.target as HTMLTextAreaElement).value);
   }
 
-  setAgent(index: number, field: keyof AgentField, event: Event): void {
+  setBudget(event: Event): void {
+    this.budget.set((event.target as HTMLInputElement).value);
+  }
+
+  setAgent(index: number, field: keyof AgentInput, event: Event): void {
     const value = (event.target as HTMLInputElement).value;
     this.agents.update((list) =>
       list.map((agent, i) => (i === index ? { ...agent, [field]: value } : agent)),
@@ -100,7 +117,7 @@ export class SwarmNewPageComponent {
   }
 
   addAgent(): void {
-    this.agents.update((list) => [...list, { name: '', role: '', model: DEFAULT_MODEL }]);
+    this.agents.update((list) => [...list, newAgent()]);
   }
 
   removeAgent(index: number): void {
@@ -109,7 +126,7 @@ export class SwarmNewPageComponent {
 
   async submit(): Promise<void> {
     this.serverError.set(null);
-    const form = { task: this.task(), agents: this.agents() };
+    const form = swarmFormInput(this.task(), this.budget(), this.agents());
     const check = this.ui.validateForm(form);
     if (!check.ok) {
       this.issues.set(check.issues);
