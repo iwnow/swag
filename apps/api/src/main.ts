@@ -56,6 +56,7 @@ const { core, pool } = await startApiCore(
     limits: {
       maxActiveSwarms: config.MAX_ACTIVE_SWARMS,
       maxBudgetMicroUsd: config.SWARM_MAX_BUDGET_MICRO_USD,
+      maxTokens: config.AGENT_MAX_TOKENS_LIMIT,
     },
   },
 ).catch((error: unknown) => fail('startup failed', error));

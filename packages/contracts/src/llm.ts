@@ -13,6 +13,9 @@ export const MicroUsd = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 export type MicroUsd = z.infer<typeof MicroUsd>;
 export const BudgetMicroUsd = z.number().int().min(1).max(1_000_000_000); // до $1000
 export type BudgetMicroUsd = z.infer<typeof BudgetMicroUsd>;
+// Спека 031, 4.1: лимит ответа модели (max_tokens). Рабочий предел — AGENT_MAX_TOKENS_LIMIT (031, 4.2).
+export const MaxTokens = z.number().int().min(1).max(1_000_000);
+export type MaxTokens = z.infer<typeof MaxTokens>;
 
 // Цена в USD за 1 млн токенов: десятичная строка, не больше 4 знаков после точки, не больше 10000.
 export const PricePerMTok = z

@@ -170,3 +170,61 @@ describe('LlmSwarmRegistration', () => {
     expect(LlmSwarmRegistration.safeParse(registration({ agents: badId })).success).toBe(false);
   });
 });
+
+describe('AC-031: лимит ответа агента в SwarmCreateRequest', () => {
+  const withMaxTokens = (maxTokens: unknown, agentMaxTokens: unknown = null) => ({
+    task: 'Задача',
+    budgetMicroUsd: 500000,
+    maxTokens,
+    agents: [{ ...agent(1), maxTokens: agentMaxTokens }],
+  });
+
+  it('AC-031-1: maxTokens 16384 и null у роя и агента проходят', () => {
+    expect(SwarmCreateRequest.safeParse(withMaxTokens(16384, 16384)).success).toBe(true);
+    expect(SwarmCreateRequest.safeParse(withMaxTokens(null, null)).success).toBe(true);
+  });
+
+  it('AC-031-1: отсутствие maxTokens даёт null у роя и у агента', () => {
+    const result = SwarmCreateRequest.safeParse(request([agent(1)]));
+    expect(result.success).toBe(true);
+    expect(result.data?.maxTokens).toBe(null);
+    expect(result.data?.agents[0]?.maxTokens).toBe(null);
+  });
+
+  it('AC-031-1: отклоняет 0, 1.5, строку и 1_000_001 у роя и у агента', () => {
+    for (const value of [0, 1.5, '100', 1_000_001]) {
+      expect(SwarmCreateRequest.safeParse(withMaxTokens(value)).success, String(value)).toBe(false);
+      expect(SwarmCreateRequest.safeParse(withMaxTokens(null, value)).success, String(value)).toBe(
+        false,
+      );
+    }
+  });
+});
+
+describe('AC-031-6: событие swarm.created без maxTokens', () => {
+  const envelope = {
+    id: '0b6f6d2e-6a4c-4c3e-9f5e-666666666666',
+    swarmId: SWARM,
+    ts: '2026-10-30T10:00:00.000Z',
+    agentId: null,
+    traceId: null,
+    source: 'api',
+    type: 'swarm.created',
+  };
+  const agents = [{ name: 'Агент 1', role: 'роль', model: 'chat-small', id: 'agent-1' }];
+
+  it('AC-031-6: swarm.created без maxTokens у роя и агентов разбирается', () => {
+    const data = { task: 'Задача', budgetMicroUsd: 500000, agents };
+    expect(PlatformEventInput.safeParse({ ...envelope, data }).success).toBe(true);
+  });
+
+  it('AC-031-6: swarm.created с maxTokens у роя и агента разбирается', () => {
+    const data = {
+      task: 'Задача',
+      budgetMicroUsd: 500000,
+      maxTokens: 4096,
+      agents: [{ ...agents[0], maxTokens: null }],
+    };
+    expect(PlatformEventInput.safeParse({ ...envelope, data }).success).toBe(true);
+  });
+});

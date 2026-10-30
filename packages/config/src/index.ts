@@ -30,6 +30,8 @@ export const ApiConfig = BaseConfig.extend({
   MAX_ACTIVE_SWARMS: z.coerce.number().int().min(1),
   // Спека 004, 4.11: предел бюджета роя в micro-USD (Q-5).
   SWARM_MAX_BUDGET_MICRO_USD: z.coerce.number().int().min(1),
+  // Спека 031, 4.2: предел maxTokens роя и агента.
+  AGENT_MAX_TOKENS_LIMIT: z.coerce.number().int().min(1),
 });
 export type ApiConfig = z.infer<typeof ApiConfig>;
 

@@ -1,7 +1,7 @@
 ---
 id: "031"
 title: Лимит ответа агента
-status: draft
+status: in-progress
 roadmap_stage: 4
 depends_on: ["004"]
 superseded_by: null
@@ -16,7 +16,7 @@ updated: 2026-10-30
 > - **Чьё значение берётся.** Сначала значение агента, если его нет — значение роя, если нет и его — `AGENT_MAX_TOKENS` оркестратора (сейчас `8192`).
 > - **Где проверяется.** Предел сверху задаёт `api` из новой переменной `AGENT_MAX_TOKENS_LIMIT` (Q-1). Больше предела — `400 validation_error`, рой не создаётся.
 > - **Что не меняется.** Gateway уже резервирует деньги по `max_tokens` вызова (004, 4.3). Больший лимит даёт больший резерв: при маленьком бюджете вызов получит `402`, и рой упадёт с `budget_exceeded`, как сейчас.
-> - **Что нужно от человека.** Q-1 и Q-2 решены 2026-10-30 по рекомендации; осталось поставить `ready`.
+> - **Что нужно от человека.** Ничего: Q-1 и Q-2 решены 2026-10-30, спека `ready` по решению человека.
 
 ## 1. Контекст и цель
 
@@ -193,10 +193,10 @@ export function swarmFormInput(
 
 Выполняются по порядку. После каждой задачи — коммит.
 
-- [ ] **T-1.** `@swag/contracts`: `MaxTokens` в `llm.ts`, `maxTokens` в `AgentDraft`, `SwarmCreateRequest`, `SwarmLaunch` (`swarm.ts`) и `swarm.created` (`events.ts`) по 4.1; тесты в `test/swarm.test.ts`; README пакета; `MaxTokens` в глоссарий уже внесён. Закрывает: REQ-031-1, REQ-031-6, AC-031-1, AC-031-6. Готово, когда: тесты пакета и `npm run typecheck` зелёные. Ломает `api-core` и `orchestrator-core` по типам (`SwarmLaunch.maxTokens` обязателен), поэтому T-1…T-4 идут через фича-ветку `spec/031-max-tokens`, `npm run check` зелёный только после T-4.
-- [ ] **T-2.** `@swag/config`: `AGENT_MAX_TOKENS_LIMIT` в `ApiConfig` (`z.coerce.number().int().min(1)`); `.env.example` и локальный `.env` — `AGENT_MAX_TOKENS_LIMIT=65536`; `compose.yaml` — переменная у `api`; `apps/api/src/main.ts` — `limits.maxTokens`. README `config` и `api`. Закрывает: REQ-031-2 (конфигурация). Готово, когда: `npm run typecheck` по `config` и `api` зелёный.
-- [ ] **T-3.** `@swag/api-core`: `limits.maxTokens`, проверка и перенос `maxTokens` в `createSwarm` по 4.3; тесты в `test/api-core.test.ts`; README. Закрывает: REQ-031-2, REQ-031-3, AC-031-2, AC-031-3. Готово, когда: тесты пакета зелёные.
-- [ ] **T-4.** `@swag/orchestrator-core`: `AGENT_MAX_TOKENS` в `agentSpec` по 4.4; тест на три агента; README. Закрывает: REQ-031-4, AC-031-4. Готово, когда: тесты пакета зелёные, `npm run check` зелёный (конец фича-ветки).
+- [x] **T-1.** `@swag/contracts`: `MaxTokens` в `llm.ts`, `maxTokens` в `AgentDraft`, `SwarmCreateRequest`, `SwarmLaunch` (`swarm.ts`) и `swarm.created` (`events.ts`) по 4.1; тесты в `test/swarm.test.ts`; README пакета; `MaxTokens` в глоссарий уже внесён. Закрывает: REQ-031-1, REQ-031-6, AC-031-1, AC-031-6. Готово, когда: тесты пакета и `npm run typecheck` зелёные. Ломает `api-core` и `orchestrator-core` по типам (`SwarmLaunch.maxTokens` обязателен), поэтому T-1…T-4 идут через фича-ветку `spec/031-max-tokens`, `npm run check` зелёный только после T-4.
+- [x] **T-2.** `@swag/config`: `AGENT_MAX_TOKENS_LIMIT` в `ApiConfig` (`z.coerce.number().int().min(1)`); `.env.example` и локальный `.env` — `AGENT_MAX_TOKENS_LIMIT=65536`; `compose.yaml` — переменная у `api`; `apps/api/src/main.ts` — `limits.maxTokens`. README `config` и `api`. Закрывает: REQ-031-2 (конфигурация). Готово, когда: `npm run typecheck` по `config` и `api` зелёный.
+- [x] **T-3.** `@swag/api-core`: `limits.maxTokens`, проверка и перенос `maxTokens` в `createSwarm` по 4.3; тесты в `test/api-core.test.ts`; README. Закрывает: REQ-031-2, REQ-031-3, AC-031-2, AC-031-3. Готово, когда: тесты пакета зелёные.
+- [x] **T-4.** `@swag/orchestrator-core`: `AGENT_MAX_TOKENS` в `agentSpec` по 4.4; тест на три агента; README. Закрывает: REQ-031-4, AC-031-4. Готово, когда: тесты пакета зелёные, `npm run check` зелёный (конец фича-ветки).
 - [ ] **T-5.** `@swag/ui-core`: `maxTokensInput`, поле `maxTokens` в `AgentInput`, третий аргумент `swarmFormInput` по 4.5; тесты; README. Ломает `apps/ui/cabinet` по сигнатуре — T-5 и T-6 одним этапом. Закрывает: REQ-031-5, AC-031-5. Готово, когда: тесты пакета зелёные.
 - [ ] **T-6.** `apps/ui/cabinet/src/app/swarm-new.page.ts`: поля роя и агента по 4.6; README `cabinet`. Закрывает: REQ-031-5. Готово, когда: `npm run check` зелёный.
 - [ ] **T-7.** Тексты спек: строка `AGENT_MAX_TOKENS` в таблице 4.8 спеки 022 — источник «значение агента, роя или `AGENT_MAX_TOKENS` оркестратора (031, 4.4)», строка в журнале 022; ручная проверка AC-031-7, результат в журнал 031. Закрывает: AC-031-7. Готово, когда: `npm run spec:check` зелёный.
@@ -214,3 +214,8 @@ export function swarmFormInput(
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+| 2026-10-30 | spec/031-t1 / T-1 | Контракты: `MaxTokens`, `maxTokens` в `AgentDraft`, `SwarmCreateRequest`, `SwarmLaunch`, `swarm.created`; тесты AC-031-1, AC-031-6 | — |
+| 2026-10-30 | spec/031-t1 / T-2 | `AGENT_MAX_TOKENS_LIMIT` в `ApiConfig`, `.env.example`, `compose.yaml`, `main.ts` → `limits.maxTokens`; тесты config обновлены фикстурой | api typecheck зелёный только после T-3 (api-core `limits.maxTokens`) |
+| 2026-10-30 | spec/031-t1 / T-3 | `limits.maxTokens`, проверка `max_tokens exceeds AGENT_MAX_TOKENS_LIMIT` в `createSwarm`, перенос в `swarm.created` и `SwarmLaunch`; тесты AC-031-2, AC-031-3 | — |
+| 2026-10-30 | spec/031-t1 / T-4 | `AGENT_MAX_TOKENS` в `agentSpec`: агент → рой → `deps.agent.maxTokens`; тесты AC-031-4; фикстуры `maxTokens: null` | — |
+| 2026-10-30 | spec/031-t1 / замечания ревью | Тест AC-031-6 в `ui-core` (проекция `swarm.created` без `maxTokens`); AC-031-2, AC-031-3, AC-031-4, AC-031-6 добавлены в README пакетов; тест AC-031-4 оставлен из двух запусков: три значения одним `SwarmLaunch` недостижимы (см. ниже) | Отклонение: раздел 8 предполагал фича-ветку `spec/031-max-tokens` для T-1…T-4; фактически T-1…T-4 сделаны одним этапом в ветке `spec/031-t1` с PR в `main`, т.к. этап целиком оставляет `main` зелёным и промежуточная ветка не нужна. AC-031-4 по букве требует один `SwarmLaunch` с тремя агентами, но значения `4096` и `8192` зависят от `maxTokens` роя (одно значение на запуск), поэтому проверка разнесена на два запуска (агенты: 16384 и без значения при роя `4096`; без значения при роя `null`) |

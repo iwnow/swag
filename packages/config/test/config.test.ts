@@ -75,6 +75,7 @@ describe('loadConfig', () => {
       ORCHESTRATOR_URL: 'http://orchestrator:3001',
       MAX_ACTIVE_SWARMS: '3',
       SWARM_MAX_BUDGET_MICRO_USD: '5000000',
+      AGENT_MAX_TOKENS_LIMIT: '65536',
     };
     expect(loadConfig(ApiConfig, { ...apiEnv, API_PORT: '3000' }).API_PORT).toBe(3000);
     expect(() => loadConfig(ApiConfig, { ...apiEnv, API_PORT: 'abc' })).toThrow(/API_PORT/);
@@ -86,6 +87,7 @@ describe('loadConfig', () => {
       ORCHESTRATOR_URL: 'http://orchestrator:3001',
       MAX_ACTIVE_SWARMS: '3',
       API_PORT: '3000',
+      AGENT_MAX_TOKENS_LIMIT: '65536',
     };
     expect(
       loadConfig(ApiConfig, { ...apiEnv, SWARM_MAX_BUDGET_MICRO_USD: '5000000' })

@@ -243,7 +243,7 @@ function world(log: Logger, trace: TraceContext, script: Script = team) {
     ids,
     log,
     trace,
-    limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000 },
+    limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
   });
   hub.subscribe(ALL_EVENTS, (raw) => api.ingestEvent(raw));
   hub.subscribe(ALL_INBOXES, (raw) => api.ingestMessage(raw));

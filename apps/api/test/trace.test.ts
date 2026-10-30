@@ -95,7 +95,7 @@ async function stack() {
     ids,
     log: current.logger,
     trace: current.trace,
-    limits: { maxActiveSwarms: 5, maxBudgetMicroUsd: 5000000 },
+    limits: { maxActiveSwarms: 5, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
   });
   const apiApp = await buildApp(api, {
     loggerInstance: current.logger.pino,

@@ -109,7 +109,10 @@ describe('ui-core', () => {
     expect(api.create).toHaveBeenCalledWith({
       task: 'T',
       budgetMicroUsd: 500000,
-      agents: [{ name: 'A', role: 'r', model: 'chat-small', budgetMicroUsd: null }],
+      maxTokens: null,
+      agents: [
+        { name: 'A', role: 'r', model: 'chat-small', budgetMicroUsd: null, maxTokens: null },
+      ],
     });
   });
 
@@ -126,7 +129,10 @@ describe('ui-core', () => {
     expect(api.create).toHaveBeenLastCalledWith({
       task: 'T',
       budgetMicroUsd: 500000,
-      agents: [{ name: 'A', role: 'r', model: 'chat-small', budgetMicroUsd: null }],
+      maxTokens: null,
+      agents: [
+        { name: 'A', role: 'r', model: 'chat-small', budgetMicroUsd: null, maxTokens: null },
+      ],
     });
 
     await core.createSwarm({
@@ -137,7 +143,10 @@ describe('ui-core', () => {
     expect(api.create).toHaveBeenLastCalledWith({
       task: 'T',
       budgetMicroUsd: 500000,
-      agents: [{ name: 'A', role: 'r', model: 'chat-large', budgetMicroUsd: null }],
+      maxTokens: null,
+      agents: [
+        { name: 'A', role: 'r', model: 'chat-large', budgetMicroUsd: null, maxTokens: null },
+      ],
     });
 
     const invalid = core.validateForm({
@@ -211,5 +220,21 @@ describe('ui-core', () => {
     const traceId = '4bf92f3577b34da6a3ce929d0e0e4736';
     expect(core.traceUrl(traceId)).toBe(`http://g/x?t=${traceId}`);
     expect(core.traceUrl(null)).toBeNull();
+  });
+
+  it('AC-031-6: swarm.created без maxTokens у роя и агентов — проекция роя строится, рой есть в результате', () => {
+    const legacyCreated = ev(1, {
+      type: 'swarm.created',
+      source: 'api',
+      data: {
+        task: 'Старый рой',
+        budgetMicroUsd: 500000,
+        agents: [{ id: 'agent-1', name: 'A', role: 'r1', model: 'chat-small' }],
+      },
+    });
+    const view = projectSwarm([legacyCreated]);
+    expect(view.id).toBe(SWARM);
+    expect(view.task).toBe('Старый рой');
+    expect(view.agents.map((a) => a.id)).toEqual(['agent-1']);
   });
 });

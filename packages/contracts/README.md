@@ -11,12 +11,12 @@
 
 ## Что внутри сейчас
 
-- `swarm.ts` — `AgentId`, `SwarmId`, `AgentDraft` (с `model: PlatformModel`, по умолчанию `chat-small`, и `budgetMicroUsd`, по умолчанию `null`), `SwarmCreateRequest` (с обязательным `budgetMicroUsd`), `AgentSpec`, `ENTRY_AGENT_ID`, `SwarmStatus`, `AgentStatus`, `SwarmLaunch` (с `budgetMicroUsd`), `SwarmSummary`, `LlmCaller`, `LlmSwarmRegistration` и `LlmSwarmClosed` (регистрация роя в gateway и ответ закрытия).
+- `swarm.ts` — `AgentId`, `SwarmId`, `AgentDraft` (с `model: PlatformModel`, по умолчанию `chat-small`, и `budgetMicroUsd` и `maxTokens`, по умолчанию `null`), `SwarmCreateRequest` (с обязательным `budgetMicroUsd` и `maxTokens`, по умолчанию `null`), `AgentSpec`, `ENTRY_AGENT_ID`, `SwarmStatus`, `AgentStatus`, `SwarmLaunch` (с `budgetMicroUsd` и `maxTokens`, `null` допустим), `SwarmSummary`, `LlmCaller`, `LlmSwarmRegistration` и `LlmSwarmClosed` (регистрация роя в gateway и ответ закрытия).
 - `bus.ts` — `BusMessage`, subjects `inboxSubject`, `eventsSubject`, `ALL_INBOXES`, `ALL_EVENTS`.
-- `events.ts` — `TraceId`, `PlatformEventInput` (дискриминированное объединение по `type`, в конверте `traceId: TraceId | null`; вариант `llm.call` с `LlmCallData`, источник `llm-gateway`; `agent.step`, `agent.idle`; `swarm.created` с необязательными бюджетами, у событий до 004 их нет; причины `agent_failed`, `api_restarted`, `budget_exceeded` и `gateway_unavailable` в `swarm.failed`), `PlatformEvent` (с `seq`).
+- `events.ts` — `TraceId`, `PlatformEventInput` (дискриминированное объединение по `type`, в конверте `traceId: TraceId | null`; вариант `llm.call` с `LlmCallData`, источник `llm-gateway`; `agent.step`, `agent.idle`; `swarm.created` с необязательными бюджетами и `maxTokens` роя и агентов, у событий до 004 и 031 их нет; причины `agent_failed`, `api_restarted`, `budget_exceeded` и `gateway_unavailable` в `swarm.failed`), `PlatformEvent` (с `seq`).
 - `log.ts` — `LogLevel`, `ServiceName` (с `llm-gateway`), `LogError`, `LogRecord`.
 - `service-info.ts` — `ServiceInfo` (`service` с `llm-gateway`).
-- `llm.ts` — `ModelId`, `PricePerMTok`, `ModelPrices`, `CatalogModel` (с `openRouterModel`), `ModelCatalog` (`models.json`), `MicroUsd`, `BudgetMicroUsd` (1…1_000_000_000), `LlmUsage`, `GatewayErrorCode` (с кодами 403 и 402 из 004), `ChargeBasis`, `LlmCharge`, `LlmCallStatus`, `LlmCallData` (с `charge`, необязательным), `PlatformModel` (`chat-small`, `chat-large`), заголовки `SWARM_ID_HEADER`, `AGENT_ID_HEADER`. `LlmSwarmRegistration` и `LlmSwarmClosed` намеренно лежат в `swarm.ts`, а не здесь: `swarm.ts` импортирует `llm.ts`, обратный импорт дал бы цикл.
+- `llm.ts` — `ModelId`, `PricePerMTok`, `ModelPrices`, `CatalogModel` (с `openRouterModel`), `ModelCatalog` (`models.json`), `MicroUsd`, `BudgetMicroUsd` (1…1_000_000_000), `MaxTokens` (целое 1…1_000_000, лимит ответа агента, 031), `LlmUsage`, `GatewayErrorCode` (с кодами 403 и 402 из 004), `ChargeBasis`, `LlmCharge`, `LlmCallStatus`, `LlmCallData` (с `charge`, необязательным), `PlatformModel` (`chat-small`, `chat-large`), заголовки `SWARM_ID_HEADER`, `AGENT_ID_HEADER`. `LlmSwarmRegistration` и `LlmSwarmClosed` намеренно лежат в `swarm.ts`, а не здесь: `swarm.ts` импортирует `llm.ts`, обратный импорт дал бы цикл.
 
 ## Ограничения
 
@@ -50,6 +50,7 @@
 - 001 — разделы 4.1–4.3.
 - 002 — раздел 4.1 (`llm.ts`, `LlmCaller` в `swarm.ts`).
 - 022 — раздел 4.1 (T-1).
+- 031 — раздел 4.1 (T-1): `MaxTokens`, `maxTokens` в `AgentDraft`, `SwarmCreateRequest`, `SwarmLaunch`, `swarm.created`.
 - 004 — раздел 4.1 (T-1): бюджеты, `charge`, коды ошибок, регистрация роя; `LlmSwarmRegistration` в `swarm.ts`.
 - 016 — разделы 4.1, 4.2.
 - 003 — раздел 4.1: причина `api_restarted` в `swarm.failed` (T-1).

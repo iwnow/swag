@@ -5,7 +5,7 @@
 ## Задачи
 
 - REST роёв (спека 001, 4.5.1): `POST /swarms`, `GET /swarms`, `GET /swarms/:id`, `GET /swarms/:id/events?after=`, `POST /swarms/:id/stop`, `GET /health`.
-- `POST /swarms` требует `budgetMicroUsd` роя и принимает `budgetMicroUsd` агентов (спека 004, 4.1, 4.7). Предел — `SWARM_MAX_BUDGET_MICRO_USD` из `ApiConfig`, проверку делает ядро.
+- `POST /swarms` требует `budgetMicroUsd` роя и принимает `budgetMicroUsd` агентов (спека 004, 4.1, 4.7). Предел — `SWARM_MAX_BUDGET_MICRO_USD` из `ApiConfig`, проверку делает ядро. `maxTokens` роя и агентов (спека 031, 4.1, 4.3) проверяется против `AGENT_MAX_TOKENS_LIMIT` из `ApiConfig`.
 - WebSocket `GET /swarms/:id/stream?after=` (4.5.2): события с `seq > after`, неизвестный рой — закрытие с кодом `4404`.
 - Подписки NATS `swarm.*.events` и `swarm.*.agent.*.inbox` → `ingestEvent` / `ingestMessage`. Событие `llm.call` от `llm-gateway` идёт по той же подписке (спека 002).
 
@@ -13,7 +13,7 @@
 
 - `src/app.ts` — маршруты и перевод результатов ядра в HTTP-ответы (`STATUS` по кодам ошибок).
 - `src/start.ts` — `startApiCore`: миграции → пул Postgres → `SwarmStore` → ядро → `closeInterrupted` (спека 003, 4.5). Одна функция для `main.ts` и для теста AC-003-8; при ошибке миграций пишет `error` `migrations failed` и пробрасывает ошибку; если ошибка после создания пула (ядро, `closeInterrupted`), пул закрывается (`pool.end()`) до проброса.
-- `src/main.ts` — телеметрия (`adapter-telemetry`), конфигурация (`ApiConfig`; лимиты ядра — `MAX_ACTIVE_SWARMS` и `SWARM_MAX_BUDGET_MICRO_USD`), `startApiCore`, NATS, запуск. Остановка по сигналу: закрыть Fastify → NATS → `pool.end()` → сброс телеметрии → `exit(0)`. Слушает `0.0.0.0` внутри контейнера; наружу порт публикуется только на `127.0.0.1`.
+- `src/main.ts` — телеметрия (`adapter-telemetry`), конфигурация (`ApiConfig`; лимиты ядра — `MAX_ACTIVE_SWARMS`, `SWARM_MAX_BUDGET_MICRO_USD` и `AGENT_MAX_TOKENS_LIMIT`), `startApiCore`, NATS, запуск. Остановка по сигналу: закрыть Fastify → NATS → `pool.end()` → сброс телеметрии → `exit(0)`. Слушает `0.0.0.0` внутри контейнера; наружу порт публикуется только на `127.0.0.1`.
 - Тесты: `test/history.test.ts` (AC-003-8 — перезапуск на той же схеме; нужен `POSTGRES_TEST_URL`, без него пропускается), `test/health.test.ts` (AC-000-4), `test/api.test.ts` (AC-001-3, 4, 9, 10), `test/e2e.test.ts` (AC-022-21 и AC-001-20 — сквозной без Docker по сообщениям роя; AC-016-12, AC-016-13 — он же с настоящим `TraceContext`: один `traceId` на рой, нет утечки текста в логи и спаны; AC-030-6 — диалог двух агентов: ответ обработан отдельным ходом агента-входа, `unreadMessageIds` пуст), `test/trace.test.ts` (AC-016-9 — HTTP-цепочка `api` → `orchestrator` с настоящими серверами).
 
 ## Ограничения
