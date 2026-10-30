@@ -25,6 +25,7 @@ export function parseRetryAfter(value: string | null, now: Date): number | null 
   if (value === null) return null;
   const text = value.trim();
   if (/^\d+$/.test(text)) return Number(text) * 1000;
+  if (!/[A-Za-z]/.test(text)) return null;
   const date = Date.parse(text);
   if (Number.isNaN(date)) return null;
   return Math.max(0, date - now.getTime());

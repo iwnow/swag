@@ -34,4 +34,10 @@ describe('parseRetryAfter', () => {
     expect(parseRetryAfter('abc', now)).toBeNull();
     expect(parseRetryAfter(null, now)).toBeNull();
   });
+
+  it('AC-004-31: отрицательные числа, дробные и пустая строка — null', () => {
+    expect(parseRetryAfter('-5', now)).toBeNull();
+    expect(parseRetryAfter('1.5', now)).toBeNull();
+    expect(parseRetryAfter('', now)).toBeNull();
+  });
 });

@@ -93,4 +93,26 @@ describe('retry', () => {
     ).rejects.toThrow('too many');
     expect(pauses).toEqual([300]);
   });
+
+  it('AC-004-31: дефолтный sleep прерывается signal — брошена его причина быстро', async () => {
+    const controller = new AbortController();
+    const reason = new Error('stop');
+    setTimeout(() => controller.abort(reason), 10);
+    const started = Date.now();
+    await expect(
+      retry(
+        async () => {
+          throw new TypeError('fetch failed');
+        },
+        {
+          baseMs: 1000,
+          maxMs: 1000,
+          random: () => 1,
+          retryable: httpRetryable,
+          signal: controller.signal,
+        },
+      ),
+    ).rejects.toBe(reason);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
 });
