@@ -73,26 +73,12 @@ export function createPostgresSwarmStore(pool: Pool): SwarmStore {
   };
 }
 
-// Одна транзакция. Возвращает false, если строку роя за это время создал параллельный swarm.created:
-// транзакция откатана, запись нужно повторить. Сбой rollback не скрывает исходную ошибку, клиент уходит из пула.
+// Возвращает false, если строку роя за это время создал параллельный swarm.created: транзакция откатана, запись нужно повторить.
 async function writeOnce(pool: Pool, event: PlatformEvent): Promise<boolean> {
-  const client = await pool.connect();
-  let broken = false;
-  try {
-    await client.query('begin');
+  return transact(pool, async (client) => {
     const written = await writeEvent(client, event);
-    await client.query(written ? 'commit' : 'rollback');
-    return written;
-  } catch (error) {
-    try {
-      await client.query('rollback');
-    } catch {
-      broken = true;
-    }
-    throw error;
-  } finally {
-    client.release(broken);
-  }
+    return { commit: written, value: written };
+  });
 }
 
 // Блокировка проекции роя, проверка применимости, запись проекции и события.

@@ -93,6 +93,16 @@ describe.skipIf(!url)('adapter-postgres деньги', () => {
     );
     return Number(result.rows[0]?.count);
   };
+  // releaseHolds снимает все резервы таблицы: тесты с ним работают в собственной схеме, резервы других тестов не мешают.
+  const isolatedPool = async (): Promise<pg.Pool> => {
+    const isolated = `test_${randomUUID().replaceAll('-', '')}`;
+    await admin.query(`create schema ${isolated}`);
+    schemas.push(isolated);
+    await runMigrations(url ?? '', { schema: isolated });
+    const pool = new pg.Pool({ connectionString: url, options: `-c search_path=${isolated}` });
+    pools.push(pool);
+    return pool;
+  };
 
   it('AC-004-13: 20 параллельных reserve при бюджете роя на 5 резервов — ровно 5 ok, held 5000, 5 строк holds', async () => {
     const pool = newPool();
@@ -140,6 +150,35 @@ describe.skipIf(!url)('adapter-postgres деньги', () => {
     expect(Number(agent.rows[0]?.held)).toBe(5000);
     expect(await heldOf(pool, swarmId)).toBe(5000);
     expect(await countRows(pool, 'budget_holds', swarmId)).toBe(5);
+  });
+
+  it('AC-004-13: закрытый рой не резервирует — swarm_budget_exceeded, held и holds не меняются', async () => {
+    const pool = newPool();
+    const store = createPostgresBudgetStore(pool);
+    const swarmId = randomUUID();
+    await store.register(registration(swarmId, 10_000), NOW);
+    await store.close(swarmId, NOW);
+
+    expect(await store.reserve(randomUUID(), { swarmId, agentId: 'agent-1' }, 1000, NOW)).toEqual({
+      ok: false,
+      code: 'swarm_budget_exceeded',
+    });
+    expect(await heldOf(pool, swarmId)).toBe(0);
+    expect(await countRows(pool, 'budget_holds', swarmId)).toBe(0);
+  });
+
+  it('AC-004-13: резерв агента, которого нет в swarm_agents, — agent_budget_exceeded, резерв роя откатан', async () => {
+    const pool = newPool();
+    const store = createPostgresBudgetStore(pool);
+    const swarmId = randomUUID();
+    await store.register(registration(swarmId, 10_000), NOW);
+
+    expect(await store.reserve(randomUUID(), { swarmId, agentId: 'agent-9' }, 1000, NOW)).toEqual({
+      ok: false,
+      code: 'agent_budget_exceeded',
+    });
+    expect(await heldOf(pool, swarmId)).toBe(0);
+    expect(await countRows(pool, 'budget_holds', swarmId)).toBe(0);
   });
 
   it('AC-004-14: settle резерва 1000 списанием 700 — резерв удалён, held −1000, spent +700, одна запись ledger; повтор ничего не меняет', async () => {
@@ -196,6 +235,31 @@ describe.skipIf(!url)('adapter-postgres деньги', () => {
     expect(again.rows[0]?.spent).toBe('700');
   });
 
+  it('AC-004-14: параллельный повтор settle по одному callId списывает один раз — spent +700, одна запись ledger, held 0', async () => {
+    const pool = newPool();
+    const store = createPostgresBudgetStore(pool);
+    const swarmId = randomUUID();
+    const callId = randomUUID();
+    await store.register(
+      registration(swarmId, 10_000, [{ agentId: 'agent-1', budgetMicroUsd: 5000 }]),
+      NOW,
+    );
+    await store.reserve(callId, { swarmId, agentId: 'agent-1' }, 1000, NOW);
+
+    const settled = entry(callId, swarmId, 'agent-1', 700);
+    await Promise.all([store.settle(settled), store.settle(settled)]);
+
+    expect(await heldOf(pool, swarmId)).toBe(0);
+    expect(await countRows(pool, 'ledger_entries', swarmId)).toBe(1);
+    const spent = await pool.query<{ swarm: string; agent: string }>(
+      `select b.spent_micro_usd as swarm, a.spent_micro_usd as agent
+         from swarm_budgets b join swarm_agents a on a.swarm_id = b.swarm_id
+        where b.swarm_id = $1`,
+      [swarmId],
+    );
+    expect(spent.rows[0]).toEqual({ swarm: '700', agent: '700' });
+  });
+
   it('AC-004-14: settle без резерва (освобождён при старте) — трата и запись ledger пишутся, held не меняется', async () => {
     const pool = newPool();
     const store = createPostgresBudgetStore(pool);
@@ -213,13 +277,7 @@ describe.skipIf(!url)('adapter-postgres деньги', () => {
   });
 
   it('AC-004-18: releaseHolds удаляет два резерва, уменьшает held роя и агентов на их суммы, записей ledger нет', async () => {
-    // releaseHolds снимает все резервы таблицы, поэтому тест в своей схеме: резервы других тестов не мешают.
-    const isolated = `test_${randomUUID().replaceAll('-', '')}`;
-    await admin.query(`create schema ${isolated}`);
-    schemas.push(isolated);
-    await runMigrations(url ?? '', { schema: isolated });
-    const pool = new pg.Pool({ connectionString: url, options: `-c search_path=${isolated}` });
-    pools.push(pool);
+    const pool = await isolatedPool();
     const store = createPostgresBudgetStore(pool);
     const swarmId = randomUUID();
     await store.register(
@@ -245,6 +303,26 @@ describe.skipIf(!url)('adapter-postgres деньги', () => {
     );
     expect(agents.rows.map((row) => Number(row.held))).toEqual([0, 0]);
     expect(await countRows(pool, 'ledger_entries', swarmId)).toBe(0);
+  });
+
+  it('AC-004-14: гонка settle и releaseHolds по одному резерву — held не уходит в минус, итог 0, одна запись ledger', async () => {
+    const pool = await isolatedPool();
+    const store = createPostgresBudgetStore(pool);
+    const swarmId = randomUUID();
+    const callId = randomUUID();
+    await store.register(registration(swarmId, 10_000), NOW);
+    await store.reserve(callId, { swarmId, agentId: 'agent-1' }, 1000, NOW);
+
+    await Promise.all([store.settle(entry(callId, swarmId, 'agent-1', 700)), store.releaseHolds()]);
+
+    expect(await heldOf(pool, swarmId)).toBe(0);
+    expect(await countRows(pool, 'budget_holds', swarmId)).toBe(0);
+    const agent = await pool.query<{ held: string; spent: string }>(
+      'select held_micro_usd as held, spent_micro_usd as spent from swarm_agents where swarm_id = $1',
+      [swarmId],
+    );
+    expect(agent.rows[0]).toEqual({ held: '0', spent: '700' });
+    expect(await countRows(pool, 'ledger_entries', swarmId)).toBe(1);
   });
 
   it('AC-004-32: ledgerReport по рою и по since — суммы и счётчики по basis, провайдерская стоимость только по вызовам с фактом', async () => {
