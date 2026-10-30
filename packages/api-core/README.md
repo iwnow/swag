@@ -19,7 +19,7 @@
 - Лимит ответа (031, 4.3): `deps.limits.maxTokens` (из `AGENT_MAX_TOKENS_LIMIT`). `maxTokens` роя или агента больше предела — `validation_error` `max_tokens exceeds AGENT_MAX_TOKENS_LIMIT`; проверка идёт после бюджетов и до лимита активных роёв. `maxTokens` роя пишется в `swarm.created` и в `SwarmLaunch`, у агентов — свой из черновика.
 - `closeInterrupted()` (REQ-003-6): вызывается оболочкой при старте, до подписок NATS (T-7). Для каждого роя в `starting` или `running` вызывает `orchestrator.stop` и записывает `swarm.failed` с `reason: 'api_restarted'` (`source: 'api'`, `agentId` и `traceId` — `null`). Ошибка `stop` пишется `warn` `interrupted stop failed` и не мешает закрытию. Возвращает число закрытых роёв (записи, которые не прошли, не считаются); в конце — `info` `interrupted swarms closed` с `count`. Закрытые рои не держат лимит `MAX_ACTIVE_SWARMS`.
 - Логи по таблице 4.8 спеки 016: `info swarm created`, `error orchestrator unavailable`, `warn event dropped` / `message dropped` с `reason` (`invalid_schema`, `created_from_bus`, `unknown_swarm`, `not_applicable`); `warn interrupted stop failed`, `info interrupted swarms closed`.
-- Тесты: `test/api-core.test.ts` — AC-000-16, AC-001-3…8, AC-001-10, AC-002-26, AC-003-4…6, AC-004-2, AC-016-4, AC-016-7.
+- Тесты: `test/api-core.test.ts` — AC-000-16, AC-001-3…8, AC-001-10, AC-002-26, AC-003-4…6, AC-004-2, AC-016-4, AC-016-7, AC-031-2, AC-031-3.
 
 ## Ограничения
 

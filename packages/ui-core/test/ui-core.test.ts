@@ -221,4 +221,20 @@ describe('ui-core', () => {
     expect(core.traceUrl(traceId)).toBe(`http://g/x?t=${traceId}`);
     expect(core.traceUrl(null)).toBeNull();
   });
+
+  it('AC-031-6: swarm.created без maxTokens у роя и агентов — проекция роя строится, рой есть в результате', () => {
+    const legacyCreated = ev(1, {
+      type: 'swarm.created',
+      source: 'api',
+      data: {
+        task: 'Старый рой',
+        budgetMicroUsd: 500000,
+        agents: [{ id: 'agent-1', name: 'A', role: 'r1', model: 'chat-small' }],
+      },
+    });
+    const view = projectSwarm([legacyCreated]);
+    expect(view.id).toBe(SWARM);
+    expect(view.task).toBe('Старый рой');
+    expect(view.agents.map((a) => a.id)).toEqual(['agent-1']);
+  });
 });
