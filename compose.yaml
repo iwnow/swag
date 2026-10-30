@@ -236,7 +236,7 @@ services:
       otel-collector:
         condition: service_started
     healthcheck:
-      test: ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:$LLM_GATEWAY_PORT/health" > /dev/null']
+      test: ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:$$LLM_GATEWAY_PORT/health" > /dev/null']
       interval: 2s
       timeout: 3s
       retries: 30

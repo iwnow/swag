@@ -105,6 +105,7 @@ describe.skipIf(!url)('llm-gateway с Postgres (спека 004, 4.4, 4.5)', () =
       expect(ledger.rows[0]?.n).toBe(0);
 
       const released = entries.filter((entry) => entry.msg === 'hold_released');
+      expect(released).toHaveLength(2);
       expect(released.every((entry) => entry.level === 'warn')).toBe(true);
       expect(released.map((entry) => entry.ctx?.['callId']).sort()).toEqual([first, second].sort());
     } finally {
@@ -112,7 +113,7 @@ describe.skipIf(!url)('llm-gateway с Postgres (спека 004, 4.4, 4.5)', () =
     }
   });
 
-  it('AC-004-19: 12 вызовов роя из трёх агентов и закрытие — ledger, charge событий и ответ закрытия сходятся', async () => {
+  it('AC-004-19 (без projectSwarm): 12 вызовов роя из трёх агентов и закрытие — ledger, charge событий и ответ закрытия сходятся', async () => {
     const fake: FakeProvider = await startFakeProvider({ port: 0 });
     const pool = newPool();
     const swarmId = randomUUID();
