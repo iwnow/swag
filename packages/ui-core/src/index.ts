@@ -85,7 +85,9 @@ export function formatUsd(microUsd: number): string {
 
 // Спека 004, 4.8: вход поля «Бюджет, $» → Math.round(usd × 10⁶). Некорректный ввод → NaN, отсекает SwarmCreateRequest.
 export function usdToMicro(usd: string): number {
-  return Math.round(Number(usd) * 1e6);
+  const text = usd.trim();
+  if (!/^\d+(\.\d+)?$/.test(text)) return NaN;
+  return Math.round(Number(text) * 1e6);
 }
 
 // Спека 004, 4.8: charge событий llm.call с ts в (nowMs − 60000, nowMs]; без charge — costMicroUsd ?? 0 (как в 4.7).
@@ -94,7 +96,7 @@ export function spentLastMinute(events: readonly PlatformEvent[], nowMs: number)
   for (const event of events) {
     if (event.type !== 'llm.call') continue;
     const ts = Date.parse(event.ts);
-    if (ts <= nowMs - 60000 || ts > nowMs) continue;
+    if (!(ts > nowMs - 60000 && ts <= nowMs)) continue;
     spent += event.data.charge?.microUsd ?? event.data.costMicroUsd ?? 0;
   }
   return spent;
