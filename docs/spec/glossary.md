@@ -195,6 +195,7 @@
 | Конфигурация агента | `AgentConfig` | Env агента (022, 4.8) в `@swag/config`; без `DATABASE_URL`. |
 | Модель агента | `AGENT_MODEL` | Имя модели из плана роя (`PlatformModel`), env агента (022, 4.8). |
 | Лимиты агента | `AGENT_MAX_STEPS`, `AGENT_MAX_TOKENS`, `AGENT_LLM_TIMEOUT_MS`, `AGENT_LLM_MAX_RETRIES` | Лимиты цикла и вызова модели агента; первые два задаёт оркестратор, два последних — умолчания `AgentConfig` (022, 4.8). |
+| Лимит ответа агента | `maxTokens`, `MaxTokens`, `AGENT_MAX_TOKENS_LIMIT`, `maxTokensInput` | `max_tokens` вызовов агента, заданный на рой или агента при создании роя; `null` — значение уровня выше, в конце `AGENT_MAX_TOKENS` оркестратора; предел — `AGENT_MAX_TOKENS_LIMIT` в `api` (031, 4.1–4.5). |
 | Шлюз моделей для агента | `LLM_GATEWAY_URL`, `DOCKER_AGENT_LLM_GATEWAY_URL` | Адрес gateway изнутри песочницы (022) и для оркестратора (004, 4.11); агенты ходят с общим `LLM_GATEWAY_TOKEN` (004, Q-2). |
 | Конфигурация UI | `UiConfig` | Порт `UI_PORT` для проверки инфраструктуры в `@swag/config`. |
 | Команда пинга шлюза | `llm:ping`, `scripts/llm-ping.ts` | Ручная проверка с хоста: один вызов `POST /v1/chat/completions` через gateway, печатает ответ, `usage`, задержку (спека 002, 4.13, REQ-002-17). |
