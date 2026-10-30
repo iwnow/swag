@@ -43,6 +43,7 @@ function setup(
     createError?: Error;
     removeError?: Error;
     registerError?: Error;
+    registerHold?: Promise<void>;
     closeError?: Error;
   } = {},
 ): Fake {
@@ -96,6 +97,7 @@ function setup(
   const llmSwarms: LlmSwarms = {
     register: async (reg) => {
       log.push('gateway:register');
+      if (options.registerHold) await options.registerHold;
       if (options.registerError) throw options.registerError;
       registrations.push(reg);
     },
@@ -570,6 +572,27 @@ describe('orchestrator-core: регистрация роя в gateway (004, 4.6)
       expect(fake.log.lastIndexOf('sandbox:remove'), ending.name).toBeLessThan(closeAt);
       expect(closeAt, ending.name).toBeLessThan(fake.log.indexOf(`event:${ending.final}`));
     }
+  });
+
+  it('stop во время регистрации: без песочниц и таймеров, рой закрыт', async () => {
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fake = setup({ registerHold: hold, swarmMs: 300000 });
+    const launching = fake.core.launch(launchBody(2));
+    await waitMicrotasks();
+    expect((await fake.core.stop(SWARM)).ok).toBe(true);
+    release();
+    expect((await launching).ok).toBe(true);
+    expect(fake.log).not.toContain('sandbox:create');
+    expect(fake.sandboxes.size).toBe(0);
+    fake.runTimers(300000);
+    await waitMicrotasks();
+    expect(fake.closed).toEqual([SWARM, SWARM]);
+    expect(fake.events.filter((e) => e.type === 'swarm.stopped')).toHaveLength(1);
+    expect(fake.events.filter((e) => e.type === 'swarm.failed')).toHaveLength(0);
+    expect(fake.events.at(-1)).toMatchObject({ type: 'swarm.stopped' });
   });
 
   it('AC-004-23: close бросает — лог warn gateway_close_failed, итоговое событие опубликовано', async () => {

@@ -160,6 +160,15 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
     await bus.publishEvent(event);
   }
 
+  // Закрытие роя в gateway (4.6): сбой логируется и не мешает завершению роя.
+  async function closeInGateway(swarmId: string): Promise<void> {
+    try {
+      await llmSwarms.close(swarmId);
+    } catch (error) {
+      log.warn('gateway_close_failed', { swarmId, err: error });
+    }
+  }
+
   // Уборка роя и итоговые события (4.6.2): песочницы → agent.stopped → событие роя.
   async function finish(run: Run, outcome: Outcome): Promise<void> {
     if (run.phase === 'finished') return;
@@ -177,11 +186,7 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
     for (const agent of run.launch.agents) {
       await publish({ ...envelope(swarmId, agent.id), type: 'agent.stopped', data: {} });
     }
-    try {
-      await llmSwarms.close(swarmId);
-    } catch (error) {
-      log.warn('gateway_close_failed', { swarmId, err: error });
-    }
+    await closeInGateway(swarmId);
     if (outcome.type === 'swarm.completed') {
       await publish({ ...envelope(swarmId, null), type: 'swarm.completed', data: outcome.data });
     } else if (outcome.type === 'swarm.stopped') {
@@ -288,6 +293,11 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
             detail: error instanceof Error ? error.message : String(error),
           },
         });
+        return ok();
+      }
+      if (run.phase === 'finished') {
+        // stop пришёл во время регистрации: finish уже закрыл рой, а регистрация могла пройти после закрытия
+        await closeInGateway(launch.swarmId);
         return ok();
       }
       run.timers.push(

@@ -46,6 +46,7 @@
 - Падение любого агента в `running` — `swarm.failed` с `agent_failed` (022, Q-3); `detail` — `"<agentId>: <reason>"` буквально из 4.9.
 - Отказ по бюджету (`model_error:*_budget_exceeded` из gateway) — `swarm.failed` `budget_exceeded` (004, 4.6, REQ-004-16); остальные `model_error:<код>` остаются `agent_failed`.
 - Регистрация до песочниц: `register` вызывается после `swarm_exists` и до таймеров роя; при сбое таймеров нет, `finish` сразу отдаёт `swarm.failed` `gateway_unavailable`. `finish` вызывает `close` и при этом сбое регистрации (D-98).
+- `stop` или таймаут во время `register`: `finish` уже закрыл рой, поэтому после успешной регистрации `launch` закрывает его ещё раз и выходит без таймеров и песочниц (ответ gateway мог прийти после закрытия).
 - Env песочницы строится из `AgentSpec`: `AGENT_MODEL` — модель из плана, `AGENT_PEERS` — все агенты роя кроме самого агента. Ключи провайдеров, `LITELLM_MASTER_KEY` и эстафета (`AGENT_NEXT`, `AGENT_STEP_DELAY_MS`) в env не попадают (022, 4.8).
 - `TRACEPARENT` не в env ядра: 016 (AC-016-10) оставляет его адаптеру Docker, а порт `TraceContext` не даёт текущий traceparent. Противоречие 4.8 и 016 вынесено в D-83 `questions.md`.
 - `handleEvent` принимает `agent.result` только в `running`, `agent.failed` — тоже только в `running`.
