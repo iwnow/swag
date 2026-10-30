@@ -2,6 +2,7 @@ import {
   SwarmCreateRequest,
   type LlmCallData,
   type PlatformEvent,
+  type PlatformModel,
   type SwarmStatus,
   type SwarmSummary,
 } from '@swag/contracts';
@@ -109,6 +110,40 @@ export function formatSwarmMoney(view: SwarmView, lastMinuteMicroUsd: number): s
   if (view.budgetMicroUsd === undefined) return `${spent} · бюджет — · ${minute}`;
   const left = Math.floor(Math.max(0, view.budgetMicroUsd - view.spentMicroUsd) / 100) * 100;
   return `${spent} из ${formatUsd(view.budgetMicroUsd)} · остаток ${formatUsd(left)} · ${minute}`;
+}
+
+// Спека 004, 4.8: поле формы роя — микро-USD агента; пустой бюджет агента — null (бюджета нет).
+export interface AgentInput {
+  name: string;
+  role: string;
+  model: PlatformModel;
+  budget: string; // «Бюджет агента, $»: пустое — бюджета нет
+}
+
+export function agentBudgetMicro(budget: string): number | null {
+  return budget.trim() === '' ? null : usdToMicro(budget);
+}
+
+// Спека 004, 4.8: вход формы (доллары строками) → поля SwarmCreateRequest.
+export function swarmFormInput(task: string, budget: string, agents: AgentInput[]): unknown {
+  return {
+    task,
+    budgetMicroUsd: usdToMicro(budget),
+    agents: agents.map(({ budget: agentBudget, ...agent }) => ({
+      ...agent,
+      budgetMicroUsd: agentBudgetMicro(agentBudget),
+    })),
+  };
+}
+
+// Спека 004, 4.8: тексты причин swarm.failed; остальные причины выводятся как пришли.
+const FAILURE_REASON_TEXT: Record<string, string> = {
+  budget_exceeded: 'бюджет исчерпан',
+  gateway_unavailable: 'шлюз моделей недоступен',
+};
+
+export function failureReasonText(reason: string): string {
+  return FAILURE_REASON_TEXT[reason] ?? reason;
 }
 
 function formatMicroUsd6(microUsd: number): string {

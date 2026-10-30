@@ -10,6 +10,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { PlatformEvent } from '@swag/contracts';
 import type { SwarmView } from '@swag/api-integration';
 import {
+  failureReasonText,
   formatAgentStep,
   formatLlmCall,
   formatSwarmMoney,
@@ -17,7 +18,6 @@ import {
   spentLastMinute,
   unreadMessageIds,
 } from '@swag/ui-core';
-import { failureReasonText } from './money.ts';
 import { SwarmGraphComponent } from './swarm-graph.ts';
 import { UI, errorText } from './ui.ts';
 
@@ -58,8 +58,8 @@ const MONEY_TICK_MS = 5000;
           @for (agent of swarm.agents; track agent.id) {
             <li>
               {{ agent.name }} ({{ agent.model }}): потрачено {{ formatUsd(agent.spentMicroUsd) }}
-              @if (agent.budgetMicroUsd; as budget) {
-                из {{ formatUsd(budget) }}
+              @if (agent.budgetMicroUsd != null) {
+                из {{ formatUsd(agent.budgetMicroUsd) }}
               }
             </li>
           }

@@ -13,6 +13,9 @@
 - `formatLlmCall(data)` — строка события `llm.call` для ленты роя: модель, токены с кэшем, стоимость в долларах (6 знаков), статус `прерван` или `ошибка <код>`; при `usage: null` — `без usage`, при оценке из `charge` (`basis: estimate`) — `≈$…` (спека 002, 4.11; изменено 004, 4.8). Сумма — `charge.microUsd`, без `charge` — `costMicroUsd`. Чистая функция вне `createUiCore`: фронтенд вызывает её напрямую.
 - `formatUsd(microUsd)` — сумма в долларах, 4 знака, округление вверх (`$0.0124`); целочисленная арифметика (спека 004, 4.8).
 - `usdToMicro(usd)` — строка поля «Бюджет, $» → micro-USD (`Math.round(usd × 10⁶)`, `'0.50'` → `500000`); некорректный ввод даёт `NaN` (спека 004, 4.8).
+- `agentBudgetMicro(budget)` — поле «Бюджет агента, $»: пустая строка → `null` (бюджета нет), иначе `usdToMicro`.
+- `swarmFormInput(task, budget, agents)` — вход формы роя (доллары строками) → поля `SwarmCreateRequest`: `budgetMicroUsd`, у агентов `budgetMicroUsd`. Тип агента — `AgentInput`. Проверку делает `validateForm`/`SwarmCreateRequest`, функция только переводит.
+- `failureReasonText(reason)` — текст причины `swarm.failed`: `budget_exceeded` → «бюджет исчерпан», `gateway_unavailable` → «шлюз моделей недоступен»; прочие причины — как пришли (спека 004, 4.8).
 - `spentLastMinute(events, nowMs)` — сумма `llm.call` с `ts` в `(nowMs − 60000, nowMs]`.
 - `formatSwarmMoney(view, lastMinuteMicroUsd)` — строка панели роя: потрачено, бюджет, остаток, расход за минуту; без бюджета — `бюджет —` (спека 004, 4.8).
 - `formatAgentStep(data)` — строка `agent.step` в ленте роя: `шаг N`, текст ответа через `: ` (если не `null`), имена инструментов через `→` (спека 022, 4.10). Тип `data` — `AgentStepData`, выведен из `@swag/contracts`.
@@ -21,10 +24,11 @@
 
 ## Что внутри сейчас
 
-- `src/index.ts` — `createUiCore`, порты `SwarmsApi`, `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функции `formatLlmCall`, `formatAgentStep`, `unreadMessageIds`, `formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney`.
+- `src/index.ts` — `createUiCore`, порты `SwarmsApi`, `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функции `formatLlmCall`, `formatAgentStep`, `unreadMessageIds`, `formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney`, `agentBudgetMicro`, `swarmFormInput`, `failureReasonText`.
 - `test/ui-core.test.ts` — AC-001-23, AC-016-14, AC-022-23.
 - `test/format-llm-call.test.ts` — AC-002-24, AC-004-27 (строки `formatLlmCall` из 4.8).
 - `test/money-format.test.ts` — AC-004-27 (`formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney`, строки таблиц 4.8, граница окна 60 с).
+- `test/money-input.test.ts` — перевод полей формы (`agentBudgetMicro`, `swarmFormInput`), проверка результата через `SwarmCreateRequest`, тексты причин `failureReasonText` (спека 004, 4.8; T-15).
 - `test/format-agent-step.test.ts` — AC-022-23.
 - `test/unread-message-ids.test.ts` — AC-030-7.
 
@@ -55,4 +59,4 @@
 - 002 — 4.11, REQ-002-15, AC-002-24.
 - 022 — 4.1 (`PlatformModel`, `AgentDraft.model`), 4.10, REQ-022-15, AC-022-23.
 - 030 — 4.4, REQ-030-6, AC-030-7.
-- 004 — 4.8, AC-004-27 (`formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney`, `formatLlmCall` с `charge`).
+- 004 — 4.8, AC-004-27 (`formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney`, `formatLlmCall` с `charge`); T-15 (`agentBudgetMicro`, `swarmFormInput`, `failureReasonText`, тесты `money-input`).

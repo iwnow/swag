@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SwarmCreateRequest } from '@swag/contracts';
-import { agentBudgetMicro, failureReasonText, swarmFormInput } from '../src/app/money.ts';
+import { agentBudgetMicro, failureReasonText, swarmFormInput } from '../src/index.ts';
 
 // Спека 004, 4.8: перевод полей формы в micro-USD и тексты причин.
 

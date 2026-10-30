@@ -175,6 +175,9 @@
 | Повтор с задержкой | `retry`, `RetryOptions`, `HttpError`, `httpRetryable`, `parseRetryAfter` | Повтор с экспоненциальной задержкой, полным разбросом и `Retry-After` (004, 4.10). |
 | Отчёт сверки | `ledgerReport`, `LedgerReport`, `money:report` | Суммы ledger по рою или периоду: списано по тарифу, факт провайдера, разница (004, 4.5, 4.13). |
 | Деньги в UI | `formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney` | Функции `ui-core`: сумма, перевод из долларов, расход за минуту, строка панели роя (004, 4.8). |
+| Ввод денег формы | `AgentInput`, `agentBudgetMicro`, `swarmFormInput` | `ui-core`: поля формы роя в доллары → micro-USD; пустой бюджет агента — `null` (004, 4.8). |
+| Тексты причин роя | `failureReasonText` | `ui-core`: текст причины `swarm.failed` — `budget_exceeded`, `gateway_unavailable` из 4.8, прочие как пришли (004, 4.8). |
+| Таймер строки денег | `MONEY_TICK_MS` | Константа cabinet: строка денег и «за минуту» обновляются раз в 5 с (004, 4.8). |
 | Пределы и цены в env | `SWARM_MAX_BUDGET_MICRO_USD` (поле `ApiCoreDeps.limits.maxBudgetMicroUsd`), `LLM_PRICES_REFRESH_MS`, `OPENROUTER_MODELS_URL` | Предел бюджета роя в `api`; период и источник цен в gateway (004, 4.11). |
 | Деньги в micro-USD | `MicroUsd` | Схема целой суммы ≥ 0 в micro-USD (004, 4.1). |
 | Reaper | `Reaper` | Фоновая уборка ресурсов роя по TTL. |

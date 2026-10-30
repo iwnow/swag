@@ -1,9 +1,8 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { PlatformModel } from '@swag/contracts';
-import type { FormIssue } from '@swag/ui-core';
+import { swarmFormInput, type AgentInput, type FormIssue } from '@swag/ui-core';
 import { UI, errorText } from './ui.ts';
-import { swarmFormInput, type AgentInput } from './money.ts';
 
 const DEFAULT_MODEL: PlatformModel = 'chat-small';
 // Спека 004, Q-5: бюджет роя по умолчанию — $0.50.
