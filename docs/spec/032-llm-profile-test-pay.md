@@ -1,7 +1,7 @@
 ---
 id: "032"
 title: Профиль моделей test-pay
-status: draft
+status: in-progress
 roadmap_stage: 4
 depends_on: ["002", "004"]
 superseded_by: null
