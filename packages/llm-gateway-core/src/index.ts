@@ -4,6 +4,7 @@ import type {
   ChargeBasis,
   GatewayErrorCode,
   LlmCallData,
+  LlmCharge,
   LlmSwarmRegistration,
   LlmUsage,
   ModelCatalog,
@@ -71,6 +72,11 @@ function scaledPrice(price: string): bigint {
   return BigInt(whole) * PRICE_SCALE + BigInt(fraction.padEnd(4, '0'));
 }
 
+// Спека 002, 4.3 и 004, 4.3: сумма в масштабе цен (× 10⁴) → micro-USD, округление вверх.
+function ceilMicroUsd(scaledTotal: bigint): number {
+  return Number((scaledTotal + PRICE_SCALE - 1n) / PRICE_SCALE);
+}
+
 // Спека 002, 4.3: cached = min(cachedPromptTokens, promptTokens); результат — округление вверх.
 export function costMicroUsd(usage: LlmUsage, prices: ModelPrices): number {
   const cached = BigInt(Math.min(usage.cachedPromptTokens, usage.promptTokens));
@@ -79,7 +85,60 @@ export function costMicroUsd(usage: LlmUsage, prices: ModelPrices): number {
     uncached * scaledPrice(prices.inputPerMTokUsd) +
     cached * scaledPrice(prices.cachedInputPerMTokUsd) +
     BigInt(usage.completionTokens) * scaledPrice(prices.outputPerMTokUsd);
-  return Number((total + PRICE_SCALE - 1n) / PRICE_SCALE);
+  return ceilMicroUsd(total);
+}
+
+// Спека 004, 4.3. Байты — UTF-8; токен модели не меньше байта, поэтому байты — верхняя граница токенов (Q-3).
+const utf8 = new TextEncoder();
+const utf8Length = (text: string): number => utf8.encode(text).length;
+
+// Спека 004, 4.3: длина в UTF-8 строки JSON от messages и tools (по умолчанию []).
+export function inputBytes(body: ChatRequest): number {
+  return utf8Length(JSON.stringify({ messages: body.messages, tools: body.tools ?? [] }));
+}
+
+// Спека 004, 4.3: оценка по байтам входа и выхода — общая для резерва и списания без usage.
+function estimateMicroUsd(bytesIn: number, bytesOut: number, prices: ModelPrices): number {
+  return ceilMicroUsd(
+    BigInt(bytesIn) * scaledPrice(prices.inputPerMTokUsd) +
+      BigInt(bytesOut) * scaledPrice(prices.outputPerMTokUsd),
+  );
+}
+
+// Спека 004, 4.3: holdMicroUsd = ceil((inputBytes·p_in + maxOut·p_out) / 10⁴).
+export function holdMicroUsd(inputBytes: number, maxOut: number, prices: ModelPrices): number {
+  return estimateMicroUsd(inputBytes, maxOut, prices);
+}
+
+// Спека 004, 4.3: длина в UTF-8 у content и tool_calls[].function.arguments одного message или delta.
+export function outputBytes(message: unknown): number {
+  if (!isRecord(message)) return 0;
+  let bytes = typeof message.content === 'string' ? utf8Length(message.content) : 0;
+  if (Array.isArray(message.tool_calls)) {
+    for (const call of message.tool_calls) {
+      const fn = isRecord(call) ? call.function : undefined;
+      if (isRecord(fn) && typeof fn.arguments === 'string') bytes += utf8Length(fn.arguments);
+    }
+  }
+  return bytes;
+}
+
+// Спека 004, 4.3: usage есть (любой status) — по usage; нет usage при ok/aborted — оценка; error — 0.
+export function chargeFor(
+  call: {
+    status: LlmCallData['status'];
+    usage: LlmUsage | null;
+    inputBytes: number;
+    outputBytes: number;
+  },
+  prices: ModelPrices,
+): LlmCharge {
+  if (call.usage) return { microUsd: costMicroUsd(call.usage, prices), basis: 'usage' };
+  if (call.status === 'error') return { microUsd: 0, basis: 'none' };
+  return {
+    microUsd: estimateMicroUsd(call.inputBytes, call.outputBytes, prices),
+    basis: 'estimate',
+  };
 }
 
 // Спека 002, 4.3. Нет prompt_tokens или completion_tokens — usage считается отсутствующим.
