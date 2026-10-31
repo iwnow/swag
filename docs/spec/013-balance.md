@@ -663,7 +663,7 @@ settlePending(): Promise<number>; // число закрытых резерво�
   Закрывает: REQ-013-4; AC-013-8, AC-013-15 на ядре. Готово, когда: тесты `packages/api-core` зелёные.
 - [x] **T-9.** `api-core`: закрытие в `commit` и `finalSpent` (4.4). Закрывает: REQ-013-6, REQ-013-7; AC-013-12 (повтор через `ingestEvent`), AC-013-13, AC-013-14, AC-013-17. Готово, когда: тесты `packages/api-core` зелёные.
 - [x] **T-10.** `api-core`: `settlePending` (4.4). Закрывает: REQ-013-8, AC-013-16. Готово, когда: тесты `packages/api-core` зелёные.
-- [ ] **T-11.** Конфиг и адаптер оркестратора:
+- [x] **T-11.** Конфиг и адаптер оркестратора:
   - `BALANCE_MAX_TOPUP_MICRO_USD` в `packages/config`, `.env.example`, `.env`, `compose.yaml`;
   - `timeoutMs` в `@swag/adapter-orchestrator-http` (из N-25).
 

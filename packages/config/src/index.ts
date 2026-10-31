@@ -33,6 +33,8 @@ export const ApiConfig = BaseConfig.extend({
   SWARM_MAX_BUDGET_MICRO_USD: z.coerce.number().int().min(1),
   // Спека 031, 4.2: предел maxTokens роя и агента.
   AGENT_MAX_TOKENS_LIMIT: z.coerce.number().int().min(1),
+  // Спека 013, 4.10: предел одного пополнения баланса организации в micro-USD.
+  BALANCE_MAX_TOPUP_MICRO_USD: z.coerce.number().int().min(1).max(1000000000).default(100000000),
   // Спека 024, 4.14: проверка токенов и отзывов (identity), вызов оркестратора.
   IDENTITY_URL: z.string().url(),
   IDENTITY_INTERNAL_TOKEN: ServiceToken,
