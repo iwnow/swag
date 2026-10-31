@@ -624,7 +624,7 @@ settlePending(): Promise<number>; // число закрытых резерво�
   - тесты на фейковом хранилище внутри теста.
 
   Закрывает: REQ-013-2, REQ-013-3, REQ-013-10; AC-013-3…AC-013-7 и AC-013-23 на уровне ядра. Готово, когда: тесты пакета и `npm run arch:check` зелёные.
-- [ ] **T-3.** `adapter-memory`: `createMemoryBalanceStore()` по 4.2.
+- [x] **T-3.** `adapter-memory`: `createMemoryBalanceStore()` по 4.2.
   - Семантика — как у Postgres.
   - Атомарность — синхронный код без `await` между проверкой и записью.
 
