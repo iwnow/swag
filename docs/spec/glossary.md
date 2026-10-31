@@ -123,14 +123,13 @@
 | Журнал баланса | `BalanceEntry`, `BalanceEntryKind`, `BalanceEntryList`, `balance_entries`, `nextBefore` | Записи `topup` (пополнение, > 0) и `swarm` (закрытие резерва роя, ≤ 0); не меняются и не удаляются (013, 4.2). |
 | Пополнение | `topup`, `TopupRequest`, `TopupMicroUsd`, `BALANCE_MAX_TOPUP_MICRO_USD`, `balance_topup` | Запись журнала баланса, увеличивающая баланс. В MVP виртуальное: администратор — своей организации, супервизор — любой с комментарием (013, 4.3). |
 | Резерв бюджета роя | `balance_holds`, `Billing.reserve`, `insufficient_balance`, `balance_insufficient` | Бюджет роя, отложенный из доступного остатка организации при запуске; нехватка — `402 insufficient_balance` (013, 4.4). |
-| Закрытие резерва роя | `Billing.settle`, `settlePending`, `balance_settled`, `balance_settled_from_events`, `billing_settle_failed`, `balance_overspent` | Запись `swarm` на траты роя и возврат остатка резерва после итогового события; незакрытые добираются при старте `api` (013, 4.4). |
+| Закрытие резерва роя | `Billing.settle`, `finalSpent`, `settlePending`, `launch_stop_failed`, `balance_settled`, `balance_settled_from_events`, `billing_settle_failed`, `balance_overspent` | Запись `swarm` на траты роя и возврат остатка резерва после итогового события; незакрытые добираются при старте `api` (013, 4.4). |
 | Ядро баланса | `billing-core`, `createBillingCore`, `BillingCore`, `BalanceStore`, `BillingResult`, `createPostgresBalanceStore`, `createMemoryBalanceStore` | Логика баланса; работает в процессе `api` (013, 4.3). |
 | Справочник организаций | `OrgDirectory`, `createOrgDirectory`, `organizationExists`, `findOrganizationById`, `org_directory_unavailable` | Проверка, что организация есть в identity, через `GET /internal/organizations/:orgId` (013, 4.8). |
 | Права баланса | `balance.read`, `balance.topup` | Чтение баланса и истории; пополнение (013, 4.1). |
 | Траты роя в итоговом событии | `spentMicroUsd` (`swarm.completed`, `swarm.stopped`, `swarm.failed`) | Сумма ledger gateway по рою из ответа на закрытие роя (013, 4.6). |
 | Ожидание при закрытии роя | `LLM_GATEWAY_CLOSE_WAIT_MS`, `closeWaitMs`, `totals`, `close_holds_pending` | Gateway при закрытии роя ждёт списания идущих вызовов (013, 4.7). |
-| Таймауты `api` к сервисам | `ORCHESTRATOR_TIMEOUT_MS`, `IDENTITY_TIMEOUT_MS` | Константы оболочки `api` для запросов к оркестратору и identity (013, 4.9). |
-| Доллары в µUSD | `usdToMicro` | Разбор суммы из формы пополнения в `ui-core` (013, 4.11). |
+| Таймаут `api` к оркестратору | `ORCHESTRATOR_TIMEOUT_MS` | Константа оболочки `api` для `launch` и `stop` (013, 4.9; из N-25). |
 | Резерв бюджета | `budget_holds`, `holdMicroUsd` | В 004 — верхняя оценка стоимости вызова модели, зарезервированная из бюджета роя и агента до обращения к LiteLLM и закрытая списанием (004, 4.3); резерв бюджета роя из баланса — 013. |
 | Фронтенд платформы | `apps/ui/<имя>` | Отдельно собираемое и деплоимое веб-приложение в `apps/ui/`; технология своя у каждого. |
 | Каркас | `apps/ui/shell` | Фронтенд входа и навигации; подгружает микрофронтенды по правам пользователя. Спека 014. |

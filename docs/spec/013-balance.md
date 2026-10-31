@@ -17,7 +17,7 @@ updated: 2026-11-01
 > - Когда рой завершился, резерв закрывается фактической суммой из ledger gateway, неизрасходованное возвращается. Gateway при закрытии роя ждёт, пока завершатся вызовы, которые ещё идут, — до 5 с.
 > - Логика — новое ядро `billing-core`. Оно работает в процессе `api`, таблицы лежат в общей базе Postgres.
 > - В кабинете появляется страница «Баланс»: остаток, резерв, история операций и форма пополнения для администратора. Экран супервизора — спека 014.
-> - **Нужно от человека:** ответы на Q-1…Q-7. Контракты написаны по рекомендациям. Главные развилки: Q-1 — откуда брать сумму закрытия роя; Q-2 — compute в 013 не считается; Q-3 — без наценки и в USD.
+> - **Нужно от человека:** ответы на Q-1…Q-8. Контракты написаны по рекомендациям. Главные развилки: Q-1 — откуда брать сумму закрытия роя; Q-2 — compute в 013 не считается; Q-3 — без наценки и в USD.
 
 ## 1. Контекст и цель
 
@@ -42,10 +42,10 @@ updated: 2026-11-01
 
 **Входит:**
 - `@swag/contracts`:
-  - схемы баланса;
+  - схемы баланса (`billing.ts`);
   - права `balance.read` и `balance.topup`;
   - поле `spentMicroUsd` в итоговых событиях роя;
-  - `heldMicroUsd` в `LlmSwarmClosed`;
+  - `heldMicroUsd` в `LlmSwarmClosed` (`swarm.ts`);
 - новый пакет `packages/billing-core`: баланс, пополнение, резерв и закрытие резерва, проверка вызывающего;
 - `adapter-postgres`:
   - миграция `0005_billing.sql`;
@@ -58,7 +58,7 @@ updated: 2026-11-01
   - добор незакрытых резервов при старте;
 - `apps/api`:
   - маршруты баланса;
-  - сборка `billing-core`;
+  - сборка `billing-core` в `startApiCore`;
   - проверка организации через identity;
   - таймаут клиента оркестратора (из N-25);
 - `identity-core` и `apps/identity`: внутренний маршрут «организация существует»;
@@ -78,7 +78,12 @@ updated: 2026-11-01
 - перенос денег между организациями;
 - рои до 024 без организации: им резерв не нужен, они уже завершены (003, `closeInterrupted`);
 - несколько экземпляров `api`: добор резервов при старте рассчитан на один процесс, как в 004;
-- повторная доставка итоговых событий при сбое шины — спека надёжности шины (N-11).
+- повторная доставка итоговых событий при сбое шины — спека надёжности шины (N-11);
+- точное закрытие в трёх редких случаях — Q-8 и D-125:
+  - рой, который оркестратор запустил, а `api` счёл запуск неудачным;
+  - рой, закрытый `closeInterrupted`;
+  - списание, которое пришло позже `LLM_GATEWAY_CLOSE_WAIT_MS`;
+- резерв роя, по которому итогового события не будет (оркестратор потерял рой), — до перезапуска `api` (D-125).
 
 ## 3. Требования
 
@@ -93,7 +98,7 @@ updated: 2026-11-01
 | REQ-013-7 | Сумма закрытия MUST равняться сумме записей ledger gateway по рою, если gateway закрыл рой без висящих резервов. | MUST |
 | REQ-013-8 | Резерв, который не закрылся из-за сбоя, MUST закрываться при следующем старте `api`. | MUST |
 | REQ-013-9 | Закрытие роя в gateway MUST ждать, пока резервы вызовов роя, которые уже идут, будут списаны, — не дольше `LLM_GATEWAY_CLOSE_WAIT_MS`. | MUST |
-| REQ-013-10 | Пополнение, отказ по балансу и закрытие резерва MUST логироваться структурно, с `orgId` и суммами, без токенов. | MUST |
+| REQ-013-10 | Пополнение, отказ по балансу и закрытие резерва MUST логироваться структурно, только с полями 4.3: `orgId`, `swarmId`, `actorId` и суммы. | MUST |
 | REQ-013-11 | Кабинет MUST показывать страницу «Баланс»: остаток, резерв, доступно, история. Форма пополнения — только с правом `balance.topup`. | MUST |
 | REQ-013-12 | Запросы `api` к оркестратору SHOULD обрываться по таймауту `ORCHESTRATOR_TIMEOUT_MS` (из N-25). | SHOULD |
 
@@ -114,7 +119,7 @@ export const TopupMicroUsd = z.number().int().min(1).max(1_000_000_000); // до
 
 export const TopupRequest = z.strictObject({
   amountMicroUsd: TopupMicroUsd,
-  comment: z.string().trim().min(1).max(500).nullable().default(null), // супервизору обязателен (4.3)
+  comment: z.string().trim().min(1).max(500).nullable().default(null), // пустая строка не проходит: форма шлёт null; супервизору обязателен (4.3)
 });
 
 export const BalanceView = z.strictObject({
@@ -127,7 +132,7 @@ export const BalanceView = z.strictObject({
 export const BalanceEntryKind = z.enum(['topup', 'swarm']);
 
 export const BalanceEntry = z.strictObject({
-  id: z.number().int().positive(), // порядковый номер записи, общий на все организации
+  id: z.number().int().positive(), // порядковый номер записи, общий на все организации (Q-6)
   orgId: OrgId,
   ts: z.iso.datetime(),
   kind: BalanceEntryKind,
@@ -157,7 +162,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
 - Поле пишет оркестратор — сумму из ответа gateway на закрытие роя (4.6).
 - Поля нет, если gateway не ответил, у события, которое записал `api` (сбой запуска, `closeInterrupted`), и у событий до 013.
 
-`llm.ts`:
+`swarm.ts`:
 
 ```ts
 export const LlmSwarmClosed = z.strictObject({
@@ -186,7 +191,8 @@ create table balance_entries (
   actor_id uuid,
   comment text,
   check ((kind = 'topup' and amount_micro_usd > 0 and swarm_id is null)
-      or (kind = 'swarm' and amount_micro_usd <= 0 and swarm_id is not null and actor_id is null))
+      or (kind = 'swarm' and amount_micro_usd <= 0 and swarm_id is not null and actor_id is null)),
+  check (kind <> 'topup' or actor_id is not null)
 );
 create index balance_entries_org_idx on balance_entries (org_id, id desc);
 create table balance_holds (
@@ -203,6 +209,7 @@ drop table org_balances;
 
 - `org_balances.balance_micro_usd` — кэш суммы `balance_entries` организации. Он меняется в той же транзакции, что и запись. Строка организации появляется при первом пополнении.
 - Внешних ключей на таблицы identity и роёв нет: сервисы владеют своими таблицами (4.8 спеки 024).
+- Чтение строк: `bigint` из `pg` приходит строкой — `Number(...)`, как в `BudgetStore` gateway; `timestamptz` — `toISOString()`.
 
 **Пополнение** (`topup`) одной транзакцией:
 
@@ -241,12 +248,31 @@ insert into balance_holds (swarm_id, org_id, amount_micro_usd, created_at) value
 ```ts
 import type { Actor, BalanceEntry, BalanceEntryList, BalanceView } from '@swag/contracts';
 
+// Свои порты ядра по образцу api-core: ядра не импортируют друг друга.
+export interface Clock { now(): string } // ISO
+export type LogContext = {
+  orgId?: string;
+  swarmId?: string;
+  actorId?: string;
+  amountMicroUsd?: number;
+  spentMicroUsd?: number;
+  heldMicroUsd?: number;
+  chargedMicroUsd?: number;
+  err?: unknown;
+};
+export interface Logger {
+  debug(msg: string, ctx?: LogContext): void;
+  info(msg: string, ctx?: LogContext): void;
+  warn(msg: string, ctx?: LogContext): void;
+  error(msg: string, ctx?: LogContext): void;
+}
+
 export interface BalanceStore {
   balance(orgId: string): Promise<{ balanceMicroUsd: number; heldMicroUsd: number }>; // нет строки — нули
   entries(orgId: string, before: number | null, limit: number): Promise<{ entries: BalanceEntry[]; hasMore: boolean }>;
-  topup(input: { orgId: string; amountMicroUsd: number; actorId: string; comment: string | null; ts: Date }): Promise<BalanceEntry>;
-  reserve(input: { orgId: string; swarmId: string; amountMicroUsd: number; ts: Date }): Promise<'ok' | 'insufficient'>;
-  settle(swarmId: string, spentMicroUsd: number, ts: Date): Promise<{ orgId: string; heldMicroUsd: number; chargedMicroUsd: number } | null>;
+  topup(input: { orgId: string; amountMicroUsd: number; actorId: string; comment: string | null; ts: string }): Promise<BalanceEntry>;
+  reserve(input: { orgId: string; swarmId: string; amountMicroUsd: number; ts: string }): Promise<'ok' | 'insufficient'>;
+  settle(swarmId: string, spentMicroUsd: number, ts: string): Promise<{ orgId: string; heldMicroUsd: number; chargedMicroUsd: number } | null>;
   holds(): Promise<{ swarmId: string; orgId: string; amountMicroUsd: number }[]>;
 }
 
@@ -257,7 +283,7 @@ export interface OrgDirectory {
 export interface BillingCoreDeps {
   store: BalanceStore;
   orgs: OrgDirectory;
-  clock: Clock; // из @swag/contracts, как в api-core
+  clock: Clock;
   log: Logger;
   limits: { maxTopupMicroUsd: number }; // BALANCE_MAX_TOPUP_MICRO_USD
 }
@@ -278,7 +304,7 @@ export interface BillingCore {
 export function createBillingCore(deps: BillingCoreDeps): BillingCore;
 ```
 
-`Clock` и `Logger` — те же типы, что берёт `api-core`. Ошибки — те же коды, что в `api-core`: `validation_error`, `forbidden`, `not_found`.
+Оболочка передаёт в ядро тот же логгер, что в `api-core`. Коды ошибок — как в `api-core`: `validation_error`, `forbidden`, `not_found`, плюс `org_directory_unavailable`. `ts` в хранилище — `clock.now()`.
 
 **Правила доступа** (одинаковые для трёх операций с `Actor`):
 1. `orgId` не UUID → `not_found`.
@@ -294,7 +320,7 @@ export function createBillingCore(deps: BillingCoreDeps): BillingCore;
 
 **`listEntries`:**
 - `limit` — целое 1…100, по умолчанию 50;
-- `before` — целое ≥ 1 или отсутствует;
+- `before` — целое 1…`Number.MAX_SAFE_INTEGER` или отсутствует;
 - другое значение → `validation_error`.
 
 **`getBalance`:** `availableMicroUsd = balance − held`.
@@ -306,7 +332,7 @@ export function createBillingCore(deps: BillingCoreDeps): BillingCore;
 - результат не `null` → лог `info` `balance_settled` (`orgId`, `swarmId`, `heldMicroUsd`, `chargedMicroUsd`);
 - `spentMicroUsd > heldMicroUsd` → дополнительно лог `error` `balance_overspent` с обеими суммами. Такого не бывает, пока бюджет роя в gateway равен резерву: списывается не больше резерва.
 
-Ядро — чистый TypeScript: только `zod`, `@swag/contracts`, `@swag/helpers` (`arch:check`).
+Ядро — чистый TypeScript: только пакеты из `CORE_ALLOWED_PACKAGES` в `scripts/arch-check.ts` (`zod`, `@swag/contracts`); `@swag/helpers` ядру запрещён.
 
 ### 4.4. `api-core`
 
@@ -314,7 +340,7 @@ export function createBillingCore(deps: BillingCoreDeps): BillingCore;
 
 ```ts
 export interface Billing {
-  reserve(orgId: string, swarmId: string, amountMicroUsd: number): Promise<'ok' | 'insufficient'>;
+  reserve(orgId: string, swarmId: string, amountMicroUsd: number): Promise<'ok' | 'insufficient'>; // ошибка — исключение
   settle(swarmId: string, spentMicroUsd: number): Promise<void>;
   holds(): Promise<{ swarmId: string; orgId: string; amountMicroUsd: number }[]>;
 }
@@ -323,26 +349,29 @@ export interface Billing {
 
 **`createSwarm`.** Порядок:
 1. Проверки 004, 024 и 031 — как сейчас.
-2. Место под `MAX_ACTIVE_SWARMS`.
-3. `billing.reserve(actor.orgId, swarmId, budgetMicroUsd)` — до записи `swarm.created`.
-   - `insufficient` → `insufficient_balance` с сообщением `balance is not enough for budget`. Событий нет, место под `MAX_ACTIVE_SWARMS` освобождается.
-   - Исключение → `internal_error`, событий нет.
-4. Запись `swarm.created` и запуск — как сейчас.
-   - Ошибка записи `swarm.created` → `billing.settle(swarmId, 0)`, затем та же ошибка, что сейчас.
-   - Сбой запуска закрывает резерв через итоговое событие (правило ниже).
+2. Место под `MAX_ACTIVE_SWARMS` (`reserving`).
+3. `actor.orgId === null` → `forbidden`. Сейчас недостижимо: у супервизора нет `swarm.create`. Ветка нужна вместо `!`.
+4. `billing.reserve(actor.orgId, swarmId, budgetMicroUsd)` — до записи `swarm.created`.
+   - `insufficient` → `insufficient_balance` с сообщением `balance is not enough for budget`. Событий нет.
+   - Исключение пробрасывается: оболочка отвечает `500` общим обработчиком ошибок.
+   - В обоих случаях место под `MAX_ACTIVE_SWARMS` освобождается в том же `finally`, что и сейчас.
+5. Запись `swarm.created` — как сейчас. Если `commit` вернул `null` (запись не удалась): `billing.settle(swarmId, 0)`, затем прежний ответ.
+6. Запуск. При сбое `orchestrator.launch`:
+   - сначала `orchestrator.stop(swarmId)`, ошибка — лог `warn` `launch_stop_failed`. Если оркестратор успел запустить рой, `stop` обрывает траты;
+   - затем `swarm.failed` `orchestrator_unavailable`, как сейчас.
 
-`actor.orgId` у создателя роя всегда есть: супервизор роёв не создаёт (024, Q-4).
+   Резерв закрывается общим правилом ниже, по проекции (Q-8).
 
-**Итоговое событие.** После записи в хранилище любого `swarm.completed`, `swarm.stopped` или `swarm.failed` вызывается `billing.settle(swarmId, spent)`. Пути:
-- `ingestEvent`;
-- `swarm.failed` при сбое запуска;
-- `closeInterrupted`.
+**Закрытие на итоговом событии — в одном месте, в `commit`.** После записи и рассылки `swarm.completed`, `swarm.stopped` или `swarm.failed`, внутри той же записи в очереди роя:
 
-`spent`:
-- `data.spentMicroUsd`, если поле есть;
-- иначе `SwarmView.spentMicroUsd` проекции после применения события, и лог `warn` `balance_settled_from_events` (`swarmId`).
+```ts
+await billing.settle(swarmId, finalSpent(event, viewAfter));
+```
 
-Исключение `settle` → лог `error` `billing_settle_failed` (`swarmId`). Событие уже записано и отдаётся подписчикам: сбой закрытия не мешает потоку событий.
+- `finalSpent(event, view)` = `event.data.spentMicroUsd`, если поле есть.
+- Иначе `view.spentMicroUsd` проекции после события и лог `warn` `balance_settled_from_events` (`swarmId`, `spentMicroUsd`).
+- Так закрываются все пути: `ingestEvent`, сбой запуска, `closeInterrupted`, остановки (через итоговое событие оркестратора).
+- Исключение `settle` ловится: лог `error` `billing_settle_failed` (`swarmId`, `err`). `commit` возвращает записанное событие, как без сбоя.
 
 **Добор при старте.** Новая операция:
 
@@ -351,12 +380,19 @@ settlePending(): Promise<number>; // число закрытых резерво�
 ```
 
 Для каждого резерва из `billing.holds()`:
-- рой в хранилище завершён (проекция в итоговом статусе) — `billing.settle(swarmId, spent)` по тому же правилу `spent`, что выше;
-- роя нет в хранилище (сбой между резервом и записью `swarm.created`) — `billing.settle(swarmId, 0)`.
+- рой в хранилище в итоговом статусе — последнее событие роя `(await store.events(swarmId, view.lastSeq - 1))[0]`, затем `billing.settle(swarmId, finalSpent(event, view))`;
+- роя нет в хранилище (сбой между резервом и записью `swarm.created`) — `billing.settle(swarmId, 0)`;
+- рой не в итоговом статусе — резерв не трогается. При старте после `closeInterrupted` таких нет. Ветка защищает идущие рои, если операцию вызовут не на старте.
 
-Рой ещё идёт — резерв не трогается. Оболочка вызывает операцию после `closeInterrupted`, до `listen`.
+Сбой одного резерва — лог `error` `billing_settle_failed`, остальные продолжаются.
 
 `STATUS` оболочки: `insufficient_balance: 402`, `org_directory_unavailable: 503`.
+
+**Тесты.** В `packages/api-core/test` — общий фейк `Billing`:
+- безлимитный: `reserve` всегда `ok`;
+- записывает вызовы.
+
+Все существующие вызовы `createApiCore` в тестах получают его.
 
 ### 4.5. HTTP `api`
 
@@ -409,89 +445,133 @@ settlePending(): Promise<number>; // число закрытых резерво�
 
 ### 4.9. Оболочка `apps/api`
 
-- `billing-core` собирается в `main.ts`:
-  - `createPostgresBalanceStore(pool)`, а без `DATABASE_URL` — `createMemoryBalanceStore()`, по правилу выбора хранилища роёв из 003;
-  - `OrgDirectory` — функция оболочки `apps/api/src/organizations.ts`:
-    ```ts
-    export function createOrgDirectory(options: { identityUrl: string; token: string; timeoutMs: number }): OrgDirectory;
-    ```
-    `fetch` `GET {IDENTITY_URL}/internal/organizations/:orgId` с `AbortSignal.timeout(timeoutMs)`: `204` → `true`, `404` → `false`, другое — исключение. `timeoutMs` — константа `IDENTITY_TIMEOUT_MS = 5000` в `main.ts`.
-- `api-core.billing` — экземпляр `billing-core` (его `reserve`, `settle`, `holds`).
-- Порядок старта: миграции → `closeInterrupted` → `settlePending` → `listen`.
-- **Из N-25:**
-  - `@swag/adapter-orchestrator-http` получает опцию `timeoutMs`, `launch` и `stop` идут с `AbortSignal.timeout(timeoutMs)`. Таймаут — та же ошибка, что недоступность оркестратора.
-  - В `main.ts` — константа `ORCHESTRATOR_TIMEOUT_MS = 10000`, по образцу `GATEWAY_TIMEOUT_MS` оркестратора (D-99).
+**`startApiCore`** (`apps/api/src/start.ts`):
+- получает фабрику `billing: (pool: pg.Pool) => Billing`;
+- порядок: миграции → пул → `createApiCore({ ...deps, store, billing: billing(pool) })` → `closeInterrupted` → `settlePending`;
+- `deps` — `Omit<ApiCoreDeps, 'store' | 'billing'>`;
+- тест AC-003-8 и остальные вызовы `startApiCore` передают фабрику.
+
+**`main.ts`.** Фабрика — `(pool) => createBillingCore({ store: createPostgresBalanceStore(pool), orgs, clock, log, limits })`. Ядро `billing-core` нужно и маршрутам, поэтому `main.ts` сохраняет созданный экземпляр для `buildApp`.
+- `DATABASE_URL` в `api` обязателен, как сейчас. `createMemoryBalanceStore` — только для тестов.
+- `orgs` — `createOrgDirectory` из нового файла `apps/api/src/organizations.ts`:
+
+  ```ts
+  export function createOrgDirectory(options: { identityUrl: string; token: string; timeoutMs: number }): OrgDirectory;
+  ```
+
+  `fetch` `GET {IDENTITY_URL}/internal/organizations/:orgId`, заголовок `Authorization: Bearer <token>`, `AbortSignal.timeout(timeoutMs)`.
+  - `204` → `true`;
+  - `404` → `false`;
+  - другое — исключение.
+
+  `timeoutMs` — существующая константа `IDENTITY_TIMEOUT_MS` в `main.ts`.
+
+**Маршруты 4.5** — в `apps/api/src/app.ts`, в той же области, что `/swarms`. `buildApp` получает `BillingCore` новым аргументом.
+
+**Из N-25:**
+- `@swag/adapter-orchestrator-http` получает опцию `timeoutMs`. `launch` и `stop` идут с `AbortSignal.timeout(timeoutMs)`. Таймаут — та же ошибка, что недоступность оркестратора.
+- В `main.ts` — константа `ORCHESTRATOR_TIMEOUT_MS = 15000`, по образцу `GATEWAY_TIMEOUT_MS` оркестратора (D-99).
+- 15 с больше, чем `stop` оркестратора: тот ждёт `finish` — уборку песочниц и закрытие в gateway до `LLM_GATEWAY_CLOSE_WAIT_MS`.
 
 ### 4.10. Конфиг
 
 | Переменная | Сервис | По умолчанию | Описание |
 |---|---|---|---|
 | `BALANCE_MAX_TOPUP_MICRO_USD` | `api` | `100000000` ($100) | Предел одного пополнения; целое 1…1 000 000 000 |
-| `LLM_GATEWAY_CLOSE_WAIT_MS` | `llm-gateway` | `5000` | Ожидание идущих вызовов при закрытии роя; целое 0…60 000 |
+| `LLM_GATEWAY_CLOSE_WAIT_MS` | `llm-gateway` | `5000` | Ожидание идущих вызовов при закрытии роя; целое 0…8 000 |
 
+- Предел 8 000 меньше `GATEWAY_TIMEOUT_MS` оркестратора (10 000). Иначе запрос `close` оборвётся раньше ответа и `spentMicroUsd` потеряется.
 - Обе переменные — в `packages/config` (схемы сервисов), `.env.example`, `.env` и `compose.yaml`.
 - `api` уже получает `IDENTITY_URL` и `IDENTITY_INTERNAL_TOKEN` (024).
 
 ### 4.11. Кабинет
 
-Маршрут `/balance` за guard, пункт «Баланс» в навигации.
+Файлы `apps/ui/cabinet/src/app/`:
+
+| Файл | Что |
+|---|---|
+| `api.ts` | `getBalance(orgId)`, `listBalanceEntries(orgId, before)`, `topup(orgId, body)` по образцу вызовов `/swarms` |
+| `balance.page.ts` | новая страница |
+| `app.routes.ts` | маршрут `/balance` за guard |
+| `app.ts` | пункт «Баланс» в навигации, только у сессии с `organization` |
+| `swarm-new.page.ts` | отказ `402` |
 
 **Страница:**
-- три числа: «Баланс», «В резерве», «Доступно» — формат денег `ui-core`, как в панели денег 004;
+- три числа: «Баланс», «В резерве», «Доступно» — `formatUsd` из `ui-core`;
 - история: дата, вид («Пополнение» или «Рой»), сумма со знаком, ссылка на рой, комментарий;
 - кнопка «Ещё» грузит следующую страницу по `nextBefore`.
 
 **Форма пополнения:**
-- видна, только если у сессии роль `admin`: права роли — `ROLE_PERMISSIONS` из `@swag/contracts`, право `balance.topup`;
-- поля: сумма в долларах с двумя знаками и комментарий;
+- видна, если в `ROLE_PERMISSIONS[session.user.role]` есть `balance.topup`;
+- поля: сумма в долларах и комментарий;
+- сумма — существующая `usdToMicro` из `ui-core` (004), проверка — схема `TopupRequest`;
+- пустой комментарий отправляется как `null`;
 - после успеха баланс и история перечитываются.
 
-`orgId` — `organization.id` из сессии (`AuthSession`). Без организации (супервизор) пункта «Баланс» нет: экран супервизора — 014.
+`orgId` — `organization.id` из сессии (`AuthSession`). У супервизора организации нет, и пункта «Баланс» тоже нет: его экран — 014.
 
-**Форма роя.** Ответ `402 insufficient_balance` показывается текстом «Недостаточно средств: доступно $X», где X — `availableMicroUsd` из `GET /organizations/:orgId/balance`, перечитанного после отказа.
-
-Перевод долларов в µUSD и обратно — чистые функции в `packages/ui-core`:
-
-```ts
-export function usdToMicro(input: string): number | null; // "12.5" → 12500000; не число, ≤ 0 или больше двух знаков — null
-```
-
-Вывод — существующий формат денег `ui-core`.
+**Форма роя.** Ответ `402 insufficient_balance` показывается текстом «Недостаточно средств: доступно $X».
+- X — `formatUsd(availableMicroUsd)` из `GET /organizations/:orgId/balance`, перечитанного после отказа.
+- `formatUsd` округляет вверх до 4 знаков. Расхождение меньше $0.0001 принимается.
 
 ## 5. Критерии приёмки
 
 - **AC-013-1** — *Given* хранилище баланса (память и Postgres) *When* три пополнения 100, 200, 300 *Then* `balance` = 600, `held` = 0, в `entries` три записи `topup` от новых к старым.
 - **AC-013-2** — *Given* администратор организации A *When* `POST /organizations/A/balance/topups` с 1 000 000 *Then* `201`, запись с `actorId` администратора, `GET …/balance` — `balanceMicroUsd: 1000000`.
 - **AC-013-3** — *Given* `user` организации A *When* пополнение A *Then* `403 forbidden`. *Given* администратор A *When* пополнение B *Then* `404 not_found`.
-- **AC-013-4** — *Given* супервизор *When* пополнение без комментария *Then* `400 validation_error`. *When* с комментарием для существующей организации *Then* `201`. *When* для организации, которой нет в identity *Then* `404`. *When* identity недоступна *Then* `503 org_directory_unavailable`.
+- **AC-013-4** — *Given* супервизор, пополнение:
+  - без комментария *Then* `400 validation_error`;
+  - с комментарием, для существующей организации *Then* `201`;
+  - для организации, которой нет в identity *Then* `404`;
+  - identity недоступна *Then* `503 org_directory_unavailable`.
 - **AC-013-5** — *Given* администратор *When* сумма 0, дробная или больше `BALANCE_MAX_TOPUP_MICRO_USD` *Then* `400 validation_error`, баланс не изменился.
 - **AC-013-6** — *Given* `user` и `admin` организации A и супервизор *When* `GET /organizations/A/balance` и `…/entries` *Then* `200` у всех троих. *Given* `user` организации B *Then* `404`. *Given* `orgId` не UUID *Then* `404`.
-- **AC-013-7** — *Given* 120 записей *When* `entries` с `limit=50`, затем по `nextBefore` *Then* страницы 50, 50, 20, у последней `nextBefore: null`, порядок по убыванию `id` без пропусков и повторов. `limit=0`, `limit=101`, `before=abc` → `400`.
-- **AC-013-8** — *Given* доступно 1 000 000 *When* `POST /swarms` с бюджетом 1 000 001 *Then* `402 insufficient_balance`, у роя нет событий, оркестратор не вызывался, место под `MAX_ACTIVE_SWARMS` свободно.
+- **AC-013-7** — *Given* 120 записей *When* `entries` с `limit=50`, затем по `nextBefore` *Then* страницы 50, 50, 20, у последней `nextBefore: null`, порядок по убыванию `id` без пропусков и повторов. `limit=0`, `limit=101`, `before=abc`, `before=9007199254740992` → `400`.
+- **AC-013-8** — *Given* доступно 1 000 000 *When* `POST /swarms` с бюджетом 1 000 001 *Then*:
+  - `402 insufficient_balance`;
+  - у роя нет событий, оркестратор не вызывался;
+  - место под `MAX_ACTIVE_SWARMS` свободно.
 - **AC-013-9** — *Given* доступно 1 000 000 *When* `POST /swarms` с бюджетом 400 000 *Then* `201`, `held` = 400 000, `available` = 600 000.
 - **AC-013-10** — *Given* Postgres и доступно 1 000 000 *When* 10 параллельных `reserve` по 300 000 *Then* успешно ровно 3, `held` = 900 000, баланс не изменился.
 - **AC-013-11** — *Given* рой с резервом 400 000 *When* приходит `swarm.completed` с `spentMicroUsd: 123 456` *Then* в журнале запись `swarm` −123 456 с `swarmId`, `balance` уменьшился на 123 456, `held` уменьшился на 400 000.
 - **AC-013-12** — *Given* резерв уже закрыт *When* то же итоговое событие приходит второй раз или `settle` вызывается снова *Then* записей и изменений баланса нет.
 - **AC-013-13** — *Given* итоговое событие без `spentMicroUsd`, а у проекции роя `spentMicroUsd` 7 000 *When* `ingestEvent` *Then* закрытие на 7 000 и лог `balance_settled_from_events`.
-- **AC-013-14** — *Given* оркестратор недоступен *When* `POST /swarms` *Then* `swarm.failed` `orchestrator_unavailable`, резерв закрыт на 0, `available` вернулся к прежнему.
-- **AC-013-15** — *Given* ошибка записи `swarm.created` после резерва *When* `createSwarm` *Then* резерв закрыт на 0, ответ — прежняя ошибка.
-- **AC-013-16** — *Given* три резерва: рой завершён (проекция `spentMicroUsd` 5 000), рой ещё идёт, роя нет в хранилище *When* `settlePending` *Then* закрыты первый (5 000) и третий (0), второй остался, результат — 2.
+- **AC-013-14** — *Given* оркестратор недоступен *When* `POST /swarms` *Then*:
+  - вызван `orchestrator.stop` этого роя;
+  - `swarm.failed` `orchestrator_unavailable`;
+  - резерв закрыт на сумму проекции (0), `available` вернулся к прежнему.
+- **AC-013-15** — *Given* запись `swarm.created` после резерва не удалась *When* `createSwarm` *Then* резерв закрыт на 0, ответ — прежний.
+- **AC-013-16** — *Given* четыре резерва *When* `settlePending` *Then* закрыты 1-й, 2-й и 4-й, 3-й остался, результат — 3. Резервы:
+  1. рой завершён, итоговое событие с `spentMicroUsd` 9 000, проекция 5 000 — закрыт на 9 000;
+  2. рой завершён, событие без поля, проекция 5 000 — закрыт на 5 000;
+  3. рой в статусе `running` — не тронут;
+  4. роя нет в хранилище — закрыт на 0.
 - **AC-013-17** — *Given* `settle` бросает исключение *When* `ingestEvent` итогового события *Then* событие записано и отдано подписчикам, лог `billing_settle_failed`.
-- **AC-013-18** — *Given* gateway с резервом идущего вызова *When* `closeSwarm`, а списание вызова приходит через 300 мс *Then* ответ после списания, `heldMicroUsd: 0`, `spentMicroUsd` включает вызов. *Given* списание не пришло за `closeWaitMs` *Then* ответ с `heldMicroUsd > 0` и лог `close_holds_pending`. Часы и `sleep` — тестовые.
-- **AC-013-19** — *Given* `LlmSwarms.close` вернул 4 200 *When* `finish` *Then* в `data` итогового события `spentMicroUsd: 4200`. *Given* `close` бросил исключение *Then* поля нет, рой завершён.
-- **AC-013-20** — *Given* identity *When* `GET /internal/organizations/:id` с верным токеном для существующей, несуществующей и не UUID организации, и без токена *Then* `204`, `404`, `404`, `401`.
+- **AC-013-18** — *Given* gateway с резервом идущего вызова *When* `closeSwarm`:
+  - списание вызова приходит через 300 мс *Then* ответ после списания, `heldMicroUsd: 0`, `spentMicroUsd` включает вызов;
+  - списание не пришло за `closeWaitMs` *Then* ответ с `heldMicroUsd > 0` и лог `close_holds_pending`;
+  - при `heldMicroUsd = 0` *Then* ни одного `sleep`;
+  - повторный `closeSwarm` *Then* тот же `spentMicroUsd`.
+
+  Часы и `sleep` — тестовые.
+- **AC-013-19** — *Given* `LlmSwarms.close` вернул 4 200 *When* `finish` *Then* в `data` итогового события `spentMicroUsd: 4200`. *Given* `close` бросил исключение или вернул `null` *Then* поля нет, рой завершён.
+- **AC-013-20** — *Given* identity *When* `GET /internal/organizations/:id` *Then*:
+  - с верным токеном, организация есть — `204`;
+  - организации нет — `404`;
+  - `id` не UUID — `404`;
+  - без токена — `401`.
 - **AC-013-21** — *Given* `adapter-orchestrator-http` с `timeoutMs: 100` и оркестратор, который не отвечает *When* `launch` *Then* ошибка не позже чем через 1 с.
 - **AC-013-22** — *Given* права ролей *Then* `user` — `balance.read` без `balance.topup`; `admin` и `supervisor` — оба права.
-- **AC-013-23** — *Given* `usdToMicro` *Then* `"12.5"` → 12 500 000, `"0.01"` → 10 000, `"0"`, `"-1"`, `"1.234"`, `"abc"` → `null`.
+- **AC-013-23** — *Given* фейковый логгер ядра *When* пополнение, отказ резерва и закрытие *Then* логи `balance_topup`, `balance_insufficient` и `balance_settled` с полями 4.3 и без других полей.
 - **AC-013-24** `[stack]` — *Given* поднятый контур *When*:
   1. администратор новой организации пополняет баланс на $1;
   2. запускает рой с бюджетом $0.50;
-  3. второй рой с бюджетом $0.60;
-  4. рой завершается.
+  3. запускает второй рой с бюджетом $0.60;
+  4. первый рой завершается.
 
   *Then*:
   - второй рой — `402`;
-  - после первого `held` = $0.50;
+  - после первого запуска `held` = $0.50;
   - после итогового события баланс уменьшился ровно на `sum(amount_micro_usd)` из `ledger_entries` роя, `held` = 0.
 - **AC-013-25** `[manual]` — *Given* кабинет на поднятом контуре *When* администратор открывает «Баланс», пополняет на $5, запускает рой *Then*:
   - числа и история обновились;
@@ -505,8 +585,8 @@ export function usdToMicro(input: string): number | null; // "12.5" → 12500000
 
 | ID | Требование | Как измеряется |
 |---|---|---|
-| NFR-013-1 | Резерв добавляет к `POST /swarms` не больше 5 мс на p95 при последовательных запросах | бенчмарк `apps/api/test/bench.test.ts` (`API_BENCH=1`) с Postgres: прирост p95 к замеру без `billing` |
-| NFR-013-2 | Закрытие роя в gateway без идущих вызовов не дольше прежнего более чем на 5 мс | тест ядра с тестовыми часами: при `heldMicroUsd = 0` нет ни одного `sleep` |
+| NFR-013-1 | Резерв добавляет к `POST /swarms` не больше 5 мс на p95 при последовательных запросах | бенчмарк `apps/api/test/bench.test.ts` (`API_BENCH=1`) с Postgres: прирост p95 с `billing-core` на Postgres к фейку `Billing`, где `reserve` сразу `ok` |
+| NFR-013-2 | Закрытие роя в gateway без идущих вызовов не делает ни одного ожидания | AC-013-18, случай `heldMicroUsd = 0` |
 
 ## 7. Безопасность: что не должно сломаться
 
@@ -516,98 +596,152 @@ export function usdToMicro(input: string): number | null; // "12.5" → 12500000
 - Повторное событие не списывает дважды → AC-013-12.
 - Внутренний маршрут identity без токена закрыт → AC-013-20.
 - Сбой проверки организации не открывает пополнение (fail closed) → AC-013-4.
-- В логах баланса нет токенов: поля логов перечислены в 4.3 → ревью этапа.
-- Из кода агента баланс не меняется: маршруты баланса — только в `api` с токеном пользователя, у агента его нет (024).
+- В логах баланса только поля 4.3 → AC-013-23.
+- Из кода агента баланс не меняется: маршруты баланса есть только в `api`, с токеном пользователя, а у агента токена пользователя нет (024).
 
 ## 8. Задачи для агента
 
 Выполняются по порядку. После каждой задачи — коммит.
 
-**Группа** `spec/013-billing` (T-7…T-9): T-7 добавляет обязательную зависимость `billing` в `ApiCoreDeps`, и сборка `apps/api` ломается до T-9.
+**Группа** `spec/013-billing` (T-8…T-14): T-8 добавляет обязательную зависимость `billing` в `ApiCoreDeps`, сборка `apps/api` ломается до T-14.
 
 - [ ] **T-1.** `@swag/contracts`:
-  - файл `billing.ts`;
-  - права и `ROLE_PERMISSIONS`;
-  - `spentMicroUsd` в итоговых событиях;
-  - `heldMicroUsd` в `LlmSwarmClosed`.
+  - `billing.ts`, экспорт из `index.ts`;
+  - права и `ROLE_PERMISSIONS` в `access.ts`;
+  - `spentMicroUsd` в итоговых событиях (`events.ts`);
+  - `heldMicroUsd` в `LlmSwarmClosed` (`swarm.ts`).
 
-  Тесты схем: границы `TopupMicroUsd`, `comment` по умолчанию `null`, старые события без `spentMicroUsd` разбираются. Глоссарий. Закрывает: AC-013-22. Готово, когда: тесты `packages/contracts` и `npm run typecheck` зелёные. Места, где `LlmSwarmClosed` строится без `heldMicroUsd`, временно получают `heldMicroUsd: 0` с комментарием «013, T-5».
-- [ ] **T-2.** Новый пакет `packages/billing-core`:
-  - `package.json`, `tsconfig.json`, ссылка в корневом `tsconfig.json`, README;
+  Тесты схем:
+  - границы `TopupMicroUsd`;
+  - `comment` по умолчанию `null`;
+  - старые события без `spentMicroUsd` разбираются.
+
+  Места, которые строят `LlmSwarmClosed` (ядро gateway, фейки в тестах), временно получают `heldMicroUsd: 0` с комментарием «013, T-5». Закрывает: AC-013-22. Готово, когда: `npm run typecheck` и тесты `packages/contracts` зелёные.
+- [ ] **T-2.** Новый пакет `packages/billing-core` по 4.3:
+  - `package.json`, `tsconfig.json` по образцу `packages/api-core`, ссылка в корневом `tsconfig.json`, README;
   - строка в `docs/architecture.md`, раздел «Пакеты»;
-  - интерфейсы и `createBillingCore` по 4.3;
-  - тесты на фейковом хранилище в памяти внутри теста.
+  - `createBillingCore`;
+  - тесты на фейковом хранилище внутри теста.
 
-  Закрывает: REQ-013-2, REQ-013-3, REQ-013-10; AC-013-3…AC-013-7 на уровне ядра. Готово, когда: тесты пакета и `arch:check` зелёные.
-- [ ] **T-3.** `adapter-memory`: `createMemoryBalanceStore()` по 4.2: та же семантика, атомарность — синхронный код без `await` между проверкой и записью. Тесты. Закрывает: AC-013-1, AC-013-11 и AC-013-12 на хранилище. Готово, когда: тесты пакета зелёные.
-- [ ] **T-4.** `adapter-postgres`: миграция `0005_billing.sql`, `createPostgresBalanceStore(pool)` с SQL из 4.2, тесты с `POSTGRES_TEST_URL`. Закрывает: AC-013-1, AC-013-10, AC-013-11, AC-013-12. Готово, когда: тесты пакета с `.env` зелёные.
-- [ ] **T-5.** `llm-gateway-core`, `adapter-postgres` (`BudgetStore.close` и `totals`), `adapter-memory` (если там есть `BudgetStore`), `apps/llm-gateway` (`sleep`, `LLM_GATEWAY_CLOSE_WAIT_MS` в config, `.env.example`, `.env`, `compose.yaml`): ожидание по 4.7. Убрать временный `heldMicroUsd: 0` из T-1. Закрывает: REQ-013-9, AC-013-18, NFR-013-2. Готово, когда: тесты gateway зелёные.
-- [ ] **T-6.** `orchestrator-core` и `adapter-gateway-http`: `close` возвращает сумму, `spentMicroUsd` в итоговом событии по 4.6. Закрывает: AC-013-19. Готово, когда: тесты пакетов зелёные.
-- [ ] **T-7.** `api-core`:
-  - порт `Billing`;
-  - резерв в `createSwarm`;
-  - закрытие на итоговом событии по всем трём путям;
-  - `settlePending` по 4.4.
+  Закрывает: REQ-013-2, REQ-013-3, REQ-013-10; AC-013-3…AC-013-7 и AC-013-23 на уровне ядра. Готово, когда: тесты пакета и `npm run arch:check` зелёные.
+- [ ] **T-3.** `adapter-memory`: `createMemoryBalanceStore()` по 4.2.
+  - Семантика — как у Postgres.
+  - Атомарность — синхронный код без `await` между проверкой и записью.
 
-  Тесты с фейковым `Billing`. Закрывает: REQ-013-4, REQ-013-6, REQ-013-8; AC-013-8, AC-013-13…AC-013-17. Готово, когда: тесты `packages/api-core` зелёные (сборка `apps/api` красная до T-9).
-- [ ] **T-8.** `identity-core`, `adapter-postgres`, `adapter-memory`, `apps/identity`:
+  Тесты. Закрывает: AC-013-1, AC-013-11 и AC-013-12 на хранилище. Готово, когда: тесты пакета зелёные.
+- [ ] **T-4.** `adapter-postgres`:
+  - миграция `0005_billing.sql`;
+  - `createPostgresBalanceStore(pool)` с SQL и правилами чтения из 4.2;
+  - тест числа миграций в `test/migrations.test.ts` — на 5.
+
+  Тесты с `POSTGRES_TEST_URL`. Закрывает: AC-013-1, AC-013-10, AC-013-11, AC-013-12. Готово, когда: тесты пакета с `.env` зелёные.
+- [ ] **T-5.** Ожидание в gateway по 4.7:
+  - `llm-gateway-core`: `closeSwarm`, `deps.sleep`, `deps.closeWaitMs`, метод `totals` в `BudgetStore`;
+  - `adapter-postgres`: `close` возвращает `heldMicroUsd`, новый `totals`;
+  - фейки `BudgetStore` в тестах `llm-gateway-core` и `apps/llm-gateway`;
+  - `apps/llm-gateway`: `sleep` на `setTimeout`, `LLM_GATEWAY_CLOSE_WAIT_MS` в `packages/config`, `.env.example`, `.env`, `compose.yaml`;
+  - убрать временный `heldMicroUsd: 0` из T-1.
+
+  Закрывает: REQ-013-9, AC-013-18, NFR-013-2. Готово, когда: тесты gateway и `npm run typecheck` зелёные.
+- [ ] **T-6.** `orchestrator-core` и `adapter-gateway-http` по 4.6:
+  - `LlmSwarms.close` возвращает `number | null`;
+  - `spentMicroUsd` в итоговом событии;
+  - фейки `LlmSwarms` в тестах оркестратора.
+
+  Закрывает: AC-013-19. Готово, когда: тесты пакетов и `apps/orchestrator` зелёные.
+- [ ] **T-7.** `identity-core`, `adapter-postgres`, `adapter-memory`, `apps/identity` по 4.8:
   - `findOrganizationById`;
   - `organizationExists`;
-  - маршрут 4.8.
+  - маршрут `GET /internal/organizations/:orgId`.
 
   Закрывает: AC-013-20. Готово, когда: тесты identity зелёные.
-- [ ] **T-9.** `apps/api` по 4.5, 4.9 и 4.10:
-  - маршруты баланса, `STATUS`, `organizations.ts`;
-  - сборка `billing-core`, порядок старта;
-  - `BALANCE_MAX_TOPUP_MICRO_USD` в config, `.env.example`, `.env`, `compose.yaml`;
-  - `adapter-orchestrator-http` `timeoutMs` (из N-25).
+- [ ] **T-8.** `api-core`:
+  - порт `Billing`;
+  - шаги 3–6 `createSwarm` (4.4);
+  - общий фейк `Billing` в `packages/api-core/test`, подключённый во все существующие вызовы `createApiCore`.
 
-  HTTP-тесты на `inject`. Закрывает: REQ-013-12; AC-013-2…AC-013-9, AC-013-14, AC-013-21 на HTTP. Готово, когда: `npm run check` зелёный, группа влита в `main`.
-- [ ] **T-10.** `ui-core` (`usdToMicro`) и `cabinet` по 4.11. Тесты `ui-core`. Закрывает: REQ-013-11, AC-013-23. Готово, когда: `npm run check` зелёный.
-- [ ] **T-11.** Стек-тест `apps/api/test/stack.test.ts`, новый `it` для AC-013-24: сумма ledger роя читается из Postgres по `DATABASE_URL` теста. Бенчмарк NFR-013-1 в `bench.test.ts`. Закрывает: AC-013-24, NFR-013-1. Готово, когда: стек-тест зелёный на поднятом контуре.
-- [ ] **T-12.** Ручная проверка AC-013-25, журнал, README затронутых пакетов, глоссарий. Закрывает: AC-013-25. Готово, когда: результат в журнале.
+  Закрывает: REQ-013-4; AC-013-8, AC-013-15 на ядре. Готово, когда: тесты `packages/api-core` зелёные.
+- [ ] **T-9.** `api-core`: закрытие в `commit` и `finalSpent` (4.4). Закрывает: REQ-013-6, REQ-013-7; AC-013-13, AC-013-14, AC-013-17. Готово, когда: тесты `packages/api-core` зелёные.
+- [ ] **T-10.** `api-core`: `settlePending` (4.4). Закрывает: REQ-013-8, AC-013-16. Готово, когда: тесты `packages/api-core` зелёные.
+- [ ] **T-11.** Конфиг и адаптер оркестратора:
+  - `BALANCE_MAX_TOPUP_MICRO_USD` в `packages/config`, `.env.example`, `.env`, `compose.yaml`;
+  - `timeoutMs` в `@swag/adapter-orchestrator-http` (из N-25).
+
+  Закрывает: REQ-013-12, AC-013-21. Готово, когда: тесты пакетов зелёные.
+- [ ] **T-12.** `apps/api/src/organizations.ts`: `createOrgDirectory` по 4.9, тесты на тестовом HTTP-сервере. Готово, когда: тесты зелёные.
+- [ ] **T-13.** `apps/api/src/start.ts` и тесты `startApiCore`: фабрика `billing`, порядок старта по 4.9. Готово, когда: тесты `apps/api` на `startApiCore` зелёные.
+- [ ] **T-14.** `apps/api/src/app.ts` и `main.ts`:
+  - маршруты 4.5, `STATUS`, `buildApp` с `BillingCore`;
+  - сборка в `main.ts`, `ORCHESTRATOR_TIMEOUT_MS`;
+  - существующие тесты `apps/api`, которые создают рои, пополняют баланс организации или передают безлимитный фейк.
+
+  HTTP-тесты на `inject`. Закрывает: AC-013-2…AC-013-9 на HTTP. Готово, когда: `npm run check` зелёный и группа влита в `main`.
+- [ ] **T-15.** Кабинет по 4.11: `api.ts`, `balance.page.ts`, `app.routes.ts`, `app.ts`. Закрывает: REQ-013-11 (страница). Готово, когда: `npm run check` зелёный.
+- [ ] **T-16.** Кабинет: форма пополнения в `balance.page.ts` и отказ `402` в `swarm-new.page.ts` по 4.11. Закрывает: REQ-013-11 (форма). Готово, когда: `npm run check` зелёный.
+- [ ] **T-17.** Стек-тесты в `apps/api/test/stack.test.ts`:
+  - новый `it` для AC-013-24: сумма ledger роя читается из Postgres по `DATABASE_URL` теста;
+  - в AC-024-24 и других стек-тестах, создающих рои, — пополнение баланса перед запуском.
+
+  Бенчмарк NFR-013-1 в `bench.test.ts`. Закрывает: AC-013-24, NFR-013-1. Готово, когда: стек-тесты зелёные на поднятом контуре.
+- [ ] **T-18.** Ручная проверка AC-013-25, журнал, README затронутых пакетов, глоссарий. Закрывает: AC-013-25. Готово, когда: результат в журнале.
 
 ## 9. Открытые вопросы
 
-Пока список не пуст, спека не может быть `ready`. Контракты разделов 4–5 написаны по рекомендациям; другой ответ меняет их.
+Пока список не пуст, спека не может быть `ready`. Контракты разделов 4–5 написаны по рекомендациям, другой ответ меняет их.
 
-- [ ] **Q-1. Сумма закрытия роя.** Траты роя знают двое: ledger gateway (точно) и проекция `api` (сумма `charge` из `llm.call`, теряется при потере события). Варианты:
+- [ ] **Q-1. Сумма закрытия роя.** Траты роя знают двое: ledger gateway (точно) и проекция `api` (сумма `charge` из `llm.call`, теряется вместе с событием). Варианты:
   - **(а)** gateway при закрытии роя ждёт идущие вызовы (`LLM_GATEWAY_CLOSE_WAIT_MS`), оркестратор кладёт `spentMicroUsd` из ответа в итоговое событие, `api` закрывает резерв этой суммой; без поля — по проекции с `warn`;
-  - **(б)** `api` читает `sum(ledger_entries)` роя прямо из общей базы: точно и без правки gateway, но `api` читает таблицу чужого сервиса, а поздние списания после чтения теряются так же;
-  - **(в)** только проекция: проще всего, но «ровно по ledger» держится только пока не теряются события.
+  - **(б)** `api` читает `sum(ledger_entries)` роя прямо из общей базы. Точно и без правки gateway, но `api` читает таблицу чужого сервиса, а поздние списания после чтения теряются так же;
+  - **(в)** только проекция. Проще всего, но «ровно по ledger» держится, только пока не теряются события.
 
-  Рекомендация — (а): владелец ledger сам отдаёт сумму, ожидание закрывает гонку «песочница убита, списание ещё пишется». *(Claude, 2026-11-01)*
+  Рекомендация — (а): владелец ledger сам отдаёт сумму, а ожидание закрывает гонку «песочница убита, списание ещё пишется». *(Claude, 2026-11-01)*
 - [ ] **Q-2. Compute в 013** (из 004, «Не входит»: «стоимость compute — 013»). Секунды песочницы × тариф требуют замера времени песочниц, тарифа и записи ledger `kind = 'compute'`. Варианты:
-  - **(а)** не в 013, а в 005 (песочницы, пул и лимиты): там появится, что мерить;
+  - **(а)** не в 013, а в 005 (песочницы, пул и лимиты): там появится, что мерить. При этом ответе на приёмке заводится `D-n` «compute — 005», а в 004 «Не входит» помечается передача;
   - **(б)** в 013: время от `agent.started` до `agent.stopped` × `COMPUTE_PRICE_MICRO_USD_PER_SEC`.
 
-  Рекомендация — (а): сейчас песочница одна на агента без лимитов, тариф пришлось бы выдумать; поле `kind` и запись `swarm` позволят добавить compute без миграции смысла. *(Claude, 2026-11-01)*
-- [ ] **Q-3. Цена для пользователя и валюта** (из D-8). Списывать себестоимость или с наценкой? Баланс в USD или рублях? Минимальный бюджет роя?
+  Рекомендация — (а): сейчас песочница одна на агента без лимитов, тариф пришлось бы выдумать. Поле `kind` позволит добавить compute позже. *(Claude, 2026-11-01)*
+- [ ] **Q-3. Цена для пользователя и валюта** (из D-8). Списывать себестоимость или с наценкой? Баланс в USD или в рублях? Минимальный бюджет роя?
 
   Рекомендация:
   - без наценки: списывается `charge` из 004;
   - баланс в USD (micro-USD, как ledger);
   - минимальный бюджет — прежний `BudgetMicroUsd` ≥ 1.
 
-  Наценка и рубли — вместе с тарифами D-36, когда появится реальная оплата: до неё деньги виртуальные. *(Claude, 2026-11-01)*
-- [ ] **Q-4. Чей баланс и кто пополняет** (из D-10, часть «деньги»). Варианты:
-  - **(а)** баланс организации; пополняют администратор (своей) и супервизор (любой, с комментарием);
+  Наценка и рубли — вместе с тарифами D-36, когда появится реальная оплата. До неё деньги виртуальные. *(Claude, 2026-11-01)*
+- [ ] **Q-4. Чей баланс, кто пополняет и откуда резерв роя** (из D-10, часть «деньги»; часть D-27 о бюджете роя). Варианты:
+  - **(а)** баланс организации; пополняют администратор (своей) и супервизор (любой, с комментарием); бюджет роя резервируется из общего баланса;
   - **(б)** баланс на пользователя.
 
-  Рекомендация — (а), как в роадмапе раздел 8. Распределение бюджета между пользователями — отдельной спекой, если понадобится. *(Claude, 2026-11-01)*
+  Рекомендация — (а), как в разделе 8 роадмапа. Перевод роя на баланс ИИ, если понадобится, решает 025 (D-27). *(Claude, 2026-11-01)*
 - [ ] **Q-5. Подписка и счёт платформы в 013** (из D-36 и D-38: «куда — 013 и 025»). Рекомендация:
   - в 013 их нет;
-  - D-36 остаётся до реальной оплаты (после MVP);
-  - D-38 остаётся для 025 и 014.
+  - D-36 остаётся до реальной оплаты, после MVP;
+  - D-38 — для 025 и 014.
 
-  Из D-38 в 013 действует одно правило: виртуальное пополнение — не поступление платформы. Записи `topup` при появлении счёта платформы туда не попадут. *(Claude, 2026-11-01)*
+  Из D-38 в 013 действует одно правило: виртуальное пополнение — не поступление платформы. *(Claude, 2026-11-01)*
 - [ ] **Q-6. Кто видит баланс.** Варианты:
-  - **(а)** `user` видит баланс и историю своей организации, включая рои коллег (только сумма и `swarmId`, сам рой ему — `404`);
+  - **(а)** `user` видит баланс и историю своей организации, включая рои коллег: только сумма и `swarmId`, сам рой ему — `404`;
   - **(б)** `user` видит только три числа, история — администратору;
   - **(в)** `user` баланса не видит.
 
-  Рекомендация — (а): пользователю нужно знать доступный остаток до запуска, а сумма роя коллеги не раскрывает его содержимого. *(Claude, 2026-11-01)*
-- [ ] **Q-7. Пределы.** Предел одного виртуального пополнения `BALANCE_MAX_TOPUP_MICRO_USD` — рекомендация $100: деньги виртуальные, предел защищает от опечатки в лишние нули. Общего предела баланса нет. `LLM_GATEWAY_CLOSE_WAIT_MS` — рекомендация 5000: вызов, оборванный уборкой песочницы, списывается за миллисекунды, 5 с — с запасом и не держат завершение роя заметно. *(Claude, 2026-11-01)*
+  Рекомендация — (а): пользователю нужно знать доступный остаток до запуска, а сумма роя коллеги не раскрывает его содержимого.
+
+  `id` записи общий на все организации. По разрывам номеров можно грубо оценить активность платформы. Принимается: суммы и организации не видны. *(Claude, 2026-11-01)*
+- [ ] **Q-7. Пределы.**
+  - `BALANCE_MAX_TOPUP_MICRO_USD`, предел одного виртуального пополнения. Рекомендация — $100: деньги виртуальные, предел защищает от опечатки в лишние нули. Общего предела баланса нет.
+  - `LLM_GATEWAY_CLOSE_WAIT_MS`. Рекомендация — 5000, не больше 8000. Вызов, оборванный уборкой песочницы, списывается за миллисекунды.
+  - `ORCHESTRATOR_TIMEOUT_MS`. Рекомендация — 15 000: больше времени `stop`.
+
+  *(Claude, 2026-11-01)*
+- [ ] **Q-8. Закрытие по проекции, когда сумма из ledger не доходит.** Итоговое событие оркестратора отбрасывается, а резерв закрывается по проекции, в двух случаях:
+  - **запуск по таймауту:** оркестратор запустил рой, `api` счёл запуск неудачным и записал `swarm.failed`. Последующие `llm.call` тоже отбрасываются, поэтому проекция занижена, и траты до `stop` не списываются;
+  - **`closeInterrupted`:** то же для роёв, прерванных перезапуском `api`.
+
+  Варианты:
+  - **(а)** принять: траты ограничены временем до `stop` (секунды) и бюджетом роя. Точное закрытие — D-125;
+  - **(б)** при сбое запуска или в `closeInterrupted` не закрывать резерв, пока не придёт итоговое событие оркестратора. Это требует принимать события после `swarm.failed` от `api` и меняет 003.
+
+  Рекомендация — (а): случаи редкие, потеря ограничена. *(Claude, 2026-11-01)*
 
 ## 10. Журнал реализации
 
