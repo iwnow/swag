@@ -8,6 +8,7 @@
     { "path": "packages/helpers" },
     { "path": "packages/api-integration" },
     { "path": "packages/api-core" },
+    { "path": "packages/identity-core" },
     { "path": "packages/orchestrator-core" },
     { "path": "packages/agent-core" },
     { "path": "packages/ui-core" },

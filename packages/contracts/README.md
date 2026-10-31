@@ -16,8 +16,8 @@
 - `bus.ts` — `BusMessage`, subjects `inboxSubject`, `eventsSubject`, `ALL_INBOXES`, `ALL_EVENTS`.
 - `events.ts` — `TraceId`, `PlatformEventInput` (дискриминированное объединение по `type`, в конверте `traceId: TraceId | null`; вариант `llm.call` с `LlmCallData`, источник `llm-gateway`; `agent.step`, `agent.idle`; `swarm.created` с необязательными бюджетами и `maxTokens` роя и агентов, у событий до 004 и 031 их нет; причины `agent_failed`, `api_restarted`, `budget_exceeded` и `gateway_unavailable` в `swarm.failed`), `PlatformEvent` (с `seq`).
 - `auth.ts` — схемы identity (012, 4.1). `Email` — `trim`, нижний регистр, не больше 254 символов; `Password` — от 10 до 128 символов без `trim` (Q-10); `OrganizationName` — от 1 до 200 символов после `trim`; `AccessTokenClaims` — `iss: swag-identity`, `aud: swag`, `org` — `null` у supervisor.
-- `log.ts` — `LogLevel`, `ServiceName` (с `llm-gateway`), `LogError`, `LogRecord`.
-- `service-info.ts` — `ServiceInfo` (`service` с `llm-gateway`).
+- `log.ts` — `LogLevel`, `ServiceName` (с `llm-gateway` и `identity`), `LogError`, `LogRecord`.
+- `service-info.ts` — `ServiceInfo` (`service` с `llm-gateway` и `identity`).
 - `llm.ts` — `ModelId`, `PricePerMTok`, `ModelPrices`, `CatalogModel` (с `openRouterModel`), `ModelCatalog` (`models.json`), `MicroUsd`, `BudgetMicroUsd` (1…1_000_000_000), `MaxTokens` (целое 1…1_000_000, лимит ответа агента, 031), `LlmUsage`, `GatewayErrorCode` (с кодами 403 и 402 из 004), `ChargeBasis`, `LlmCharge`, `LlmCallStatus`, `LlmCallData` (с `charge`, необязательным), `PlatformModel` (`chat-small`, `chat-large`), заголовки `SWARM_ID_HEADER`, `AGENT_ID_HEADER`. `LlmSwarmRegistration` и `LlmSwarmClosed` намеренно лежат в `swarm.ts`, а не здесь: `swarm.ts` импортирует `llm.ts`, обратный импорт дал бы цикл.
 
 ## Ограничения

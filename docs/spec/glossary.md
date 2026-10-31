@@ -89,7 +89,7 @@
 | Роль | `Role` | Именованный набор прав. В MVP — `user`, `admin`, `supervisor`. |
 | Право | `Permission` | Разрешение на действие, строка `<область>.<действие>`: `swarm.run`, `user.manage`, `balance.topup`. |
 | Вызывающий | `Actor` | Кто вызывает операцию ядра: `userId`, роли, права; оболочка собирает его из токена. Бывает служебным (оркестратор, callback LiteLLM). |
-| Identity | `apps/identity`, `@swag/identity-core`, `createIdentityCore`, `IdentityConfig` | Сервис пользователей, регистрации, входа, сессий и токенов (012); права и проверка доступа — 024. |
+| Identity | `apps/identity`, `@swag/identity-core`, `createIdentityCore`, `IdentityCore`, `IdentityCoreDeps`, `RequestMeta`, `IdentityError`, `IdentityConfig` | Сервис пользователей, регистрации, входа, сессий и токенов (012); права и проверка доступа — 024. |
 | Токен доступа | `accessToken`, `AccessTokenClaims` | Короткоживущий JWT на EdDSA (Ed25519) с `kid`; утверждения `sub`, `org`, `role`, `iss: swag-identity`, `aud: swag`; сервисы проверяют его сами, без запроса в identity (012, 4.1). |
 | Регистрация компании | `requestRegistration`, `RegistrationRequest`, `POST /auth/registrations` | Ввод email: письмо со ссылкой подтверждения или «аккаунт уже есть», ответ одинаковый `202` (012, 4.2). |
 | Подтверждение регистрации | `confirmRegistration`, `RegistrationConfirmRequest`, `email_confirmations`, `invalid_token`, `email_taken` | Одноразовый токен из письма + пароль + название компании → организация и её `admin` одной транзакцией (012, 4.2, 4.3). |
