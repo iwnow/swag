@@ -1,20 +1,21 @@
 # @swag/adapter-memory
 
-Адаптеры портов в памяти процесса: `SwarmStore` из `api-core` (роевое хранилище), `IdentityStore`, `Mailer` и `RateLimiter` из `identity-core` (спека 012). Для тестов ядер и оболочек; при перезапуске всё теряется.
+Адаптеры портов в памяти процесса: `SwarmStore` из `api-core` (роевое хранилище), `IdentityStore`, `Mailer` и `RateLimiter` из `identity-core` (спеки 012 и 024). Для тестов ядер и оболочек; при перезапуске всё теряется.
 
 ## Задачи
 
 - Реализовать асинхронный `SwarmStore` (спека 003, REQ-003-10) без базы данных — для тестов ядра и оболочки.
 - Реализовать порты identity в памяти (спека 012, 4.7) для тестов `identity-core` (T-6…T-10) и общего набора тестов хранилища.
+- Реализовать методы доступа порта `IdentityStore` (спека 024, 4.9, T-5): пользователи, блокировка, приглашения, организации, отзывы, уборка.
 - Рабочие хранилища — `@swag/adapter-postgres` (спека 003, T-5, T-6; спека 012, T-11); этот адаптер в `apps/api` больше не используется.
 
 ## Что внутри сейчас
 
 - `createMemorySwarmStore()` — `appendEvent`, `events`, `view`, `views`; все методы `async`.
-- `createMemoryIdentityStore()` — `IdentityStore` по правилам 4.3: `createUser`, `findUserByEmail`, `findUserById`, `hasSupervisor`, `addConfirmation`, `confirmRegistration`, `createSession`, `rotateSession`, `revokeSession`. Тип `MemoryIdentityStore` — алиас `IdentityStore`, без полей сверх порта.
+- `createMemoryIdentityStore()` — `IdentityStore` по правилам 4.3 и 4.9: `createUser`, `findUserByEmail`, `findUserById`, `hasSupervisor`, `addConfirmation`, `confirmRegistration`, `createSession`, `rotateSession`, `revokeSession`, `listUsers`, `updateUser` (с `revokeAt` отзывает живые сессии пользователя), `addInvitation`, `acceptInvitation`, `listOrganizations`, `tokenRevocations`, `purge`. Тип `MemoryIdentityStore` — алиас `IdentityStore`, без полей сверх порта.
 - `createMemoryMailer()` — `Mailer` с полем `sent: MailMessage[]` и флагом `fail`: при `true` `send` отвергает и письмо не сохраняет.
 - `createMemoryRateLimiter({ now })` — `RateLimiter` с фиксированным окном; геттер `size` для проверки роста памяти.
-- `test/identity-store.contract.ts` — общий набор тестов хранилища `identityStoreContract(name, makeStore)` (AC-012-30). Вызывается из `test/identity-store.test.ts` здесь и из теста Postgres-хранилища. Использует только методы `IdentityStore`; набор не требует пустой базы: токены, email и id уникальны на каждый прогон. Проверка `hasSupervisor() === false` на пустом хранилище — только в `test/identity-store.test.ts` (память).
+- `test/identity-store.contract.ts` — общий набор тестов хранилища `identityStoreContract(name, makeStore)` (AC-012-30, AC-024-4). Вызывается из `test/identity-store.test.ts` здесь и из теста Postgres-хранилища. Использует только методы `IdentityStore`; набор не требует пустой базы: токены, email и id уникальны на каждый прогон. Проверка `hasSupervisor() === false` на пустом хранилище — только в `test/identity-store.test.ts` (память).
 - Тесты: `test/identity-store.test.ts` (общий набор на памяти и `hasSupervisor === false` на пустом хранилище), `test/rate-limiter.test.ts` (AC-012-14, REQ-012-17), `test/mailer.test.ts`.
 
 ## Ограничения
@@ -24,7 +25,8 @@
 - Идентификаторы и даты приходят снаружи (порты `IdGenerator`, `Clock`); хранилище их не генерирует.
 - Не потокобезопасен сверх одного процесса. Атомарность — за счёт синхронного тела операций на одном потоке JS.
 - Ограничитель: счётчики обнуляются при перезапуске (Q-6, 4.8). Очистка истёкших записей — только при `hit` и только когда записей больше 10000.
-- `addConfirmation` с уже занятым `tokenHash` бросает `Error` и не перезаписывает запись, в том числе погашенную, — как первичный ключ в Postgres (трактовка 4.3, D-114).
+- `addConfirmation` и `addInvitation` с уже занятым `tokenHash` бросают `Error` и не перезаписывают запись, в том числе погашенную, — как первичный ключ в Postgres (трактовка 4.3, D-114).
+- `updateUser` с неизвестным `id` бросает `Error`; проверку существования делает ядро до вызова.
 - Ограничитель при более чем 10000 записях проходит весь `Map` на каждый `hit` (N-21).
 
 ## Связи
@@ -47,3 +49,4 @@
 - 001 — REQ-001-3, 4.10 (исходная реализация в памяти).
 - 003 — REQ-003-10: тот же асинхронный порт, остаётся для тестов ядра.
 - 012 — 4.3, 4.7, 4.8; задача T-5 (REQ-012-17, AC-012-14, AC-012-30 — память).
+- 024 — 4.9, 4.11; задачи T-5 (AC-024-4 — память, `test/identity-store.contract.ts`).

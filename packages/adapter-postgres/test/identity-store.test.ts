@@ -44,7 +44,15 @@ describe.skipIf(!url)('adapter-postgres хранилище identity', () => {
         tokenHash,
         now: NOW,
         org: { id: orgId, name: orgName, createdAt: NOW },
-        user: { id: randomUUID(), passwordHash: 'hash', role: 'admin', orgId, createdAt: NOW },
+        user: {
+          id: randomUUID(),
+          passwordHash: 'hash',
+          role: 'admin',
+          orgId,
+          createdAt: NOW,
+          blockedAt: null,
+          tokensValidAfter: null,
+        },
       });
     });
     const results = await Promise.all(attempts);
@@ -62,5 +70,46 @@ describe.skipIf(!url)('adapter-postgres хранилище identity', () => {
     );
     expect(orgs.rows[0]?.n).toBe(1);
     expect(users.rows[0]?.n).toBe(1);
+  });
+
+  it('AC-024-5: параллельные rotateSession одним старым хэшем — один ok и один reused', async () => {
+    const store = createPostgresIdentityStore(pool);
+    for (let round = 0; round < 5; round++) {
+      const userId = randomUUID();
+      await store.createUser({
+        id: userId,
+        email: `rotate-${randomUUID()}@example.test`,
+        passwordHash: 'hash',
+        role: 'supervisor',
+        orgId: null,
+        createdAt: NOW,
+        blockedAt: null,
+        tokensValidAfter: null,
+      });
+      const oldHash = `race-old-${randomUUID()}`;
+      await store.createSession({
+        id: randomUUID(),
+        userId,
+        refreshHash: oldHash,
+        expiresAt: NOW + HOUR,
+        createdAt: NOW,
+      });
+
+      const results = await Promise.all([
+        store.rotateSession({
+          oldHash,
+          newHash: `race-new-a-${randomUUID()}`,
+          now: NOW + 1,
+          expiresAt: NOW + HOUR,
+        }),
+        store.rotateSession({
+          oldHash,
+          newHash: `race-new-b-${randomUUID()}`,
+          now: NOW + 1,
+          expiresAt: NOW + HOUR,
+        }),
+      ]);
+      expect(results.map((result) => result.status).sort()).toEqual(['ok', 'reused']);
+    }
   });
 });

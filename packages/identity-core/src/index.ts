@@ -8,6 +8,7 @@ import {
   type AuthUser,
   type AuthRefreshed,
   type AuthSession,
+  type OrgRole,
   type Role,
   type ServiceInfo,
 } from '@swag/contracts';
@@ -40,6 +41,8 @@ export type StoredUser = {
   role: Role;
   orgId: string | null;
   createdAt: number;
+  blockedAt: number | null;
+  tokensValidAfter: number | null;
 };
 export type StoredOrganization = { id: string; name: string; createdAt: number };
 
@@ -80,6 +83,37 @@ export interface IdentityStore {
     { status: 'ok'; userId: string } | { status: 'reused'; userId: string } | { status: 'invalid' }
   >;
   revokeSession(refreshHash: string, now: number): Promise<void>;
+  // Спека 024, 4.9:
+  listUsers(filter: { orgId?: string }): Promise<StoredUser[]>; // по email
+  updateUser(input: {
+    id: string;
+    role?: Role;
+    blockedAt?: number | null;
+    revokeAt?: number;
+  }): Promise<StoredUser>;
+  addInvitation(i: {
+    tokenHash: string;
+    email: string;
+    orgId: string;
+    role: OrgRole;
+    invitedBy: string;
+    expiresAt: number;
+    createdAt: number;
+  }): Promise<void>;
+  acceptInvitation(input: {
+    tokenHash: string;
+    now: number;
+    user: { id: string; passwordHash: string; createdAt: number };
+  }): Promise<
+    | { status: 'ok'; user: StoredUser; organization: StoredOrganization }
+    | { status: 'invalid_token' }
+    | { status: 'email_taken' }
+  >;
+  listOrganizations(): Promise<(StoredOrganization & { userCount: number })[]>; // по name
+  tokenRevocations(
+    since: number,
+  ): Promise<{ userId: string; validAfter: number; blocked: boolean }[]>; // tokens_valid_after > since
+  purge(before: number): Promise<{ confirmations: number; invitations: number; sessions: number }>;
 }
 
 export interface PasswordHasher {
@@ -164,6 +198,9 @@ export const confirmMailText = (link: string, ttlHours: number): string =>
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
+
+// Спека 024, 4.9 (Q-11): срок хранения просроченных и закрытых записей до уборки purge.
+export const RETENTION_MS = 7 * 24 * HOUR_MS;
 
 export const RATE_LIMITS = {
   registerEmail: { key: 'register:email', limit: 3, windowMs: HOUR_MS },
@@ -335,7 +372,15 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
       tokenHash: opaque.hash(token),
       now,
       org,
-      user: { id: userId, passwordHash, role: 'admin', orgId: org.id, createdAt: now },
+      user: {
+        id: userId,
+        passwordHash,
+        role: 'admin',
+        orgId: org.id,
+        createdAt: now,
+        blockedAt: null,
+        tokensValidAfter: null,
+      },
     });
     if (result.status === 'invalid_token') {
       log.warn('confirm_invalid_token');
@@ -349,6 +394,8 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
       role: 'admin',
       orgId: org.id,
       createdAt: now,
+      blockedAt: null,
+      tokensValidAfter: null,
     };
     return ok(await issueSession(user, org));
   };
@@ -399,6 +446,8 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
       role: 'supervisor',
       orgId: null,
       createdAt: clock.now(),
+      blockedAt: null,
+      tokensValidAfter: null,
     });
     log.info('supervisor_created', { userId });
   };

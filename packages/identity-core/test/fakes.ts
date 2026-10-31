@@ -161,6 +161,8 @@ export async function seedAdmin(env: TestEnv): Promise<{ userId: string; orgId: 
       role: 'admin',
       orgId,
       createdAt: NOW,
+      blockedAt: null,
+      tokensValidAfter: null,
     },
   });
   return { userId, orgId };
