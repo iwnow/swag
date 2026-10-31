@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 // Общие хелперы стек-тестов llm-gateway (спека 002, 004): команды из корня репозитория и адрес api.
-// Тесты пропускаются без LLM_GATEWAY_URL — гейт остаётся в файлах тестов.
+// Тесты пропускаются без STACK_TEST_GATEWAY_URL — гейт остаётся в файлах тестов.
 export const root = fileURLToPath(new URL('../../../', import.meta.url));
 export const apiUrl = process.env['STACK_API_URL'] ?? 'http://127.0.0.1:3000';
 export const EXEC_TIMEOUT_MS = 20_000;

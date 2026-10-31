@@ -116,11 +116,11 @@
 
 ## Стек-тесты
 
-`apps/llm-gateway/test/stack.test.ts` — AC-002-20 и AC-002-21 против поднятого стека; `apps/llm-gateway/test/stack-money.test.ts` — AC-004-34 и AC-004-35 (деньги роя: `swarm_budgets`, `swarm_agents`, `ledger_entries` через `DATABASE_URL`, бюджет 1 и `docker ps` с меткой `swag.kind`). Без `LLM_GATEWAY_URL` тесты пропускаются. Общие хелперы (`run`, `containerId`, `apiUrl`) — `test/stack-support.ts`.
+`apps/llm-gateway/test/stack.test.ts` — AC-002-20 и AC-002-21 против поднятого стека; `apps/llm-gateway/test/stack-money.test.ts` — AC-004-34 и AC-004-35 (деньги роя: `swarm_budgets`, `swarm_agents`, `ledger_entries` через `DATABASE_URL`, бюджет 1 и `docker ps` с меткой `swag.kind`). Без `STACK_TEST_GATEWAY_URL` тесты пропускаются (переменная оркестратора `LLM_GATEWAY_URL` их не включает, D-102). Общие хелперы (`run`, `containerId`, `apiUrl`) — `test/stack-support.ts`.
 
 ```bash
 npm run up                                   # профиль LLM_PROFILE=test из .env
-LLM_GATEWAY_URL=http://127.0.0.1:3002 node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --no-file-parallelism apps/llm-gateway/test/stack.test.ts apps/llm-gateway/test/stack-money.test.ts
+STACK_TEST_GATEWAY_URL=http://127.0.0.1:3002 node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --no-file-parallelism apps/llm-gateway/test/stack.test.ts apps/llm-gateway/test/stack-money.test.ts
 npm run down
 ```
 
