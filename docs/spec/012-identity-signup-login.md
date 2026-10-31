@@ -1,7 +1,7 @@
 ---
 id: "012"
 title: Регистрация и вход
-status: ready
+status: in-progress
 roadmap_stage: 5
 depends_on: ["000", "003", "016"]
 superseded_by: null
