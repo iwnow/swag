@@ -1,7 +1,7 @@
 ---
 id: "012"
 title: Регистрация и вход
-status: review
+status: done
 roadmap_stage: 5
 depends_on: ["000", "003", "016"]
 superseded_by: null
@@ -670,3 +670,4 @@ export const IdentityConfig = z.object({
 | 2026-10-31 | spec/012-done | AC-012-29 `[manual]`, проверка на поднятом стенде: `npm run identity:keys -- --write-env` → «IDENTITY_JWT_PRIVATE_KEY записан в .env» (ключ в консоль не печатается), `npm run up` → код 0. `docker compose ps identity mailpit` → `identity | Up (healthy) | 127.0.0.1:3003->3003/tcp`, `mailpit | Up (healthy) | 127.0.0.1:1025->1025/tcp, 127.0.0.1:8025->8025/tcp` — порты только на `127.0.0.1`. `curl` по шагам AC-012-27 (вывод с замаскированными токенами): `POST /auth/registrations` → 202; письмо найдено через API Mailpit, токен из ссылки 43 символа; `POST /auth/registrations/confirm` → `201`, `cache-control: no-store`, `set-cookie: swag_refresh=<token>; Max-Age=2592000; Path=/auth; HttpOnly; SameSite=Strict`, `role: admin`, `orgId` задан; `POST /auth/logout` → 204; `POST /auth/login` → 200, `no-store`, cookie с теми же атрибутами; повторное подтверждение → 400 `invalid_token`; вход супервизора из `.env` → `role=supervisor organization=null`. UI Mailpit `http://127.0.0.1:8025`: письмо «Подтвердите регистрацию в Swag» на адрес проверки видно первым в списке. `docker compose logs identity` (15 строк): вхождений email пользователя 0, email супервизора 0, токена подтверждения 0, JWT (`eyJ`) 0, `swag_refresh=` 0, пароля 0. Итог: AC-012-29 выполнен. |
 | 2026-10-31 | spec/012-done | Завершение: этапы 1–8 влиты (PR #129–#136), main 0167072. `npm run check` зелёный, стек-тест AC-012-27 зелёный на поднятом контуре. NFR-012-1 — замер в строке T-12; NFR-012-2 — 10 серий по 10 входов с перезапуском identity (лимиты 4.8, трактовка D-120): p50 15.5 мс, p95 30.9 мс, max 47.3 мс. На приёмку: D-113…D-120, N-21, N-22. README пакетов 012 сверены с кодом (T-19). `status: review`. |
 | 2026-10-31 | spec/012-acceptance | Решения человека при приёмке («все по рекомендации»): D-113 — срок в письме округляется вверх до целых часов (как в коде); D-114 — `addConfirmation` с занятым `tokenHash` бросает ошибку; D-115 — логи ошибок почты и ядра без текста ошибки, безопасная диагностика — заметка N-23; D-116 — `invalid_refresh_token` для сессии без пользователя, любой занятый email супервизора — ошибка старта; D-117 — ключи в env как base64 от текста PEM; D-118 — до выхода в прод общий лимит по `request.ip`, `trustProxy` — в 024 или перед продом (D-118 оставлен с «куда — 024»); D-119 — 413 с кодом `validation_error`; D-120 — замер NFR-012-2 сериями по 10 входов с перезапуском identity. Код не менялся. |
+| 2026-10-31 | spec/012-accepted | Спека принята человеком, `status: done`. |
