@@ -27,6 +27,7 @@ export const CONFIRM_TTL_S = 86400;
 export const INVITE_URL = 'http://127.0.0.1:4200/auth/invite';
 export const INVITE_TTL_S = 604800;
 export const CONFIRM_URL = 'http://127.0.0.1:4200/auth/confirm';
+export const INTERNAL_TOKEN = 'test-internal-token-0123456789-abcdefghij';
 
 const open: Harness[] = [];
 // Закрывает все оболочки после каждого теста файла.
@@ -106,6 +107,7 @@ export async function makeHarness(options: HarnessOptions = {}): Promise<Harness
     cookieSecure: options.cookieSecure ?? false,
     refreshTtlS: REFRESH_TTL_S,
     bodyLimit: options.bodyLimit ?? 16384,
+    internalToken: INTERNAL_TOKEN,
   };
   const app = await buildApp(core, settings, {
     loggerInstance: telemetry.logger.pino,
@@ -172,6 +174,44 @@ export async function registerAndConfirm(
 // Записи логов в JSON: строка на запись (REQ-016-2).
 export function logRecords(h: Harness): Record<string, unknown>[] {
   return h.lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+// Логи и спаны, которые видит телеметрия в памяти: текст всех записей одной строкой.
+export function telemetryText(h: Harness): string {
+  const spans = h.exporters.finishedSpans.map((span) => ({
+    name: span.name,
+    attributes: span.attributes,
+    events: span.events.map((event) => ({ name: event.name, attributes: event.attributes })),
+  }));
+  return [...h.lines, JSON.stringify(spans)].join('\n');
+}
+
+export const bearerOf = (accessToken: string) => ({ authorization: `Bearer ${accessToken}` });
+
+// Вход по email и паролю: ответ как у POST /auth/login.
+export const loginAs = (h: Harness, email: string, password = PASSWORD) =>
+  h.app.inject({ method: 'POST', url: '/auth/login', payload: { email, password } });
+
+// Приглашение от администратора и принятие по ссылке из письма: ответ как у POST /auth/invitations/accept.
+export async function addMember(
+  h: Harness,
+  adminAccessToken: string,
+  email: string,
+  role: 'user' | 'admin' = 'user',
+) {
+  const invited = await h.app.inject({
+    method: 'POST',
+    url: '/auth/invitations',
+    headers: bearerOf(adminAccessToken),
+    payload: { email, role },
+  });
+  if (invited.statusCode !== 202) throw new Error(`invite failed: ${invited.statusCode}`);
+  const token = confirmTokenFrom(h.mailer);
+  return h.app.inject({
+    method: 'POST',
+    url: '/auth/invitations/accept',
+    payload: { token, password: PASSWORD },
+  });
 }
 
 // Декодирует JWT без проверки подписи: только для утверждений в тестах.

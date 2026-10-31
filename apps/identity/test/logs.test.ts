@@ -8,22 +8,12 @@ import {
   makeHarness,
   refreshValueOf,
   setCookieOf,
-  type Harness,
+  telemetryText,
 } from './support.ts';
 
 closeHarnessesAfterEach();
 
 const ORG = 'Компания';
-
-// Логи и спаны, которые видит телеметрия в памяти: текст всех записей одной строкой.
-function telemetryText(h: Harness): string {
-  const spans = h.exporters.finishedSpans.map((span) => ({
-    name: span.name,
-    attributes: span.attributes,
-    events: span.events.map((event) => ({ name: event.name, attributes: event.attributes })),
-  }));
-  return [...h.lines, JSON.stringify(spans)].join('\n');
-}
 
 describe('лог и спаны оболочки', () => {
   it('AC-012-22: полный сценарий — в логах и спанах нет email, пароля, хэша, токенов', async () => {

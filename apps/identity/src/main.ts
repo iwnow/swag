@@ -96,6 +96,7 @@ const app = await buildApp(
     cookieSecure: config.IDENTITY_COOKIE_SECURE,
     refreshTtlS: config.IDENTITY_REFRESH_TTL_S,
     bodyLimit: config.IDENTITY_BODY_LIMIT_BYTES,
+    internalToken: config.IDENTITY_INTERNAL_TOKEN,
   },
   {
     loggerInstance: telemetry.logger.pino,

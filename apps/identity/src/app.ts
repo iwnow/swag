@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import cookie from '@fastify/cookie';
 import type { AuthErrorCode } from '@swag/contracts';
 import type { IdentityCore, IdentityError, IssuedSession } from '@swag/identity-core';
@@ -16,7 +17,10 @@ export interface AppSettings {
   cookieSecure: boolean; // IDENTITY_COOKIE_SECURE
   refreshTtlS: number; // IDENTITY_REFRESH_TTL_S, Max-Age cookie
   bodyLimit: number; // IDENTITY_BODY_LIMIT_BYTES
+  internalToken: string; // IDENTITY_INTERNAL_TOKEN, спека 024, 4.7
 }
+
+const PURGE_INTERVAL_MS = 60 * 60 * 1000; // спека 024, 4.8: уборка раз в час
 
 const STATUS: Record<AuthErrorCode, number> = {
   validation_error: 400,
@@ -35,6 +39,13 @@ const STATUS: Record<AuthErrorCode, number> = {
 
 const bearer = (header: string | undefined): string | undefined =>
   header?.startsWith('Bearer ') ? header.slice('Bearer '.length) : undefined;
+
+// Спека 024, 4.7 и как LLM_GATEWAY_TOKEN: сравнение через timingSafeEqual; разная длина — отказ сразу, без сравнения.
+function tokenMatches(presented: string, expected: string): boolean {
+  const given = Buffer.from(presented);
+  const wanted = Buffer.from(expected);
+  return given.length === wanted.length && timingSafeEqual(given, wanted);
+}
 
 export async function buildApp(
   core: IdentityCore,
@@ -105,6 +116,62 @@ export async function buildApp(
     const result = await core.me(bearer(request.headers.authorization));
     if (!result.ok) return fail(reply, result.error);
     return reply.code(200).send(result.value);
+  });
+
+  app.get('/auth/users', async (request, reply) => {
+    const { orgId } = request.query as { orgId?: unknown };
+    const result = await core.listUsers(
+      bearer(request.headers.authorization),
+      typeof orgId === 'string' ? { orgId } : {},
+    );
+    if (!result.ok) return fail(reply, result.error);
+    return reply.code(200).send(result.value);
+  });
+
+  app.post('/auth/invitations', async (request, reply) => {
+    const result = await core.inviteUser(bearer(request.headers.authorization), request.body);
+    if (!result.ok) return fail(reply, result.error);
+    return reply.code(202).send();
+  });
+
+  app.post('/auth/invitations/accept', async (request, reply) => {
+    const result = await core.acceptInvitation(request.body, { ip: request.ip });
+    if (!result.ok) return fail(reply, result.error);
+    return issued(reply, result.value, 201);
+  });
+
+  app.patch('/auth/users/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const result = await core.updateUser(bearer(request.headers.authorization), id, request.body);
+    if (!result.ok) return fail(reply, result.error);
+    return reply.code(200).send(result.value);
+  });
+
+  app.get('/auth/organizations', async (request, reply) => {
+    const result = await core.listOrganizations(bearer(request.headers.authorization));
+    if (!result.ok) return fail(reply, result.error);
+    return reply.code(200).send(result.value);
+  });
+
+  // Спека 024, 4.7: только для identity-клиентов с IDENTITY_INTERNAL_TOKEN; ошибка в общем формате { error: { code, message } }.
+  app.get('/internal/token-revocations', async (request, reply) => {
+    const presented = bearer(request.headers.authorization) ?? '';
+    if (!tokenMatches(presented, settings.internalToken)) {
+      return fail(reply, { code: 'unauthorized', message: 'unauthorized' });
+    }
+    return reply.code(200).send(await core.tokenRevocations());
+  });
+
+  // Спека 024, 4.8: уборка при старте и раз в час; ошибка — warn без текста ошибки (N-23).
+  let purgeTimer: ReturnType<typeof setInterval> | undefined;
+  const purge = () => core.purgeExpired().catch(() => app.log.warn('identity_purge_failed'));
+  app.addHook('onReady', async () => {
+    await purge();
+    purgeTimer = setInterval(() => void purge(), PURGE_INTERVAL_MS);
+    purgeTimer.unref();
+  });
+  app.addHook('onClose', async () => {
+    clearInterval(purgeTimer);
   });
 
   // Ошибки формата запроса Fastify (413, неверный JSON, неподдерживаемый тип) — validation_error с фиксированным текстом:
