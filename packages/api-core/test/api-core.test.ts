@@ -1137,6 +1137,33 @@ describe('api-core — спека 013: резерв бюджета роя в cre
     billing.reserveResult = 'ok';
     expect(codeOf(await core.createSwarm(ACTOR, body(1)))).toBe('ok');
   });
+
+  it('D-129: рой во время launch учтён только в проекции — второй рой проходит лимит 2, отказ баланса освобождает место', async () => {
+    let launchCalls = 0;
+    let firstLaunchStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      firstLaunchStarted = resolve;
+    });
+    const { core, billing } = setup({
+      maxActiveSwarms: 2,
+      launch: () => {
+        launchCalls += 1;
+        if (launchCalls === 1) {
+          firstLaunchStarted();
+          return new Promise<void>(() => undefined);
+        }
+        return Promise.resolve();
+      },
+    });
+    void core.createSwarm(ACTOR, body(1));
+    await started;
+    billing.reserveResult = 'insufficient';
+    const refused = await core.createSwarm(ACTOR, body(1));
+    expect(codeOf(refused)).toBe('insufficient_balance');
+    billing.reserveResult = 'ok';
+    expect(codeOf(await core.createSwarm(ACTOR, body(1)))).toBe('ok');
+    expect(codeOf(await core.createSwarm(ACTOR, body(1)))).toBe('too_many_active_swarms');
+  });
 });
 
 describe('api-core — спека 013: закрытие резерва на итоговом событии', () => {
@@ -1354,6 +1381,33 @@ describe('api-core — спека 013: закрытие резерва на ит
     }));
     return { core, billing, entries, a, b, missing };
   }
+
+  it('D-127: settlePending закрывает резерв по первому итоговому событию, поздний swarm.stopped с другой суммой не учитывается', async () => {
+    const { core, billing } = setup();
+    const created = await core.createSwarm(ACTOR, body(1));
+    if (!created.ok) throw new Error('не создан');
+    const id = created.value.id;
+    await core.ingestEvent(
+      sys(id, 1, {
+        type: 'swarm.completed',
+        source: 'orchestrator',
+        agentId: null,
+        data: { result: 'R', spentMicroUsd: 9000 },
+      }),
+    );
+    await core.ingestEvent(
+      sys(id, 2, {
+        type: 'swarm.stopped',
+        source: 'orchestrator',
+        agentId: null,
+        data: { reason: 'user', spentMicroUsd: 4000 },
+      }),
+    );
+    billing.settles.length = 0;
+    billing.held = [{ swarmId: id, orgId: ORG_A, amountMicroUsd: 1000000 }];
+    expect(await core.settlePending()).toBe(1);
+    expect(billing.settles).toEqual([{ swarmId: id, spentMicroUsd: 9000 }]);
+  });
 
   it('AC-013-16: четыре резерва — закрыты 1-й, 2-й и 4-й, 3-й не тронут, результат 3', async () => {
     const { core, billing, a, b, missing } = await pendingHolds();
