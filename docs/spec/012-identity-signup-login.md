@@ -1,7 +1,7 @@
 ---
 id: "012"
 title: Регистрация и вход
-status: ready
+status: in-progress
 roadmap_stage: 5
 depends_on: ["000", "003", "016"]
 superseded_by: null
@@ -532,10 +532,10 @@ export const IdentityConfig = z.object({
 
 Задачи выполняются по порядку, после каждой — коммит. Ветки этапов — по [implement-spec](../../.claude/skills/implement-spec/SKILL.md#ветка-на-этап).
 
-- [ ] **T-1.** `packages/contracts/src/auth.ts` по 4.1, экспорт из `src/index.ts`, тесты схем в `packages/contracts/test/auth.test.ts`. Закрывает: REQ-012-19, AC-012-1. Готово, когда: тесты зелёные, README `contracts` дополнен.
-- [ ] **T-2.** `IdentityConfig` по 4.10 в `packages/config/src/index.ts` и тест в `packages/config/test`. Переменные 4.10 и 4.11 — в `.env.example` и в локальный `.env` с dev-значениями, `IDENTITY_JWT_PRIVATE_KEY` пока пустая. Закрывает: AC-012-2 (без ключа — до T-14). Готово, когда: тест на ошибки конфига зелёный.
-- [ ] **T-3.** Миграция `0003_identity.sql` по 4.9 и тест в `packages/adapter-postgres/test/migrations.test.ts`. Закрывает: AC-012-3. Готово, когда: тест под `POSTGRES_TEST_URL` зелёный.
-- [ ] **T-4.** Пакет `packages/identity-core` по образцу `api-core`: `package.json` (зависимости `zod`, `@swag/contracts`), `tsconfig`, ссылка в корневом `tsconfig.json`, README. Порты и типы 4.2–4.3 и константы 4.6 и 4.8 без операций, `info()`. Закрывает: REQ-012-1, AC-012-31. Готово, когда: `npm run typecheck` и `arch:check` зелёные, вывод в журнале.
+- [x] **T-1.** `packages/contracts/src/auth.ts` по 4.1, экспорт из `src/index.ts`, тесты схем в `packages/contracts/test/auth.test.ts`. Закрывает: REQ-012-19, AC-012-1. Готово, когда: тесты зелёные, README `contracts` дополнен.
+- [x] **T-2.** `IdentityConfig` по 4.10 в `packages/config/src/index.ts` и тест в `packages/config/test`. Переменные 4.10 и 4.11 — в `.env.example` и в локальный `.env` с dev-значениями, `IDENTITY_JWT_PRIVATE_KEY` пока пустая. Закрывает: AC-012-2 (без ключа — до T-14). Готово, когда: тест на ошибки конфига зелёный.
+- [x] **T-3.** Миграция `0003_identity.sql` по 4.9 и тест в `packages/adapter-postgres/test/migrations.test.ts`. Закрывает: AC-012-3. Готово, когда: тест под `POSTGRES_TEST_URL` зелёный.
+- [x] **T-4.** Пакет `packages/identity-core` по образцу `api-core`: `package.json` (зависимости `zod`, `@swag/contracts`), `tsconfig`, ссылка в корневом `tsconfig.json`, README. Порты и типы 4.2–4.3 и константы 4.6 и 4.8 без операций, `info()`. Закрывает: REQ-012-1, AC-012-31. Готово, когда: `npm run typecheck` и `arch:check` зелёные, вывод в журнале.
 - [ ] **T-5.** `createMemoryIdentityStore`, `createMemoryMailer`, `createMemoryRateLimiter` в `packages/adapter-memory` по 4.7. Общий набор тестов хранилища — `packages/adapter-memory/test/identity-store.contract.ts`: функция, которая принимает фабрику хранилища; её же вызовет T-11. Тест ограничителя. Закрывает: REQ-012-17, AC-012-14, AC-012-30 (часть памяти). Готово, когда: тесты зелёные.
 - [ ] **T-6.** `requestRegistration` в `identity-core` по 4.2 с лимитами регистрации. Тесты на адаптерах в памяти и фейковых хэшере, токенах и подписи. Закрывает: REQ-012-2, REQ-012-3, REQ-012-4, REQ-012-16 (регистрация), REQ-012-18, AC-012-4, AC-012-13 (регистрация), AC-012-25 (ядро). Готово, когда: тесты зелёные.
 - [ ] **T-7.** `confirmRegistration` и внутренний `issueSession`. Закрывает: REQ-012-5, REQ-012-6, REQ-012-7, AC-012-7, AC-012-8, AC-012-10 (ядро). Готово, когда: тесты зелёные.
@@ -635,9 +635,19 @@ export const IdentityConfig = z.object({
   **Рекомендация: «а».** Каркас с входом и маршрутизацией по правам — предмет 014. Временные страницы переделывались бы там целиком. S-1 через UI проходится после 014.
   **Ответ (человек, 2026-10-31):** по рекомендации.
 
+- [x] **Q-13. Имя сервиса identity в контрактах.** *(Claude, 2026-10-31, найдено при T-4)*
+  `ServiceInfo.service` и `ServiceName` (`log.ts`, поле `service` в `LogRecord`) перечисляют `api`, `orchestrator`, `agent`, `llm-gateway`. Значения `identity` нет. Спека 012 не говорит, какое имя взять: `info(): ServiceInfo` (4.2), `GET /health` с `...ServiceInfo` (4.4) и записи логов сервиса не пройдут схемы.
+  - а) добавить `identity` в оба перечисления (`service-info.ts`, `log.ts`);
+  - б) другое имя или отдельный тип без связи с `ServiceInfo`.
+
+  **Рекомендация: а.** Так же добавлены `llm-gateway` в 002. Правка — две строки в `@swag/contracts`, тесты на прежние значения не меняются. Блокирует T-4 (`info()`), T-16 (логи и `/health`).
+  **Ответ (человек, 2026-10-31):** по рекомендации.
+
 ## 10. Журнал реализации
 
 Заполняет агент.
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+| 2026-10-31 | spec/012-t1 | T-1: `auth.ts`, тесты AC-012-1, README contracts. T-2: `IdentityConfig`, `.env.example` и `.env` (AC-012-2 без ключа — в T-14). T-3: миграция 0003, AC-012-3, README adapter-postgres. Стоп на T-4: Q-13. | Тест AC-004-20 расширен колонками новых таблиц (миграция 0003 попадает в ту же схему). `superRefine` вместо `refine` в `IdentityConfig`, чтобы ошибка называла переменную. |
+| 2026-10-31 | spec/012-t1 | Q-13: `identity` в `ServiceInfo.service` и `ServiceName` (тест `service-info`). T-4: `packages/identity-core` — порты, типы 4.2–4.3, письма 4.6, лимиты 4.8, `createIdentityCore` с `info()` и заглушками, тест REQ-012-1, README. AC-012-31 — `[manual]`, проверки: `npm run arch:check` → `arch:check: нарушений нет`; `npm run typecheck` → код 0, ошибок нет; `grep -rnE "node:|jose|@node-rs/argon2|argon2|nodemailer" packages/identity-core/src` → пусто; `dependencies` identity-core — только `@swag/contracts` и `zod`. | `Result` и `IdentityError` объявлены в пакете (ядро зависит только от `zod` и `@swag/contracts`), форма как у `api-core`. `LogContext` с `userId` и `err`. Комментарий порта `PasswordHasher` без слова argon2id: ядро не называет алгоритм, argon2id задаёт адаптер (4.7). |

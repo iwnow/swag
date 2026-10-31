@@ -6,6 +6,7 @@ import {
   ApiConfig,
   BaseConfig,
   ConfigError,
+  IdentityConfig,
   LlmGatewayConfig,
   ObservabilityConfig,
   OrchestratorConfig,
@@ -279,5 +280,30 @@ describe('loadConfig', () => {
       'LITELLM_MASTER_KEY',
     ]);
     expect(LlmGatewayConfig.safeParse(examples).success).toBe(true);
+  });
+});
+
+// Спека 012, 4.10: примеры окружения identity. Ключ подписи в .env.example пустой (Q-2), здесь — фейк.
+describe('IdentityConfig', () => {
+  const identityExample = (): Record<string, string | undefined> => ({
+    ...parseEnv(readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8')),
+    IDENTITY_JWT_PRIVATE_KEY: 'fake-ed25519-key-for-tests',
+  });
+
+  it('AC-012-2: значения .env.example с ключом разбираются; без ключа и только с супервизором по email — ошибка', () => {
+    expect(loadConfig(IdentityConfig, identityExample()).IDENTITY_PORT).toBe(3003);
+    expect(loadConfig(IdentityConfig, identityExample()).IDENTITY_COOKIE_SECURE).toBe(false);
+
+    const { IDENTITY_JWT_PRIVATE_KEY: _omitted, ...withoutKey } = identityExample();
+    expect(() => loadConfig(IdentityConfig, withoutKey)).toThrow(/IDENTITY_JWT_PRIVATE_KEY/);
+    expect(() =>
+      loadConfig(IdentityConfig, { ...identityExample(), IDENTITY_JWT_PRIVATE_KEY: '' }),
+    ).toThrow(/IDENTITY_JWT_PRIVATE_KEY/);
+    expect(() =>
+      loadConfig(IdentityConfig, {
+        ...identityExample(),
+        IDENTITY_SUPERVISOR_EMAIL: 'supervisor@swag.local',
+      }),
+    ).toThrow(/IDENTITY_SUPERVISOR_PASSWORD/);
   });
 });

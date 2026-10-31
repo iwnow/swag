@@ -5,7 +5,7 @@
 ## Задачи
 
 - `loadConfig(schema, env)` — разобрать env; ошибка — `ConfigError` с именем переменной.
-- Схемы сервисов: `BaseConfig`, `ApiConfig`, `OrchestratorConfig`, `AgentConfig`, `LlmGatewayConfig`, `UiConfig`, `ObservabilityConfig`.
+- Схемы сервисов: `BaseConfig`, `ApiConfig`, `OrchestratorConfig`, `AgentConfig`, `LlmGatewayConfig`, `IdentityConfig`, `UiConfig`, `ObservabilityConfig`.
 
 ## Что внутри сейчас
 
@@ -14,6 +14,7 @@
 - `OrchestratorConfig` — база + `ORCHESTRATOR_PORT`, `AGENT_TEMPLATE`, `DOCKER_AGENT_NETWORK`, `DOCKER_AGENT_NATS_URL`, `DOCKER_AGENT_OTLP_ENDPOINT` (необязательная, пусто → `null`), `AGENT_START_TIMEOUT_MS`, `SWARM_TIMEOUT_MS`; спека 022, 4.8: `AGENT_MAX_STEPS`, `AGENT_MAX_TOKENS` (целые ≥ 1), `LLM_GATEWAY_TOKEN` (от 32 символов), `DOCKER_AGENT_LLM_GATEWAY_URL` (URL); спека 004, 4.11: `LLM_GATEWAY_URL` (URL, адрес gateway без `/v1` — внутренний API для регистрации роёв; в отличие от `AgentConfig.LLM_GATEWAY_URL` с `/v1`).
 - `AgentConfig` — без `DATABASE_URL` (спека 022, 4.8): `NATS_URL`, `SWARM_ID`, `AGENT_ID`, `AGENT_NAME`, `AGENT_ROLE`, `AGENT_MODEL`, `AGENT_PEERS` (JSON-массив `{id, name, role}`), `AGENT_ENTRY`, `AGENT_MAX_STEPS`, `AGENT_MAX_TOKENS`, `LLM_GATEWAY_URL`, `LLM_GATEWAY_TOKEN` (от 32 символов), `AGENT_LLM_TIMEOUT_MS` (по умолчанию `120000`), `AGENT_LLM_MAX_RETRIES` (по умолчанию `2`); телеметрия: `TRACEPARENT` и `OTEL_EXPORTER_OTLP_ENDPOINT` (пусто → `null`), `TELEMETRY_FLUSH_TIMEOUT_MS` (по умолчанию `2000`).
 - `LlmGatewayConfig` — телеметрия (`OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL`, `TELEMETRY_FLUSH_TIMEOUT_MS`) и `NATS_URL`, `LLM_GATEWAY_PORT`, `LLM_GATEWAY_TOKEN` (от 32 символов), `LLM_CATALOG_PATH`, `LITELLM_URL`, `LITELLM_MASTER_KEY` (с `sk-`, от 16 символов), `LLM_PROFILE` (`test`, `dev`, `test-pay`, `prod`; спека 032, 4.1), таймауты и лимит тела `LLM_GATEWAY_UPSTREAM_TIMEOUT_MS`, `LLM_GATEWAY_STARTUP_TIMEOUT_MS`, `LLM_GATEWAY_BODY_LIMIT_BYTES` (спека 002, 4.9); без `DATABASE_URL`.
+- `IdentityConfig` (спека 012, 4.10) — `DATABASE_URL`, телеметрия (`OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL`, `TELEMETRY_FLUSH_TIMEOUT_MS`), `IDENTITY_PORT`, `IDENTITY_CONFIRM_URL` (URL), `IDENTITY_JWT_PRIVATE_KEY` (непустая строка, ключ Ed25519 в base64 PKCS8), `IDENTITY_JWT_KID`, сроки `IDENTITY_ACCESS_TTL_S` (≥ 60, по умолчанию `900`), `IDENTITY_REFRESH_TTL_S` (≥ 3600, `2592000`), `IDENTITY_CONFIRM_TTL_S` (≥ 600, `86400`), `IDENTITY_COOKIE_SECURE` (`true`/`false`), `IDENTITY_BODY_LIMIT_BYTES` (≥ 1024, `16384`); `IDENTITY_SUPERVISOR_EMAIL` и `IDENTITY_SUPERVISOR_PASSWORD` необязательны, пустая строка — не задано, задан ровно один — ошибка (`superRefine`); почта `SMTP_URL` (URL), `SMTP_TIMEOUT_MS` (по умолчанию `10000`), `MAIL_FROM`.
 - `UiConfig` — `UI_PORT`; `ObservabilityConfig` — `GRAFANA_PORT` и `TELEMETRY_RETENTION` (спека 003, 4.7: `<целое>h`, не меньше `24h`, значения по умолчанию нет). Обе только для `infra:check`.
 
 ## Ограничения
@@ -24,7 +25,7 @@
 
 ## Связи
 
-- Используют: оболочки `apps/api`, `apps/orchestrator`, `apps/agent`, `scripts/infra-check.ts`; `apps/llm-gateway`.
+- Используют: оболочки `apps/api`, `apps/orchestrator`, `apps/agent`, `scripts/infra-check.ts`; `apps/llm-gateway`; `apps/identity` (012, T-16).
 - Использует: `zod`, `@swag/contracts` (`LogLevel`).
 
 ## Ключевые решения
@@ -50,5 +51,6 @@
 - 003 — 4.7, `TELEMETRY_RETENTION` (Q-5).
 - 002 — 4.8 (файлы окружения), 4.9 (`LlmGatewayConfig`), AC-002-27.
 - 022 — 4.8 (env агента и оркестратора, `.env.example`).
+- 012 — 4.10 (`IdentityConfig`), 4.11 (переменные в `.env.example` и `.env`); ключ подписи в `.env.example` пустой, AC-012-2 без ключа — ошибка.
 - 004 — 4.11, `SWARM_MAX_BUDGET_MICRO_USD` в `ApiConfig`.
 - 031 — 4.2, `AGENT_MAX_TOKENS_LIMIT` в `ApiConfig`.

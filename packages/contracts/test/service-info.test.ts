@@ -7,6 +7,7 @@ describe('ServiceInfo', () => {
       service: 'api',
       version: '1.0.0',
     });
+    expect(ServiceInfo.parse({ service: 'identity', version: '1.0.0' }).service).toBe('identity');
     expect(ServiceInfo.safeParse({ service: 'ui', version: '1.0.0' }).success).toBe(false);
     expect(ServiceInfo.safeParse({ service: 'api', version: '' }).success).toBe(false);
   });

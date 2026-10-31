@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AgentId, LogLevel } from '@swag/contracts';
+import { AgentId, Email, LogLevel, Password } from '@swag/contracts';
 
 const Port = z.coerce.number().int().min(1).max(65535);
 const PositiveInt = z.coerce.number().int().min(0);
@@ -128,6 +128,42 @@ export const LlmGatewayConfig = z.object({
   OPENROUTER_MODELS_URL: z.string().url().default('https://openrouter.ai/api/v1/models'), // спека 004, 4.11
 });
 export type LlmGatewayConfig = z.infer<typeof LlmGatewayConfig>;
+
+// Спека 012, 4.10. Пустая строка супервизора — не задано (как OptionalUrl).
+const OptionalSupervisor = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((value) => (value === '' ? undefined : value), schema.optional());
+
+export const IdentityConfig = z
+  .object({
+    DATABASE_URL: z.string().url(),
+    OTEL_EXPORTER_OTLP_ENDPOINT: OptionalUrl,
+    LOG_LEVEL: LogLevel.default('info'),
+    TELEMETRY_FLUSH_TIMEOUT_MS: FlushTimeoutMs,
+    IDENTITY_PORT: Port,
+    IDENTITY_CONFIRM_URL: z.string().url(), // страница UI (014); в dev http://127.0.0.1:4200/auth/confirm
+    IDENTITY_JWT_PRIVATE_KEY: z.string().min(1), // PKCS8 PEM Ed25519 в base64 одной строкой (Q-2)
+    IDENTITY_JWT_KID: z.string().min(1),
+    IDENTITY_ACCESS_TTL_S: z.coerce.number().int().min(60).default(900),
+    IDENTITY_REFRESH_TTL_S: z.coerce.number().int().min(3600).default(2592000),
+    IDENTITY_CONFIRM_TTL_S: z.coerce.number().int().min(600).default(86400),
+    IDENTITY_COOKIE_SECURE: z.enum(['true', 'false']).transform((value) => value === 'true'),
+    IDENTITY_BODY_LIMIT_BYTES: z.coerce.number().int().min(1024).default(16384),
+    IDENTITY_SUPERVISOR_EMAIL: OptionalSupervisor(Email), // задаются вместе с паролем или оба пусты (superRefine ниже)
+    IDENTITY_SUPERVISOR_PASSWORD: OptionalSupervisor(Password),
+    SMTP_URL: z.string().url(), // dev: smtp://mailpit:1025
+    SMTP_TIMEOUT_MS: z.coerce.number().int().min(1).default(10000),
+    MAIL_FROM: z.string().min(3), // dev: Swag <no-reply@swag.local>
+  })
+  .superRefine((config, ctx) => {
+    const emailMissing = config.IDENTITY_SUPERVISOR_EMAIL === undefined;
+    if (emailMissing === (config.IDENTITY_SUPERVISOR_PASSWORD === undefined)) return;
+    ctx.addIssue({
+      code: 'custom',
+      path: [emailMissing ? 'IDENTITY_SUPERVISOR_EMAIL' : 'IDENTITY_SUPERVISOR_PASSWORD'],
+      message: 'IDENTITY_SUPERVISOR_EMAIL и IDENTITY_SUPERVISOR_PASSWORD задаются вместе',
+    });
+  });
+export type IdentityConfig = z.infer<typeof IdentityConfig>;
 
 export interface ConfigIssue {
   variable: string;

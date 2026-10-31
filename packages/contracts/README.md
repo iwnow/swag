@@ -1,11 +1,12 @@
 # @swag/contracts
 
-Общие схемы Zod и типы, которыми обмениваются сервисы и ядра: запрос на рой, рой, агент, запуск роя, сообщение шины, события платформы, subjects NATS, `ServiceInfo`, `traceId`, схема структурного лога и контракты LLM Gateway (каталог моделей, использование токенов, ошибки, вызывающий, деньги и списания, регистрация роя).
+Общие схемы Zod и типы, которыми обмениваются сервисы и ядра: запрос на рой, рой, агент, запуск роя, сообщение шины, события платформы, subjects NATS, `ServiceInfo`, `traceId`, схема структурного лога, контракты LLM Gateway (каталог моделей, использование токенов, ошибки, вызывающий, деньги и списания, регистрация роя) и контракты identity (регистрация, вход, токены, коды ошибок).
 
 ## Задачи
 
 - Единые контракты из [спеки 001, раздел 4](../../docs/spec/001-walking-skeleton.md#4-контракты): `swarm.ts` (4.1), `bus.ts` (4.2), `events.ts` (4.3).
 - Контракты наблюдаемости из [спеки 016](../../docs/spec/016-observability.md#4-контракты): `traceId` в конверте события (4.1), `LogRecord` (4.2).
+- Контракты identity из [спеки 012, раздел 4.1](../../docs/spec/012-identity-signup-login.md#41-swagcontracts-файл-srcauthts): `auth.ts` — `UserId`, `OrgId`, `Role`, `Email`, `Password`, `OrganizationName`, запросы регистрации, подтверждения и входа, `AccessTokenClaims`, `AuthSession`, `AuthRefreshed`, `AuthMe`, `AuthErrorCode`.
 - Контракты LLM Gateway из [спеки 002, раздел 4.1](../../docs/spec/002-llm-gateway.md#41-packagescontractssrcllmts-и-изменения-существующих-схем): `llm.ts`; событие `llm.call` в `events.ts`, источник и сервис `llm-gateway`.
 - Типы выводятся из схем (`z.infer`), отдельно их не пишут.
 
@@ -14,8 +15,9 @@
 - `swarm.ts` — `AgentId`, `SwarmId`, `AgentDraft` (с `model: PlatformModel`, по умолчанию `chat-small`, и `budgetMicroUsd` и `maxTokens`, по умолчанию `null`), `SwarmCreateRequest` (с обязательным `budgetMicroUsd` и `maxTokens`, по умолчанию `null`), `AgentSpec`, `ENTRY_AGENT_ID`, `SwarmStatus`, `AgentStatus`, `SwarmLaunch` (с `budgetMicroUsd` и `maxTokens`, `null` допустим), `SwarmSummary`, `LlmCaller`, `LlmSwarmRegistration` и `LlmSwarmClosed` (регистрация роя в gateway и ответ закрытия).
 - `bus.ts` — `BusMessage`, subjects `inboxSubject`, `eventsSubject`, `ALL_INBOXES`, `ALL_EVENTS`.
 - `events.ts` — `TraceId`, `PlatformEventInput` (дискриминированное объединение по `type`, в конверте `traceId: TraceId | null`; вариант `llm.call` с `LlmCallData`, источник `llm-gateway`; `agent.step`, `agent.idle`; `swarm.created` с необязательными бюджетами и `maxTokens` роя и агентов, у событий до 004 и 031 их нет; причины `agent_failed`, `api_restarted`, `budget_exceeded` и `gateway_unavailable` в `swarm.failed`), `PlatformEvent` (с `seq`).
-- `log.ts` — `LogLevel`, `ServiceName` (с `llm-gateway`), `LogError`, `LogRecord`.
-- `service-info.ts` — `ServiceInfo` (`service` с `llm-gateway`).
+- `auth.ts` — схемы identity (012, 4.1). `Email` — `trim`, нижний регистр, не больше 254 символов; `Password` — от 10 до 128 символов без `trim` (Q-10); `OrganizationName` — от 1 до 200 символов после `trim`; `AccessTokenClaims` — `iss: swag-identity`, `aud: swag`, `org` — `null` у supervisor.
+- `log.ts` — `LogLevel`, `ServiceName` (с `llm-gateway` и `identity`), `LogError`, `LogRecord`.
+- `service-info.ts` — `ServiceInfo` (`service` с `llm-gateway` и `identity`).
 - `llm.ts` — `ModelId`, `PricePerMTok`, `ModelPrices`, `CatalogModel` (с `openRouterModel`), `ModelCatalog` (`models.json`), `MicroUsd`, `BudgetMicroUsd` (1…1_000_000_000), `MaxTokens` (целое 1…1_000_000, лимит ответа агента, 031), `LlmUsage`, `GatewayErrorCode` (с кодами 403 и 402 из 004), `ChargeBasis`, `LlmCharge`, `LlmCallStatus`, `LlmCallData` (с `charge`, необязательным), `PlatformModel` (`chat-small`, `chat-large`), заголовки `SWARM_ID_HEADER`, `AGENT_ID_HEADER`. `LlmSwarmRegistration` и `LlmSwarmClosed` намеренно лежат в `swarm.ts`, а не здесь: `swarm.ts` импортирует `llm.ts`, обратный импорт дал бы цикл.
 
 ## Ограничения
@@ -47,6 +49,7 @@
 ## Спеки
 
 - 000 — `ServiceInfo`.
+- 012 — раздел 4.1 (`auth.ts`).
 - 001 — разделы 4.1–4.3.
 - 002 — раздел 4.1 (`llm.ts`, `LlmCaller` в `swarm.ts`).
 - 022 — раздел 4.1 (T-1).
