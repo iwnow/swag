@@ -1,5 +1,7 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   AgentConfig,
@@ -305,5 +307,18 @@ describe('IdentityConfig', () => {
         IDENTITY_SUPERVISOR_EMAIL: 'supervisor@swag.local',
       }),
     ).toThrow(/IDENTITY_SUPERVISOR_PASSWORD/);
+  });
+
+  it('AC-012-2: ключ, который выпускает npm run identity:keys, разбирается конфигом', () => {
+    const output = execFileSync(
+      process.execPath,
+      [fileURLToPath(new URL('../../../scripts/identity-keys.ts', import.meta.url))],
+      { encoding: 'utf8' },
+    );
+    const key = output.match(/^IDENTITY_JWT_PRIVATE_KEY=(.+)$/m)?.[1]?.trim() ?? '';
+    expect(
+      loadConfig(IdentityConfig, { ...identityExample(), IDENTITY_JWT_PRIVATE_KEY: key })
+        .IDENTITY_JWT_KID,
+    ).toBe('dev-1');
   });
 });
