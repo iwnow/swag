@@ -23,9 +23,12 @@ export interface RevocationSyncDeps {
 
 export function createRevocationSync(deps: RevocationSyncDeps): RevocationSync {
   let validAfterByUser = new Map<string, number>();
+  // Пары userId → validAfter, для которых onBlocked уже успешно вызван.
+  const handled = new Map<string, number>();
   let lastSuccessAt: number | null = null;
   let handle: unknown = null;
   let busy = false;
+  let stopped = false;
 
   async function sync(): Promise<boolean> {
     let list: TokenRevocationList;
@@ -35,23 +38,37 @@ export function createRevocationSync(deps: RevocationSyncDeps): RevocationSync {
       deps.log.warn('revocations_sync_failed');
       return false;
     }
-    const previous = validAfterByUser;
+    if (stopped) return true;
     validAfterByUser = new Map(list.revocations.map((r) => [r.userId, r.validAfter]));
     lastSuccessAt = deps.now();
-    for (const r of list.revocations) {
-      if (!r.blocked || previous.get(r.userId) === r.validAfter) continue;
-      try {
-        await deps.onBlocked(r.userId);
-      } catch {
-        deps.log.warn('revocation_block_failed', { userId: r.userId });
-      }
+    const blocked = new Map(
+      list.revocations.filter((r) => r.blocked).map((r) => [r.userId, r.validAfter]),
+    );
+    for (const [userId, validAfter] of handled) {
+      if (blocked.get(userId) !== validAfter) handled.delete(userId);
     }
+    const pending = [...blocked].filter(
+      ([userId, validAfter]) => handled.get(userId) !== validAfter,
+    );
+    await Promise.allSettled(
+      pending.map(async ([userId, validAfter]) => {
+        try {
+          await deps.onBlocked(userId);
+          handled.set(userId, validAfter);
+        } catch {
+          deps.log.warn('revocation_block_failed', { userId });
+        }
+      }),
+    );
     return true;
   }
 
   return {
     async start() {
+      if (handle !== null) return;
+      stopped = false;
       if (!(await sync())) throw new Error('revocations sync failed');
+      if (stopped || handle !== null) return;
       handle = deps.timers.setInterval(() => {
         if (busy) return;
         busy = true;
@@ -61,7 +78,8 @@ export function createRevocationSync(deps: RevocationSyncDeps): RevocationSync {
       }, deps.pollMs);
     },
     stop() {
-      deps.timers.clearInterval(handle);
+      stopped = true;
+      if (handle !== null) deps.timers.clearInterval(handle);
       handle = null;
     },
     check(claims) {
