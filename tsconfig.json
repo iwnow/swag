@@ -29,6 +29,7 @@
     { "path": "apps/api" },
     { "path": "apps/llm-gateway" },
     { "path": "apps/orchestrator" },
-    { "path": "apps/agent" }
+    { "path": "apps/agent" },
+    { "path": "apps/identity" }
   ]
 }
