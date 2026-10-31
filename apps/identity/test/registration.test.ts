@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ALREADY_REGISTERED_MAIL_SUBJECT, CONFIRM_MAIL_SUBJECT } from '@swag/identity-core';
 import { createJoseVerifier, publicKeyFromPrivate } from '@swag/adapter-jose';
+import { createArgon2Hasher } from '@swag/adapter-crypto';
 import {
   EMAIL,
   PASSWORD,
@@ -74,6 +75,7 @@ describe('регистрация по HTTP', () => {
     const stored = await h.store.findUserByEmail(EMAIL);
     expect(stored?.passwordHash).not.toBe(PASSWORD);
     expect(stored?.passwordHash.startsWith('$argon2id$v=19$m=19456,t=2,p=1$')).toBe(true);
+    expect(await createArgon2Hasher().verify(stored?.passwordHash ?? '', PASSWORD)).toBe(true);
     expect(decodeJwt(body.accessToken).header).toMatchObject({ alg: 'EdDSA', kid: 'test-1' });
   });
 

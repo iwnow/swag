@@ -4,7 +4,7 @@ import { closeHarnessesAfterEach, makeHarness } from './support.ts';
 closeHarnessesAfterEach();
 
 describe('GET /health', () => {
-  it('AC-000-4: 200 и тело по контракту 4.4', async () => {
+  it('GET /health отдаёт status ok и ServiceInfo identity', async () => {
     const h = await makeHarness();
     const response = await h.app.inject({ method: 'GET', url: '/health' });
     expect(response.statusCode).toBe(200);

@@ -17,12 +17,7 @@ export async function startIdentityCore(
   deps: Omit<IdentityCoreDeps, 'store'>,
 ): Promise<{ core: IdentityCore; pool: pg.Pool }> {
   const { databaseUrl, schema } = options;
-  try {
-    await runMigrations(databaseUrl, { schema: schema ?? 'public' });
-  } catch (error) {
-    deps.log.error('migrations failed', { err: error });
-    throw error;
-  }
+  await runMigrations(databaseUrl, { schema: schema ?? 'public' });
   const pool = new pg.Pool({
     connectionString: databaseUrl,
     options: schema === undefined ? undefined : `-c search_path=${schema}`,
@@ -33,6 +28,22 @@ export async function startIdentityCore(
     return { core, pool };
   } catch (error) {
     await pool.end();
+    throw error;
+  }
+}
+
+// Спека 012, AC-012-20: ошибка старта — одна запись `error` `startup failed` и выход с кодом 1.
+// `exit` в main.ts сбрасывает телеметрию и завершает процесс, поэтому её промис не возвращается; без выхода ошибка пробрасывается.
+export async function startOrExit(
+  options: { databaseUrl: string; schema?: string },
+  deps: Omit<IdentityCoreDeps, 'store'>,
+  exit: (code: number) => Promise<void> | void,
+): Promise<{ core: IdentityCore; pool: pg.Pool }> {
+  try {
+    return await startIdentityCore(options, deps);
+  } catch (error) {
+    deps.log.error('startup failed', { err: error });
+    await exit(1);
     throw error;
   }
 }

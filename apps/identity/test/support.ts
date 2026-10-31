@@ -5,6 +5,7 @@ import { createNodeOpaqueTokens, createArgon2Hasher } from '@swag/adapter-crypto
 import {
   createMemoryExporters,
   startTelemetry,
+  tracedHttpServer,
   type MemoryExporters,
   type Telemetry,
 } from '@swag/adapter-telemetry';
@@ -104,6 +105,7 @@ export async function makeHarness(options: HarnessOptions = {}): Promise<Harness
   };
   const app = await buildApp(core, settings, {
     loggerInstance: telemetry.logger.pino,
+    serverFactory: tracedHttpServer(telemetry, { ignorePaths: ['/health'] }),
   });
   const harness: Harness = {
     app,

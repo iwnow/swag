@@ -59,8 +59,10 @@ describe('GET /auth/me', () => {
     };
     const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
     const algNone = `${Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')}.${payload}.`;
-    const last = s.accessToken.slice(-1);
-    const tampered = `${s.accessToken.slice(0, -1)}${last === 'A' ? 'B' : 'A'}`;
+    // Последний символ base64url подписи содержит два неиспользуемых бита: его замена иногда не меняет подпись.
+    const [head = '', body = '', signature = ''] = s.accessToken.split('.');
+    const flipped = signature.startsWith('A') ? 'B' : 'A';
+    const tampered = [head, body, `${flipped}${signature.slice(1)}`].join('.');
 
     const cases: (string | undefined)[] = [
       undefined,

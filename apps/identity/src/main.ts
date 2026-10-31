@@ -6,7 +6,7 @@ import { createSmtpMailer } from '@swag/adapter-smtp';
 import { startTelemetry, tracedHttpServer } from '@swag/adapter-telemetry';
 import { BaseConfig, IdentityConfig, loadConfig } from '@swag/config';
 import { buildApp } from './app.ts';
-import { jwtKeys, startIdentityCore } from './start.ts';
+import { jwtKeys, startOrExit } from './start.ts';
 
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
 
@@ -60,7 +60,7 @@ const supervisor =
     : null;
 
 // Миграции и супервизор до приёма запросов (REQ-012-15, REQ-012-23); занятый email — старт падает.
-const { core, pool } = await startIdentityCore(
+const { core, pool } = await startOrExit(
   { databaseUrl: config.DATABASE_URL },
   {
     version,
@@ -84,7 +84,8 @@ const { core, pool } = await startIdentityCore(
       supervisor,
     },
   },
-).catch((error: unknown) => fail('startup failed', error));
+  (code) => telemetry.shutdown().then(() => process.exit(code)),
+);
 
 // Fastify пишет тем же логгером; каждый запрос, кроме /health, — серверный спан с родителем из traceparent.
 const app = await buildApp(

@@ -1,11 +1,12 @@
 import { randomUUID, generateKeyPairSync } from 'node:crypto';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createNodeOpaqueTokens, createArgon2Hasher } from '@swag/adapter-crypto';
 import { createPostgresIdentityStore, runMigrations } from '@swag/adapter-postgres';
 import { createMemoryMailer, createMemoryRateLimiter } from '@swag/adapter-memory';
+import { createMemoryExporters, startTelemetry } from '@swag/adapter-telemetry';
 import type { IdentityCoreDeps } from '@swag/identity-core';
-import { jwtKeys, startIdentityCore } from '../src/start.ts';
+import { jwtKeys, startIdentityCore, startOrExit } from '../src/start.ts';
 import { PASSWORD } from './support.ts';
 
 // Нужен запущенный Postgres: POSTGRES_TEST_URL (compose или сервис в CI). Каждый сценарий — своя схема.
@@ -91,7 +92,7 @@ describe.skipIf(!url)('старт identity на Postgres', () => {
     await second.pool.end();
   });
 
-  it('AC-012-20: занятый email супервизора — старт отказывает', async () => {
+  it('AC-012-20: занятый email супервизора — startOrExit вызывает exit(1) и пишет одну запись error', async () => {
     await runMigrations(url ?? '', { schema: taken });
     const pool = new pg.Pool({
       connectionString: url,
@@ -115,11 +116,32 @@ describe.skipIf(!url)('старт identity на Postgres', () => {
     });
     await pool.end();
 
+    const lines: string[] = [];
+    const memory = createMemoryExporters();
+    const telemetry = startTelemetry({
+      service: 'identity',
+      version: 'test',
+      otlpEndpoint: null,
+      logLevel: 'debug',
+      flushTimeoutMs: 2000,
+      stdout: (line) => lines.push(line),
+      exporters: { spans: memory.spans, logs: memory.logs },
+    });
+    const exit = vi.fn();
     await expect(
-      startIdentityCore(
+      startOrExit(
         { databaseUrl: url ?? '', schema: taken },
-        deps({ email, password: PASSWORD }),
+        { ...deps({ email, password: PASSWORD }), log: telemetry.logger },
+        exit,
       ),
     ).rejects.toThrow('supervisor email taken');
+    await telemetry.shutdown();
+
+    expect(exit).toHaveBeenCalledWith(1);
+    const errors = lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((record) => record['level'] === 'error');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ msg: 'startup failed' });
   });
 });

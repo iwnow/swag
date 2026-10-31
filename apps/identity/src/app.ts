@@ -9,7 +9,7 @@ import Fastify, {
 } from 'fastify';
 
 // Спека 012, 4.4 и 4.5: оболочка identity. Решений здесь нет — только вход и выход ядра, коды ошибок в статусы.
-export const REFRESH_COOKIE = 'swag_refresh';
+const REFRESH_COOKIE = 'swag_refresh';
 const REFRESH_PATH = '/auth';
 
 export interface AppSettings {
