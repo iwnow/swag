@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import type { SwarmStore } from '@swag/api-core';
 import { applyEvent, type SwarmView } from '@swag/api-integration';
 import {
+  OrgId,
   SwarmId,
   type BalanceEntry,
   type ChargeBasis,
@@ -731,6 +732,18 @@ export function createPostgresIdentityStore(pool: Pool): IdentityStore {
         createdAt: row.created_at.getTime(),
         userCount: row.user_count,
       }));
+    },
+
+    // Спека 013, 4.8: не UUID — null без запроса (иначе ошибка приведения к uuid).
+    async findOrganizationById(id: string): Promise<StoredOrganization | null> {
+      if (!OrgId.safeParse(id).success) return null;
+      const result = await pool.query<{ id: string; name: string; created_at: Date }>(
+        'select id, name, created_at from organizations where id = $1',
+        [id],
+      );
+      const row = result.rows[0];
+      if (!row) return null;
+      return { id: row.id, name: row.name, createdAt: row.created_at.getTime() };
     },
 
     async tokenRevocations(since: number) {

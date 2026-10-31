@@ -215,6 +215,11 @@ export function createMemoryIdentityStore(): MemoryIdentityStore {
         .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     },
 
+    async findOrganizationById(id: string) {
+      const organization = organizations.get(id);
+      return organization ? { ...organization } : null;
+    },
+
     async tokenRevocations(since: number) {
       return [...users.values()]
         .filter((user) => user.tokensValidAfter !== null && user.tokensValidAfter > since)

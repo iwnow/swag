@@ -126,6 +126,18 @@ export function identityStoreContract(
   makeStore: () => Promise<IdentityStore> | IdentityStore,
 ): void {
   describe(`identity store: ${name}`, () => {
+    it('AC-013-20: findOrganizationById — организация по id; неизвестный id и не UUID — null', async () => {
+      const store = await makeStore();
+      const { orgId } = await newOrganization(store, 'Компания поиска');
+
+      expect(await store.findOrganizationById(orgId)).toMatchObject({
+        id: orgId,
+        name: 'Компания поиска',
+      });
+      expect(await store.findOrganizationById(randomUUID())).toBeNull();
+      expect(await store.findOrganizationById('не-uuid')).toBeNull();
+    });
+
     it('AC-012-30: confirmRegistration ok создаёт организацию и администратора с email из записи', async () => {
       const store = await makeStore();
       const email = unique('owner');

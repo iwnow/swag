@@ -61,6 +61,7 @@
 - Деньги: все `reserve` и `settle` одного роя сериализуются на строке `swarm_budgets` — так предписывает SQL 4.5 (условный `update` держит блокировку до `commit`). NFR-004-1 в режиме 10 потоков одного роя при durable commit не выполняется; цифры и вопрос D-89 — в журнале спеки 004 (раздел 10), здесь замеров нет.
 - `releaseHolds` снимает все резервы таблицы `budget_holds`, а не резервы одного роя; вызывается при старте процесса gateway до приёма запросов.
 - `createPostgresIdentityStore`: `findUserById` с id, не являющимся UUID, бросает ошибку базы; память отдаёт `null`. Ядро получает id из базы или из подписанного токена, поэтому в 012 это не достижимо.
+- `createPostgresIdentityStore`: `findOrganizationById` (013, 4.8) с не-UUID возвращает `null` без запроса (проверка `OrgId`), иначе `select … from organizations where id = $1`.
 - `updateUser` с неизвестным `id` бросает `Error` (откат транзакции), как в памяти.
 - `createPostgresBalanceStore`: `orgId` и `swarmId`, не являющиеся UUID, дают ошибку базы; проверку формата делает ядро `billing-core`.
 - `purge` (024, 4.9) только удаляет; когда и как его вызывать — решает ядро (`purgeExpired`, T-9).
