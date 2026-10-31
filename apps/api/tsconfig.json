@@ -9,6 +9,7 @@
   "include": ["src"],
   "references": [
     { "path": "../../packages/api-core" },
+    { "path": "../../packages/billing-core" },
     { "path": "../../packages/adapter-nats" },
     { "path": "../../packages/adapter-orchestrator-http" },
     { "path": "../../packages/adapter-postgres" },
