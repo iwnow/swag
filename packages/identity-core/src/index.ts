@@ -17,7 +17,9 @@ import {
   type OrgRole,
   type Role,
   type ServiceInfo,
+  type TokenRevocationList,
   type UserList,
+  UserUpdate,
   InvitationAcceptRequest,
   InvitationRequest,
 } from '@swag/contracts';
@@ -201,6 +203,13 @@ export interface IdentityCore {
   listOrganizations(accessToken: string | undefined): Promise<Result<OrganizationList>>;
   inviteUser(accessToken: string | undefined, body: unknown): Promise<Result<void>>;
   acceptInvitation(body: unknown, meta: RequestMeta): Promise<Result<IssuedSession>>;
+  updateUser(
+    accessToken: string | undefined,
+    userId: string,
+    body: unknown,
+  ): Promise<Result<ManagedUser>>;
+  tokenRevocations(): Promise<TokenRevocationList>; // проверку внутреннего токена делает оболочка
+  purgeExpired(): Promise<void>;
   ensureSupervisor(): Promise<void>; // бросает при занятом email (REQ-012-15); вызывает оболочка до listen
 }
 
@@ -640,6 +649,53 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     return ok(await issueSession(result.user, result.organization));
   };
 
+  // Спека 024, 4.8: роль и блокировка. Отзыв токенов — при новой блокировке или смене роли на другую.
+  const updateUser = async (
+    accessToken: string | undefined,
+    userId: string,
+    body: unknown,
+  ): Promise<Result<ManagedUser>> => {
+    const auth = await authenticate(accessToken);
+    if (!auth.ok) return auth;
+    const { actor } = auth.value;
+    if (!can(actor, 'user.manage')) return fail('forbidden');
+    const parsed = parse(UserUpdate, body);
+    if (!parsed.ok) return parsed;
+    const found = await store.findUserById(userId);
+    if (!found) return fail('not_found');
+    const { user } = found;
+    if (user.id === actor.userId || user.role === 'supervisor') return fail('forbidden');
+    if (actor.role === 'admin' && user.orgId !== actor.orgId) return fail('not_found');
+    const { role, blocked } = parsed.value;
+    const now = clock.now();
+    const blocking = blocked === true && user.blockedAt === null;
+    const roleChanged = role !== undefined && role !== user.role;
+    const updated = await store.updateUser({
+      id: user.id,
+      ...(role === undefined ? {} : { role }),
+      ...(blocked === undefined ? {} : { blockedAt: blocked ? now : null }),
+      ...(blocking || roleChanged ? { revokeAt: now } : {}),
+    });
+    log.info('user_updated', {
+      userId: actor.userId,
+      targetId: user.id,
+      role: updated.role,
+      blocked: updated.blockedAt !== null,
+    });
+    return ok(managedUser(updated));
+  };
+
+  // Отзывы для api (024, 4.12): только записи новее срока жизни токена доступа.
+  const tokenRevocations = async (): Promise<TokenRevocationList> => {
+    const since = clock.now() - settings.accessTtlS * 1000;
+    return { revocations: await store.tokenRevocations(since) };
+  };
+
+  const purgeExpired = async (): Promise<void> => {
+    const removed = await store.purge(clock.now() - RETENTION_MS);
+    log.info('identity_purged', removed);
+  };
+
   // Исключение хранилища или ядра превращается в internal_error. В лог пишется только имя операции:
   // текст ошибки (например, `detail` Postgres) может содержать email, поэтому `err` не передаём (4.3, D-115).
   const guarded =
@@ -665,6 +721,9 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     listOrganizations: guarded('listOrganizations', listOrganizations),
     inviteUser: guarded('inviteUser', inviteUser),
     acceptInvitation: guarded('acceptInvitation', acceptInvitation),
+    updateUser: guarded('updateUser', updateUser),
+    tokenRevocations,
+    purgeExpired,
     ensureSupervisor,
   };
 }
