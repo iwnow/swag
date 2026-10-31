@@ -25,6 +25,14 @@ async function failure(response: Response): Promise<AuthRequestError> {
   return new AuthRequestError(typeof code === 'string' ? code : 'unknown');
 }
 
+// Спека 013, 4.11 (D-130): GET /auth/me с токеном доступа; ответ разбирает CurrentUser по схеме AuthMe.
+export function getMe(token: string): Promise<Response> {
+  return fetch('/auth/me', {
+    credentials: 'same-origin',
+    headers: { authorization: `Bearer ${token}` },
+  });
+}
+
 export const authApi: AuthApi = {
   async login(email, password) {
     const response = await post('/login', { email, password });
