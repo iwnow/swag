@@ -1,16 +1,27 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { createMemorySwarmStore } from '@swag/adapter-memory';
+import {
+  createMemoryExporters,
+  startTelemetry,
+  tracedHttpServer,
+  type Telemetry,
+} from '@swag/adapter-telemetry';
 import type { PlatformEvent, TokenRevocationList } from '@swag/contracts';
-import { buildApp } from '../src/app.ts';
+import { buildApp, type AppAuth } from '../src/app.ts';
+import { createRevocationSync, fetchTokenRevocations } from '../src/revocations.ts';
 import { startServer } from '../src/start.ts';
 import { createBlockHandler, createStreamRegistry } from '../src/streams.ts';
 import {
   bearer,
   body,
   captureLog,
+  INTERNAL_TOKEN,
   makeAuth,
   makeCore,
+  makeStartedAuth,
   otherKeyToken,
   T,
   tokenOf,
@@ -37,8 +48,10 @@ async function publish(env: AuthEnv, list: TokenRevocationList): Promise<void> {
   await flush();
 }
 
+// Пока gate.hold задан, проверка токена ждёт его завершения (для теста закрытия во время проверки).
 async function setup(options: { maxStaleMs?: number } = {}) {
   const log = captureLog();
+  const gate: { hold: Promise<void> | null } = { hold: null };
   const stops: string[] = [];
   const store = createMemorySwarmStore();
   const core = makeCore(
@@ -53,13 +66,35 @@ async function setup(options: { maxStaleMs?: number } = {}) {
   );
   const env = makeAuth({ core, maxStaleMs: options.maxStaleMs });
   await env.revocations.start();
-  const app = await buildApp(core, { logger: { level: 'warn', stream: log.stream } }, env.app);
+  const auth: AppAuth = {
+    authenticate: async (token) => {
+      if (gate.hold) await gate.hold;
+      return env.app.authenticate(token);
+    },
+    streams: env.app.streams,
+  };
+  const app = await buildApp(core, { logger: { level: 'warn', stream: log.stream } }, auth);
   apps.push(app);
   await app.listen({ port: 0, host: '127.0.0.1' });
   const address = app.server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
-  return { app, core, env, log, stops, store, port };
+  return { app, core, env, log, stops, store, port, gate };
 }
+
+// Маршруты роёв под хуком проверки токена; HEAD — на GET-маршрутах (Fastify отвечает на него тем же хуком).
+// Задача из body(1): текст роя, который не должен появиться в ответах без токена.
+const SWARM_TASK = 'Задача';
+
+const swarmRoutes = (id: string) => [
+  { method: 'GET' as const, url: '/swarms' },
+  { method: 'HEAD' as const, url: '/swarms' },
+  { method: 'POST' as const, url: '/swarms', payload: body(1) },
+  { method: 'GET' as const, url: `/swarms/${id}` },
+  { method: 'HEAD' as const, url: `/swarms/${id}` },
+  { method: 'GET' as const, url: `/swarms/${id}/events` },
+  { method: 'HEAD' as const, url: `/swarms/${id}/events` },
+  { method: 'POST' as const, url: `/swarms/${id}/stop` },
+];
 
 const streamUrl = (port: number, id: string) => `ws://127.0.0.1:${port}/swarms/${id}/stream`;
 
@@ -157,18 +192,12 @@ describe('доступ в оболочке api', () => {
         { reason: 'invalid', token: foreign, headers: bearer(foreign) },
         { reason: 'revoked', token: T.u1, headers: bearer(T.u1) },
       ];
-    const routes = [
-      { method: 'GET' as const, url: '/swarms' },
-      { method: 'POST' as const, url: '/swarms', payload: body(1) },
-      { method: 'GET' as const, url: `/swarms/${id}` },
-      { method: 'GET' as const, url: `/swarms/${id}/events` },
-      { method: 'POST' as const, url: `/swarms/${id}/stop` },
-    ];
+    const routes = swarmRoutes(id);
     for (const c of cases) {
       for (const route of routes) {
         const response = await app.inject({ ...route, headers: c.headers });
         expect(response.statusCode, `${route.method} ${route.url} ${c.reason}`).toBe(401);
-        expect(response.json().error.code).toBe('unauthorized');
+        if (route.method !== 'HEAD') expect(response.json().error.code).toBe('unauthorized');
       }
       const protocols = c.token === null ? ['swag.v1'] : ['swag.v1', `swag.bearer.${c.token}`];
       expect(await streamResult(port, id, protocols)).toBe(4401);
@@ -183,6 +212,29 @@ describe('доступ в оболочке api', () => {
       new Set(['missing', 'invalid', 'revoked']),
     );
     for (const token of [expired, foreign, T.u1]) expect(log.text()).not.toContain(token);
+
+    // Неизвестный путь и OPTIONS без токена: 404 и никаких данных роя; хук стоит только на маршрутах роёв.
+    for (const request of [
+      { method: 'GET' as const, url: '/unknown' },
+      { method: 'OPTIONS' as const, url: '/swarms' },
+      { method: 'OPTIONS' as const, url: `/swarms/${id}` },
+    ]) {
+      const response = await app.inject(request);
+      expect(response.statusCode, `${request.method} ${request.url}`).toBe(404);
+      expect(response.body).not.toContain(SWARM_TASK);
+    }
+    // Обычный GET без апгрейда на путь потока не отдаёт данных роя, даже с валидным токеном в Authorization.
+    const plain = await app.inject({
+      method: 'GET',
+      url: `/swarms/${id}/stream`,
+      headers: bearer(T.u1),
+    });
+    expect(plain.statusCode).not.toBe(200);
+    expect(plain.body).not.toContain(SWARM_TASK);
+    // Клиент без swag.v1: ws на handleProtocols → false принимает апгрейд без Sec-WebSocket-Protocol, клиент рвёт соединение
+    // (1006, не 4401). Серверный сокет при этом остаётся открытым до закрытия TCP, поэтому его завершаем вручную.
+    expect(await streamResult(port, id, [`swag.bearer.${T.u1}`])).toBe(1006);
+    for (const client of app.websocketServer.clients) client.terminate();
     expect(core).toBeDefined();
   });
 
@@ -338,13 +390,13 @@ describe('доступ в оболочке api', () => {
       await app.inject({ method: 'POST', url: '/swarms', headers: bearer(T.u1), payload: body(1) })
     ).json();
     env.clock.now += 30_001;
-    const stale = await app.inject({
-      method: 'GET',
-      url: `/swarms/${created.id}`,
-      headers: bearer(T.u1),
-    });
-    expect(stale.statusCode).toBe(503);
-    expect(stale.json().error.code).toBe('auth_unavailable');
+    for (const route of swarmRoutes(created.id)) {
+      const stale = await app.inject({ ...route, headers: bearer(T.u1) });
+      expect(stale.statusCode, `${route.method} ${route.url}`).toBe(503);
+      if (route.method !== 'HEAD') expect(stale.json().error.code).toBe('auth_unavailable');
+    }
+    const port = (app.server.address() as AddressInfo).port;
+    expect(await streamResult(port, created.id, ['swag.v1', `swag.bearer.${T.u1}`])).toBe(4401);
     expect((await app.inject({ method: 'GET', url: '/health' })).statusCode).toBe(200);
   });
 
@@ -385,6 +437,32 @@ describe('доступ в оболочке api', () => {
     expect(stops).toHaveLength(2);
     expect(log.text()).not.toContain(T.u1);
   });
+
+  it('AC-024-21: поток, закрытый во время проверки токена, не остаётся в реестре и не подписан', async () => {
+    const { app, core, env, port, gate } = await setup();
+    const id = (
+      await app.inject({ method: 'POST', url: '/swarms', headers: bearer(T.u1), payload: body(1) })
+    ).json().id as string;
+    let finish!: () => void;
+    gate.hold = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const verify = vi.spyOn(env.app, 'authenticate');
+    const add = vi.spyOn(env.streams, 'add');
+    const subscribe = vi.spyOn(core, 'subscribe');
+
+    const socket = new WebSocket(streamUrl(port, id), ['swag.v1', `swag.bearer.${T.u1}`]);
+    await vi.waitFor(() => expect(app.websocketServer.clients.size).toBe(1));
+    socket.close();
+    await vi.waitFor(() => expect(app.websocketServer.clients.size).toBe(0));
+
+    finish();
+    await vi.waitFor(() => expect(verify).toHaveBeenCalledTimes(1));
+    await verify.mock.results[0]?.value;
+    await flush();
+    expect(add).not.toHaveBeenCalled();
+    expect(subscribe).not.toHaveBeenCalled();
+  });
 });
 
 describe('блокировка пользователя', () => {
@@ -403,6 +481,27 @@ describe('блокировка пользователя', () => {
   });
 });
 
+// Фейковый identity для синхронизации отзывов: первый запрос отвечает 500, второй — пустым списком; запросы запоминаются.
+async function fakeIdentity(): Promise<{
+  url: string;
+  requests: Array<{ path: string; auth: string | undefined }>;
+  close: () => void;
+}> {
+  const requests: Array<{ path: string; auth: string | undefined }> = [];
+  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    requests.push({ path: req.url ?? '', auth: req.headers.authorization });
+    if (requests.length === 1) {
+      res.writeHead(500).end();
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' }).end('{"revocations":[]}');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  // Хвостовой / в адресе: путь не должен превратиться в //internal.
+  return { url: `http://127.0.0.1:${port}/`, requests, close: () => server.close() };
+}
+
 describe('секреты в логах', () => {
   it('AC-024-25: после отказов, WebSocket и блокировки в логах оболочки нет токенов доступа и email', async () => {
     const { app, env, log, port } = await setup();
@@ -420,9 +519,78 @@ describe('секреты в логах', () => {
       expect(log.entries.some((e) => e.msg === 'user_swarms_stopped')).toBe(true),
     );
 
+    // Синхронизация отзывов: настоящий fetchTokenRevocations, сбой (500), затем успех; внутренний токен не попадает в лог.
+    const identity = await fakeIdentity();
+    const sync = createRevocationSync({
+      fetchRevocations: () =>
+        fetchTokenRevocations({
+          baseUrl: identity.url,
+          token: INTERNAL_TOKEN,
+          timeoutMs: 1000,
+        }),
+      onBlocked: async () => undefined,
+      pollMs: 1000,
+      maxStaleMs: 30000,
+      now: () => Date.now(),
+      timers: { setInterval: () => 1, clearInterval: () => undefined },
+      log: log.logger,
+    });
+    await expect(sync.start()).rejects.toThrow('revocations sync failed');
+    await sync.start();
+    sync.stop();
+    identity.close();
+    expect(identity.requests).toEqual([
+      { path: '/internal/token-revocations', auth: `Bearer ${INTERNAL_TOKEN}` },
+      { path: '/internal/token-revocations', auth: `Bearer ${INTERNAL_TOKEN}` },
+    ]);
+    expect(log.entries.some((e) => e.msg === 'revocations_sync_failed')).toBe(true);
+
     const text = log.text();
-    for (const token of Object.values(T)) expect(text).not.toContain(token);
+    for (const token of [...Object.values(T), INTERNAL_TOKEN]) expect(text).not.toContain(token);
     expect(text).not.toContain('swag.bearer');
     expect(text).not.toMatch(/@/);
+  });
+
+  it('AC-024-25: спаны REST и WebSocket не несут токен доступа', async () => {
+    const memory = createMemoryExporters();
+    const telemetry: Telemetry = startTelemetry({
+      service: 'api',
+      version: 'test',
+      otlpEndpoint: null,
+      logLevel: 'error',
+      flushTimeoutMs: 500,
+      stdout: () => undefined,
+      exporters: { spans: memory.spans },
+    });
+    try {
+      const core = makeCore();
+      const env = await makeStartedAuth({ core });
+      const app = await buildApp(core, { serverFactory: tracedHttpServer(telemetry) }, env.app);
+      apps.push(app);
+      await app.listen({ port: 0, host: '127.0.0.1' });
+      const port = (app.server.address() as AddressInfo).port;
+      const created = await fetch(`http://127.0.0.1:${port}/swarms`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...bearer(T.u1) },
+        body: JSON.stringify(body(1)),
+      });
+      const id = ((await created.json()) as { id: string }).id;
+      await fetch(`http://127.0.0.1:${port}/swarms/${id}`, { headers: bearer(T.u1) });
+      expect(await streamResult(port, id, ['swag.v1', `swag.bearer.${T.u1}`])).toBe('open');
+
+      await vi.waitFor(() => expect(memory.finishedSpans.length).toBeGreaterThanOrEqual(2));
+      const spans = JSON.stringify(
+        memory.finishedSpans.map((span) => ({
+          name: span.name,
+          attributes: span.attributes,
+          events: span.events,
+        })),
+      );
+      expect(spans).not.toContain(T.u1);
+      expect(spans).not.toContain('Bearer');
+      expect(spans).not.toContain('swag.bearer');
+    } finally {
+      await telemetry.shutdown();
+    }
   });
 });

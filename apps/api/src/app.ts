@@ -103,36 +103,43 @@ export async function buildApp(
     '/swarms/:id/stream',
     { websocket: true },
     async (socket, request) => {
+      // Освобождение вешается до проверки токена: сокет может закрыться раньше, чем она завершится. Освобождение идемпотентно.
+      let release: (() => void) | undefined;
+      let unsubscribe: (() => void) | undefined;
+      const dispose = () => {
+        release?.();
+        release = undefined;
+        unsubscribe?.();
+        unsubscribe = undefined;
+      };
+      socket.on('close', dispose);
+      socket.on('error', dispose);
+
       const outcome = await auth.authenticate(
         protocolToken(request.headers['sec-websocket-protocol']),
       );
+      if (socket.readyState !== socket.OPEN) return;
       if (!outcome.ok) {
         request.log.warn({ reason: outcome.reason }, 'auth_failed');
         socket.close(UNAUTHORIZED_CLOSE_CODE, 'unauthorized');
         return;
       }
-      const actor = outcome.actor;
-      const release = auth.streams.add(actor.userId, socket);
-      const subscribed = core.subscribe(
-        actor,
+      release = auth.streams.add(outcome.actor.userId, socket);
+      const subscribed = await core.subscribe(
+        outcome.actor,
         request.params.id,
         parseAfter(request.query.after),
         (event) => {
           socket.send(JSON.stringify(event));
         },
       );
-      // Сокет может закрыться раньше, чем подписка установится: тогда отписываемся сразу после её получения.
-      socket.on('close', () => {
-        release();
-        void subscribed.then(
-          (result) => {
-            if (result.ok) result.value();
-          },
-          () => undefined,
-        );
-      });
-      const result = await subscribed;
-      if (!result.ok) socket.close(4404, result.error.code);
+      if (!subscribed.ok) {
+        socket.close(4404, subscribed.error.code);
+        return;
+      }
+      // Сокет могло закрыть во время подписки: тогда отписываемся сразу.
+      if (socket.readyState === socket.OPEN) unsubscribe = subscribed.value;
+      else subscribed.value();
     },
   );
 

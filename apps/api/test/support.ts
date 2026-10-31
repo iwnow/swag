@@ -51,6 +51,9 @@ const keys = generateKeyPairSync('ed25519', {
 });
 export const TEST_KID = 'test-kid';
 
+// Фейковый IDENTITY_INTERNAL_TOKEN для синхронизации отзывов: в логах и спанах его быть не должно.
+export const INTERNAL_TOKEN = 'fake-internal-token-for-tests-024';
+
 export const ORG_A = '00000000-0000-4000-8000-0000000000a0';
 export const ORG_B = '00000000-0000-4000-8000-0000000000b0';
 

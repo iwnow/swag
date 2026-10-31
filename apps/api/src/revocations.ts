@@ -99,10 +99,13 @@ export async function fetchTokenRevocations(options: {
   timeoutMs: number;
   fetch?: typeof fetch;
 }): Promise<TokenRevocationList> {
-  const response = await (options.fetch ?? fetch)(`${options.baseUrl}/internal/token-revocations`, {
-    headers: { authorization: `Bearer ${options.token}` },
-    signal: AbortSignal.timeout(options.timeoutMs),
-  });
+  const response = await (options.fetch ?? fetch)(
+    new URL('/internal/token-revocations', options.baseUrl),
+    {
+      headers: { authorization: `Bearer ${options.token}` },
+      signal: AbortSignal.timeout(options.timeoutMs),
+    },
+  );
   if (!response.ok) throw new Error(`token revocations: HTTP ${response.status}`);
   return TokenRevocationList.parse(await response.json());
 }
