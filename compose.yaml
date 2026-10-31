@@ -49,6 +49,14 @@ services:
       MAX_ACTIVE_SWARMS: ${MAX_ACTIVE_SWARMS}
       SWARM_MAX_BUDGET_MICRO_USD: ${SWARM_MAX_BUDGET_MICRO_USD}
       AGENT_MAX_TOKENS_LIMIT: ${AGENT_MAX_TOKENS_LIMIT}
+      # Спека 024, 4.14: проверка токенов и отзывов (identity), токен для вызова оркестратора.
+      IDENTITY_URL: ${IDENTITY_URL}
+      IDENTITY_INTERNAL_TOKEN: ${IDENTITY_INTERNAL_TOKEN}
+      IDENTITY_JWT_PUBLIC_KEY: ${IDENTITY_JWT_PUBLIC_KEY}
+      IDENTITY_JWT_KID: ${IDENTITY_JWT_KID}
+      ORCHESTRATOR_TOKEN: ${ORCHESTRATOR_TOKEN}
+      API_REVOCATION_POLL_MS: ${API_REVOCATION_POLL_MS:-5000}
+      API_REVOCATION_MAX_STALE_MS: ${API_REVOCATION_MAX_STALE_MS:-30000}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TELEMETRY_FLUSH_TIMEOUT_MS: ${TELEMETRY_FLUSH_TIMEOUT_MS:-2000}
@@ -58,6 +66,8 @@ services:
       postgres:
         condition: service_healthy
       nats:
+        condition: service_healthy
+      identity:
         condition: service_healthy
       orchestrator:
         condition: service_healthy
@@ -94,6 +104,10 @@ services:
       SMTP_URL: ${SMTP_URL}
       SMTP_TIMEOUT_MS: ${SMTP_TIMEOUT_MS:-10000}
       MAIL_FROM: ${MAIL_FROM}
+      # Спека 024, 4.14: токен отзывов для api, страница приглашения и срок приглашения.
+      IDENTITY_INTERNAL_TOKEN: ${IDENTITY_INTERNAL_TOKEN}
+      IDENTITY_INVITE_URL: ${IDENTITY_INVITE_URL}
+      IDENTITY_INVITE_TTL_S: ${IDENTITY_INVITE_TTL_S:-604800}
     ports:
       - 127.0.0.1:${IDENTITY_PORT}:${IDENTITY_PORT}
     depends_on:
@@ -142,6 +156,8 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TELEMETRY_FLUSH_TIMEOUT_MS: ${TELEMETRY_FLUSH_TIMEOUT_MS:-2000}
+      # Спека 024, 4.13–4.14: Bearer-токен, который проверяет оркестратор.
+      ORCHESTRATOR_TOKEN: ${ORCHESTRATOR_TOKEN}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     # Сокет на хосте принадлежит группе docker/root; пользователь node без этой группы получает EACCES.
