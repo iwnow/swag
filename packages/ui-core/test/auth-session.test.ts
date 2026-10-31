@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AuthSession } from '@swag/contracts';
+import type { AuthRefreshed, AuthSession } from '@swag/contracts';
 import { createAuthSessionKeeper, type AuthApi } from '../src/index.ts';
 
 const session = (accessToken: string): AuthSession =>
@@ -119,4 +119,50 @@ describe('auth session keeper', () => {
 
     expect(listener).not.toHaveBeenCalled();
   });
+
+  it('AC-024-23: restore и renew делят один refresh', async () => {
+    const api = fakeApi();
+    const keeper = createAuthSessionKeeper(api);
+
+    const results = await Promise.all([keeper.restore(), keeper.renew()]);
+
+    expect(results).toEqual([true, true]);
+    expect(api.refresh).toHaveBeenCalledTimes(1);
+    expect(keeper.accessToken()).toBe('refreshed-token');
+  });
+
+  it('AC-024-23: renew, затем logout, затем поздний refresh не записывает токен и не вызывает onSignedOut', async () => {
+    const pending = deferred<AuthRefreshed | null>();
+    const listener = vi.fn();
+    const keeper = createAuthSessionKeeper(fakeApi({ refresh: () => pending.promise }));
+    keeper.onSignedOut(listener);
+
+    const renewed = keeper.renew();
+    await keeper.logout();
+    pending.resolve({ accessToken: 'late-token', expiresIn: 900 });
+
+    await expect(renewed).resolves.toBe(false);
+    expect(keeper.accessToken()).toBeNull();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('AC-024-23: renew, затем login, затем поздний refresh — токен от login', async () => {
+    const pending = deferred<AuthRefreshed | null>();
+    const keeper = createAuthSessionKeeper(fakeApi({ refresh: () => pending.promise }));
+
+    const renewed = keeper.renew();
+    await expect(keeper.login('u@example.test', 'pw')).resolves.toEqual({ ok: true });
+    pending.resolve({ accessToken: 'late-token', expiresIn: 900 });
+
+    await expect(renewed).resolves.toBe(false);
+    expect(keeper.accessToken()).toBe('login-token');
+  });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}

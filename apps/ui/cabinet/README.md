@@ -10,7 +10,7 @@
 
 ## Что внутри сейчас
 
-- `src/app/api.ts` — адаптеры портов `ui-core`: REST и WebSocket по относительному пути `/api`; `createSwarmsApi(session)` и `createSwarmStream(session)` кладут `Authorization: Bearer` (REST) и подпротокол `swag.bearer.<token>` (WebSocket); на `401` — `renew()` и один повтор, на закрытие `4401` потока — `renew()` до переподключения.
+- `src/app/api.ts` — адаптеры портов `ui-core`: REST и WebSocket по относительному пути `/api`; `createSwarmsApi(session)` и `createSwarmStream(session)` кладут `Authorization: Bearer` (REST) и подпротокол `swag.bearer.<token>` (WebSocket); на `401` — `renew()` и один повтор, на закрытие `4401` потока — `renew()`, переподключение (`onError` ui-core) только после удачного обновления; без токена поток не открывается и не переподключается.
 - `src/app/auth-api.ts` — адаптер `AuthApi` из `ui-core` на `fetch` по `/auth` (`credentials: 'same-origin'`); ошибка с полем `code` из тела `{ error: { code } }`.
 - `src/app/session.ts` — токен `SESSION`: один `AuthSessionKeeper` на приложение.
 - `src/app/auth.guard.ts` — guard маршрутов роёв: токен есть или `restore()` по cookie, иначе `/login`.
@@ -46,7 +46,7 @@
 - Строка денег обновляется таймером раз в 5 с (`MONEY_TICK_MS` в `swarm.page.ts`) и по каждому событию. Таймер запускается в конструкторе страницы и очищается в `ngOnDestroy`, поэтому на другой странице не работает. Таймер ui-core (`Timers`) для него не используется: он нужен только для переподключения потока.
 - Тексты причин `budget_exceeded` и `gateway_unavailable` — `failureReasonText` из `ui-core` (4.8), прочие причины выводятся как пришли (D-107).
 - Логика вне компонентов: `createUiCore` из `@swag/ui-core` подключается через токен `UI`.
-- Сессия (024, 4.15): `createAuthSessionKeeper` из `@swag/ui-core` в токене `SESSION`. Один `renew()` на все одновременные `401` — в `ui-core` через общий промис. Неудача обновления — `onSignedOut` → `/login`. Трактовка: при закрытии потока `4401` вызывается `renew()` до переподключения, которое `ui-core` делает через 1 с; если токена нет, поток не открывается и сообщает `onError` (переподключение отменяет закрытие страницы).
+- Сессия (024, 4.15): `createAuthSessionKeeper` из `@swag/ui-core` в токене `SESSION`. Один `renew()` на все одновременные `401` — в `ui-core` через общий промис. Неудача обновления — `onSignedOut` → `/login`. Трактовка: при закрытии потока `4401` вызывается `renew()`; только при `true` поток сообщает `onError`, и `ui-core` переподключается через 1 с с новым токеном; при `false` переподключения нет, `onSignedOut` уводит на `/login`. Без токена поток не открывается и не сообщает `onError`: сессии нет, `onSignedOut`/guard уведёт на `/login`, бесконечного переподключения нет.
 - Вход не проверяет `Authorization` сам: guard смотрит только наличие токена в памяти; истёкший токен обновляется на первом `401` от `api`.
 - Dev-сервер и прокси `/api` → `api:3000` (Q-4). Отклонение: в CI сборка `ng build` не запускается (спека требует `npm run check` без UI-шага).
 - `allowImportingTsExtensions` и `rewriteRelativeImportExtensions` в tsconfig — чтобы Angular собирал TS-исходники `packages/*` с расширениями `.ts`.

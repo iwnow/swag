@@ -23,32 +23,61 @@ function errorCode(error: unknown): string {
   return typeof code === 'string' ? code : 'unknown';
 }
 
+// 'stale' — поколение сессии сменилось во время refresh (logout, login или выход по отказу): результат не записывается.
+type RefreshOutcome = 'ok' | 'rejected' | 'stale';
+
 export function createAuthSessionKeeper(api: AuthApi): AuthSessionKeeper {
   let token: string | null = null;
-  let pendingRenew: Promise<boolean> | null = null;
+  // Поколение сессии: login, logout и выход по отказу обновления его увеличивают и отбрасывают refresh в полёте.
+  let epoch = 0;
+  let pendingRefresh: Promise<RefreshOutcome> | null = null;
   const listeners = new Set<() => void>();
 
+  function bumpEpoch(): void {
+    epoch += 1;
+    pendingRefresh = null;
+  }
+
   // Трактовка: reject refresh (сеть, 5xx) считается неудачей, как null.
-  async function refreshToken(): Promise<boolean> {
+  async function refreshToken(): Promise<RefreshOutcome> {
+    const started = epoch;
+    let refreshed: AuthRefreshed | null;
     try {
-      const refreshed = await api.refresh();
-      if (refreshed === null) return false;
-      token = refreshed.accessToken;
-      return true;
+      refreshed = await api.refresh();
     } catch {
-      return false;
+      refreshed = null;
     }
+    if (started !== epoch) return 'stale';
+    if (refreshed === null) return 'rejected';
+    token = refreshed.accessToken;
+    return 'ok';
+  }
+
+  // Один refresh на restore и все одновременные renew.
+  function refreshShared(): Promise<RefreshOutcome> {
+    if (pendingRefresh === null) {
+      const current: Promise<RefreshOutcome> = refreshToken().finally(() => {
+        if (pendingRefresh === current) pendingRefresh = null;
+      });
+      pendingRefresh = current;
+    }
+    return pendingRefresh;
   }
 
   function signOut(): void {
     token = null;
+    bumpEpoch();
     for (const listener of [...listeners]) listener();
   }
 
   return {
-    restore: refreshToken,
+    // Трактовка: restore делит refresh с renew, но неудача здесь выход не инициирует (onSignedOut не вызывается).
+    async restore() {
+      return (await refreshShared()) === 'ok';
+    },
 
     async login(email, password) {
+      bumpEpoch();
       try {
         token = (await api.login(email, password)).accessToken;
         return { ok: true };
@@ -60,6 +89,7 @@ export function createAuthSessionKeeper(api: AuthApi): AuthSessionKeeper {
     // Трактовка: слушатели onSignedOut не вызываются — выход инициирует сам вызывающий код.
     // Ошибка api.logout пробрасывается, токен стирается в любом случае.
     async logout() {
+      bumpEpoch();
       try {
         await api.logout();
       } finally {
@@ -69,16 +99,13 @@ export function createAuthSessionKeeper(api: AuthApi): AuthSessionKeeper {
 
     accessToken: () => token,
 
-    renew() {
-      pendingRenew ??= refreshToken()
-        .then((ok) => {
-          if (!ok) signOut();
-          return ok;
-        })
-        .finally(() => {
-          pendingRenew = null;
-        });
-      return pendingRenew;
+    // Трактовка: onSignedOut — только если отказ относится к поколению, в котором вызван renew; второй renew после выхода его не повторяет.
+    async renew() {
+      const started = epoch;
+      const outcome = await refreshShared();
+      if (outcome === 'ok') return true;
+      if (outcome === 'rejected' && started === epoch) signOut();
+      return false;
     },
 
     onSignedOut(listener) {

@@ -53,10 +53,8 @@ export function createSwarmStream(session: AuthSessionKeeper): EventStream {
   return {
     open(swarmId, after, handlers) {
       const token = session.accessToken();
-      if (token === null) {
-        handlers.onError();
-        return { close: () => undefined };
-      }
+      // Сессии нет: переподключаться незачем, onSignedOut уведёт на /login (иначе ui-core крутил бы таймер бесконечно).
+      if (token === null) return { close: () => undefined };
       const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
       const socket = new WebSocket(
         `${scheme}://${location.host}/api/swarms/${encodeURIComponent(swarmId)}/stream?after=${after}`,
@@ -66,8 +64,14 @@ export function createSwarmStream(session: AuthSessionKeeper): EventStream {
         handlers.onEvent(JSON.parse(message.data) as PlatformEvent);
       });
       socket.addEventListener('close', (event: CloseEvent) => {
-        if (event.code === 4401) void session.renew();
-        handlers.onError();
+        if (event.code !== 4401) {
+          handlers.onError();
+          return;
+        }
+        // Переподключение только после удачного renew; неудача — onSignedOut уведёт на /login.
+        void session.renew().then((renewed) => {
+          if (renewed) handlers.onError();
+        });
       });
       socket.addEventListener('error', () => undefined); // закрытие придёт отдельным событием
       return {
