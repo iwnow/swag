@@ -128,6 +128,8 @@ npm run infra:check
 - Письма: все регистрационные письма видны в UI Mailpit. Ссылка подтверждения ведёт на `IDENTITY_CONFIRM_URL` (страница UI из спеки 014 ещё не готова). Письма живут до перезапуска `mailpit`, у сервиса нет volume.
 - Супервизор: `IDENTITY_SUPERVISOR_EMAIL` и `IDENTITY_SUPERVISOR_PASSWORD` задаются вместе или оба пусты. При старте супервизор создаётся, если его ещё нет. Значения — в `.env`.
 - Стек-тесты: `STACK_TEST_IDENTITY_URL` и `STACK_TEST_MAILPIT_URL` в `.env`; `set -a; . ./.env; set +a; npx vitest run apps/identity/test/stack.test.ts`.
+- Стек-тест доступа (спека 024, T-17): `apps/api/test/stack.test.ts` (AC-024-24) против поднятого `npm run up`. Нужны `STACK_TEST_API_URL` (`http://127.0.0.1:3000`, в `.env.example` и `.env`), `STACK_TEST_IDENTITY_URL`, `STACK_TEST_MAILPIT_URL`, `IDENTITY_SUPERVISOR_EMAIL`, `IDENTITY_SUPERVISOR_PASSWORD`; без `STACK_TEST_API_URL` пропускается. Тест регистрирует две компании через Mailpit, создаёт рой и блокирует пользователя; замер блокировки печатается как `NFR-024-1`. Тест использует адреса `@example.test` со случайным суффиксом и регистрирует две компании: лимит регистраций 4.8 (10 в час с IP) считается в памяти процесса identity, поэтому после частых прогонов помогает перезапуск `identity`.
+- Порядок запуска с нуля: `npm run identity:keys -- --write-env` (ключи подписи), `npm run up` (образы `api` и `orchestrator` требуют `IDENTITY_*`, `ORCHESTRATOR_TOKEN` из `.env`, compose передаёт их явно), затем стек-тесты из этого раздела.
 
 ## Ядро и оболочка
 
