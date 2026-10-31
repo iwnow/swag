@@ -13,6 +13,8 @@ export interface SwarmView {
   task: string;
   status: SwarmStatus;
   createdAt: string; // ts события swarm.created
+  orgId: string | null; // организация автора из swarm.created (024, 4.3); null — рой до 024
+  createdBy: string | null; // автор из swarm.created (024, 4.3); null — рой до 024
   budgetMicroUsd?: number; // нет у роёв до 004
   spentMicroUsd: number; // сумма charge.microUsd событий llm.call роя (без charge — costMicroUsd ?? 0)
   agents: {
@@ -78,6 +80,8 @@ function createView(event: Extract<PlatformEvent, { type: 'swarm.created' }>): S
     task: event.data.task,
     status: 'starting',
     createdAt: event.ts,
+    orgId: event.data.orgId ?? null,
+    createdBy: event.data.createdBy ?? null,
     ...(budgetMicroUsd === undefined ? {} : { budgetMicroUsd }),
     spentMicroUsd: 0,
     agents: event.data.agents.map((agent) => ({
