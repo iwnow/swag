@@ -1277,4 +1277,71 @@ describe('api-core — спека 013: закрытие резерва на ит
       { swarmId: second.value.id, spentMicroUsd: 300 },
     ]);
   });
+
+  // Резервы для AC-013-16: роя 1 и 2 завершены, рой 3 идёт, роя 4 в хранилище нет.
+  // Итоговые события пишутся через ingestEvent и закрывают резервы сами (T-9), поэтому settles сбрасываются.
+  async function pendingHolds() {
+    const { core, billing, entries } = setup();
+    const first = await core.createSwarm(ACTOR, body(1));
+    const second = await core.createSwarm(ACTOR, body(1));
+    const third = await core.createSwarm(ACTOR, body(1));
+    if (!first.ok || !second.ok || !third.ok) throw new Error('не создан');
+    const [a, b, c] = [first.value.id, second.value.id, third.value.id];
+    const missing = uuid(77);
+    await core.ingestEvent(sys(a, 1, llmCall(5011, 5000)));
+    await core.ingestEvent(
+      sys(a, 2, {
+        type: 'swarm.completed',
+        source: 'orchestrator',
+        agentId: null,
+        data: { result: 'R', spentMicroUsd: 9000 },
+      }),
+    );
+    await core.ingestEvent(sys(b, 1, llmCall(5012, 5000)));
+    await core.ingestEvent(
+      sys(b, 2, {
+        type: 'swarm.completed',
+        source: 'orchestrator',
+        agentId: null,
+        data: { result: 'R' },
+      }),
+    );
+    billing.settles.length = 0;
+    billing.held = [a, b, c, missing].map((swarmId) => ({
+      swarmId,
+      orgId: uuid(1),
+      amountMicroUsd: 10000,
+    }));
+    return { core, billing, entries, a, b, missing };
+  }
+
+  it('AC-013-16: четыре резерва — закрыты 1-й, 2-й и 4-й, 3-й не тронут, результат 3', async () => {
+    const { core, billing, a, b, missing } = await pendingHolds();
+    expect(await core.settlePending()).toBe(3);
+    expect(billing.settles).toEqual([
+      { swarmId: a, spentMicroUsd: 9000 },
+      { swarmId: b, spentMicroUsd: 5000 },
+      { swarmId: missing, spentMicroUsd: 0 },
+    ]);
+  });
+
+  it('AC-013-16: settle одного резерва бросает — лог billing_settle_failed, остальные закрыты, результат без него', async () => {
+    const { core, billing, entries, a, b, missing } = await pendingHolds();
+    const error = new Error('баланс недоступен');
+    const settle = billing.settle;
+    billing.settle = async (swarmId, spentMicroUsd) => {
+      if (swarmId === b) throw error;
+      return settle(swarmId, spentMicroUsd);
+    };
+    expect(await core.settlePending()).toBe(2);
+    expect(billing.settles).toEqual([
+      { swarmId: a, spentMicroUsd: 9000 },
+      { swarmId: missing, spentMicroUsd: 0 },
+    ]);
+    expect(entries).toContainEqual({
+      level: 'error',
+      msg: 'billing_settle_failed',
+      ctx: { swarmId: b, err: error },
+    });
+  });
 });

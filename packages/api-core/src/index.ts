@@ -97,6 +97,7 @@ export interface ApiCore {
   ingestEvent(raw: unknown): Promise<void>; // из swarm.*.events
   ingestMessage(raw: unknown): Promise<void>; // из swarm.*.agent.*.inbox → bus.message
   closeInterrupted(): Promise<number>; // REQ-003-6; число закрытых роёв
+  settlePending(): Promise<number>; // 013, REQ-013-8; число закрытых резервов
 }
 
 // Подписчик роя: пока читается история, события копятся в buffer; потом уходят напрямую.
@@ -499,6 +500,29 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
       }
       log.info('interrupted swarms closed', { count: closed });
       return closed;
+    },
+
+    async settlePending() {
+      let settled = 0;
+      for (const hold of await billing.holds()) {
+        try {
+          const view = await store.view(hold.swarmId);
+          if (view !== null && !FINAL_SWARM_STATUSES.includes(view.status)) continue;
+          if (view === null) {
+            await billing.settle(hold.swarmId, 0);
+          } else {
+            const event = (await store.events(hold.swarmId, 0))
+              .filter((e) => FINAL_EVENT_TYPES.includes(e.type))
+              .at(-1);
+            if (event === undefined) throw new Error('итоговое событие роя не найдено');
+            await billing.settle(hold.swarmId, finalSpent(event, view, log));
+          }
+          settled += 1;
+        } catch (err) {
+          log.error('billing_settle_failed', { swarmId: hold.swarmId, err });
+        }
+      }
+      return settled;
     },
   };
 }

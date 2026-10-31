@@ -5,6 +5,7 @@ export interface FakeBilling extends Billing {
   settles: { swarmId: string; spentMicroUsd: number }[];
   reserveResult: 'ok' | 'insufficient' | Error;
   settleError: Error | null;
+  held: { swarmId: string; orgId: string; amountMicroUsd: number }[];
 }
 
 // Безлимитный баланс: reserve всегда ok, пока тест не задаст иное; все вызовы записываются.
@@ -14,6 +15,7 @@ export function fakeBilling(): FakeBilling {
     settles: [],
     reserveResult: 'ok',
     settleError: null,
+    held: [],
     async reserve(orgId, swarmId, amountMicroUsd) {
       fake.reserves.push({ orgId, swarmId, amountMicroUsd });
       if (fake.reserveResult instanceof Error) throw fake.reserveResult;
@@ -24,7 +26,7 @@ export function fakeBilling(): FakeBilling {
       if (fake.settleError) throw fake.settleError;
     },
     async holds() {
-      return [];
+      return [...fake.held];
     },
   };
   return fake;
