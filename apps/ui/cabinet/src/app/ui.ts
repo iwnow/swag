@@ -1,6 +1,6 @@
 import { inject, InjectionToken } from '@angular/core';
 import { createUiCore, type UiCore } from '@swag/ui-core';
-import { createSwarmStream, createSwarmsApi } from './api.ts';
+import { createBalanceApi, createSwarmStream, createSwarmsApi, type BalanceApi } from './api.ts';
 import { SESSION } from './session.ts';
 
 // Спека 016, Q-6 и 4.10: Grafana за прокси `ng serve` на /grafana, ссылка относительная.
@@ -40,6 +40,11 @@ export const UI = new InjectionToken<UiCore>('ui-core', {
       traces: { urlTemplate: TRACE_URL_TEMPLATE },
     });
   },
+});
+
+// Спека 013, 4.11: адаптер баланса (REST по `/api`), тот же токен сессии.
+export const BALANCE = new InjectionToken<BalanceApi>('balance-api', {
+  factory: () => createBalanceApi(inject(SESSION)),
 });
 
 export const errorText = (error: unknown): string =>
