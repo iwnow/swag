@@ -1128,3 +1128,153 @@ describe('api-core — спека 013: резерв бюджета роя в cre
     expect(codeOf(await core.createSwarm(ACTOR, body(1)))).toBe('ok');
   });
 });
+
+describe('api-core — спека 013: закрытие резерва на итоговом событии', () => {
+  const llmCall = (callId: number, microUsd: number) => ({
+    type: 'llm.call' as const,
+    source: 'llm-gateway' as const,
+    agentId: null,
+    data: {
+      callId: uuid(callId),
+      model: 'chat-small',
+      stream: false,
+      status: 'ok' as const,
+      usage: { promptTokens: 1000, cachedPromptTokens: 0, completionTokens: 500 },
+      costMicroUsd: microUsd,
+      providerCostMicroUsd: null,
+      latencyMs: 812,
+      charge: { microUsd, basis: 'usage' as const },
+    },
+  });
+
+  it('AC-013-11: swarm.completed с spentMicroUsd 123456 — settle на 123456', async () => {
+    const { core, billing } = setup();
+    const created = await core.createSwarm(ACTOR, body(1));
+    if (!created.ok) throw new Error('не создан');
+    const id = created.value.id;
+    await core.ingestEvent(
+      sys(id, 1, {
+        type: 'swarm.completed',
+        source: 'orchestrator',
+        agentId: null,
+        data: { result: 'R', spentMicroUsd: 123456 },
+      }),
+    );
+    expect(billing.settles).toEqual([{ swarmId: id, spentMicroUsd: 123456 }]);
+  });
+
+  it('AC-013-12: второе итоговое событие того же роя отклонено хранилищем — settle только один раз', async () => {
+    const { core, billing } = setup();
+    const created = await core.createSwarm(ACTOR, body(1));
+    if (!created.ok) throw new Error('не создан');
+    const id = created.value.id;
+    const completed = (n: number) =>
+      sys(id, n, {
+        type: 'swarm.completed',
+        source: 'orchestrator',
+        agentId: null,
+        data: { result: 'R', spentMicroUsd: 500 },
+      });
+    await core.ingestEvent(completed(1));
+    await core.ingestEvent(completed(2));
+    expect(billing.settles).toEqual([{ swarmId: id, spentMicroUsd: 500 }]);
+  });
+
+  it('AC-013-13: итоговое событие без spentMicroUsd — settle по проекции 7000 и лог balance_settled_from_events', async () => {
+    const { core, billing, entries } = setup();
+    const created = await core.createSwarm(ACTOR, body(1));
+    if (!created.ok) throw new Error('не создан');
+    const id = created.value.id;
+    await core.ingestEvent(sys(id, 1, llmCall(5010, 7000)));
+    await core.ingestEvent(
+      sys(id, 2, {
+        type: 'swarm.completed',
+        source: 'orchestrator',
+        agentId: null,
+        data: { result: 'R' },
+      }),
+    );
+    expect(billing.settles).toEqual([{ swarmId: id, spentMicroUsd: 7000 }]);
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        level: 'warn',
+        msg: 'balance_settled_from_events',
+        ctx: { swarmId: id, spentMicroUsd: 7000 },
+      }),
+    );
+  });
+
+  it('AC-013-14: сбой launch — swarm.failed закрывает резерв на 0 по проекции', async () => {
+    const { core, billing } = setup({
+      launch: () => Promise.reject(new Error('оркестратор недоступен')),
+    });
+    const created = await core.createSwarm(ACTOR, body(1));
+    if (!created.ok) throw new Error('не создан');
+    expect(billing.settles).toEqual([{ swarmId: created.value.id, spentMicroUsd: 0 }]);
+  });
+
+  it('AC-013-17: settle бросает — событие записано и отдано подписчику, лог billing_settle_failed', async () => {
+    const billing = fakeBilling();
+    const { core, entries } = setup({ billing });
+    const created = await core.createSwarm(ACTOR, body(1));
+    if (!created.ok) throw new Error('не создан');
+    const id = created.value.id;
+    billing.settleError = new Error('баланс недоступен');
+    const delivered: string[] = [];
+    await core.subscribe(ACTOR, id, 0, (e) => delivered.push(e.type));
+    await core.ingestEvent(
+      sys(id, 1, {
+        type: 'swarm.completed',
+        source: 'orchestrator',
+        agentId: null,
+        data: { result: 'R', spentMicroUsd: 10 },
+      }),
+    );
+    const events = await core.getEvents(ACTOR, id, 0);
+    expect(events.ok && events.value.map((e) => e.type)).toEqual([
+      'swarm.created',
+      'swarm.completed',
+    ]);
+    expect(delivered).toEqual(['swarm.created', 'swarm.completed']);
+    expect(entries).toContainEqual({
+      level: 'error',
+      msg: 'billing_settle_failed',
+      ctx: { swarmId: id, err: billing.settleError },
+    });
+  });
+
+  it('closeInterrupted закрывает резерв активного роя по проекции (0)', async () => {
+    const { core, billing } = setup();
+    const created = await core.createSwarm(ACTOR, body(1));
+    if (!created.ok) throw new Error('не создан');
+    await core.closeInterrupted();
+    expect(billing.settles).toEqual([{ swarmId: created.value.id, spentMicroUsd: 0 }]);
+  });
+
+  it('swarm.stopped и swarm.failed от оркестратора тоже закрывают резерв своей суммой', async () => {
+    const { core, billing } = setup();
+    const first = await core.createSwarm(ACTOR, body(1));
+    const second = await core.createSwarm(ACTOR, body(1));
+    if (!first.ok || !second.ok) throw new Error('не создан');
+    await core.ingestEvent(
+      sys(first.value.id, 1, {
+        type: 'swarm.stopped',
+        source: 'orchestrator',
+        agentId: null,
+        data: { reason: 'user', spentMicroUsd: 500 },
+      }),
+    );
+    await core.ingestEvent(
+      sys(second.value.id, 1, {
+        type: 'swarm.failed',
+        source: 'orchestrator',
+        agentId: null,
+        data: { reason: 'sandbox_error', spentMicroUsd: 300 },
+      }),
+    );
+    expect(billing.settles).toEqual([
+      { swarmId: first.value.id, spentMicroUsd: 500 },
+      { swarmId: second.value.id, spentMicroUsd: 300 },
+    ]);
+  });
+});
