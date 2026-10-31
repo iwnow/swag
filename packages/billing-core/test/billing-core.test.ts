@@ -165,8 +165,21 @@ describe('billing-core', () => {
     const topup = vi.spyOn(store, 'topup');
 
     expect(error(await core.topup(userA, ORG_A, { amountMicroUsd: 1000 })).code).toBe('forbidden');
+    expect(error(await core.topup(userA, ORG_B, { amountMicroUsd: 1000 })).code).toBe('forbidden');
     expect(error(await core.topup(admin, ORG_B, { amountMicroUsd: 1000 })).code).toBe('not_found');
+    expect(error(await core.topup(userA, 'не-uuid', { amountMicroUsd: 1000 })).code).toBe(
+      'not_found',
+    );
     expect(topup).not.toHaveBeenCalled();
+  });
+
+  it('AC-013-4: супервизор без комментария при падающем orgs.exists — validation_error, exists не вызывался', async () => {
+    const { core, exists } = setup('unavailable');
+
+    expect(error(await core.topup(supervisor, ORG_A, { amountMicroUsd: 1000 })).code).toBe(
+      'validation_error',
+    );
+    expect(exists).not.toHaveBeenCalled();
   });
 
   it('AC-013-4: супервизор — без комментария validation_error, с комментарием ok, неизвестная организация not_found', async () => {

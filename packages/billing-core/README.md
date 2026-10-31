@@ -37,7 +37,7 @@
 
 ## Связи
 
-- Оболочка: `apps/api` (в MVP собирает `billing-core` в процессе с `api-core`).
+- Оболочка: `apps/api` подключит ядро в задачах T-13/T-14 спеки 013 (фабрика в `startApiCore`, маршруты баланса). До T-14 пакет нигде не используется: ни `apps/api`, ни другие пакеты его не импортируют.
 - Хранилища: `@swag/adapter-postgres` (`createPostgresBalanceStore`, T-4), `@swag/adapter-memory` (`createMemoryBalanceStore`, T-3) — в спеке 013, пока не реализованы.
 - Использует: `@swag/contracts` (`OrgId`, `TopupRequest`, `BalanceView`, `BalanceEntry`, `BalanceEntryList`, `can`, `Actor`).
 

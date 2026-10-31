@@ -113,6 +113,17 @@ function accessError(actor: Actor, orgId: string, permission: Permission): Billi
   return null;
 }
 
+// Проверка доступа перед операцией: отказ — результат без вызова операции.
+async function guarded<T>(
+  actor: Actor,
+  orgId: string,
+  permission: Permission,
+  run: () => Promise<BillingResult<T>>,
+): Promise<BillingResult<T>> {
+  const denied = accessError(actor, orgId, permission);
+  return denied ? { ok: false, error: denied } : run();
+}
+
 const LIMIT_DEFAULT = 50;
 
 // Целое из строки запроса в диапазоне; иначе null.
@@ -127,77 +138,79 @@ export function createBillingCore(deps: BillingCoreDeps): BillingCore {
   const { store, orgs, clock, log, limits } = deps;
 
   return {
-    async getBalance(actor, orgId) {
-      const denied = accessError(actor, orgId, 'balance.read');
-      if (denied) return { ok: false, error: denied };
-      const { balanceMicroUsd, heldMicroUsd } = await store.balance(orgId);
-      return ok({
-        orgId,
-        balanceMicroUsd,
-        heldMicroUsd,
-        availableMicroUsd: balanceMicroUsd - heldMicroUsd,
+    getBalance(actor, orgId) {
+      return guarded(actor, orgId, 'balance.read', async () => {
+        const { balanceMicroUsd, heldMicroUsd } = await store.balance(orgId);
+        return ok({
+          orgId,
+          balanceMicroUsd,
+          heldMicroUsd,
+          availableMicroUsd: balanceMicroUsd - heldMicroUsd,
+        });
       });
     },
 
-    async listEntries(actor, orgId, query) {
-      const denied = accessError(actor, orgId, 'balance.read');
-      if (denied) return { ok: false, error: denied };
-      const limit = query.limit === undefined ? LIMIT_DEFAULT : parseInteger(query.limit, 1, 100);
-      if (limit === null) return fail('validation_error', 'limit: целое от 1 до 100');
-      const before =
-        query.before === undefined ? null : parseInteger(query.before, 1, Number.MAX_SAFE_INTEGER);
-      if (query.before !== undefined && before === null) {
-        return fail('validation_error', 'before: целое от 1 до Number.MAX_SAFE_INTEGER');
-      }
-      const page = await store.entries(orgId, before, limit);
-      const last = page.entries.at(-1);
-      return ok({
-        entries: page.entries,
-        nextBefore: page.hasMore && last ? last.id : null,
-      });
-    },
-
-    async topup(actor, orgId, body) {
-      const denied = accessError(actor, orgId, 'balance.topup');
-      if (denied) return { ok: false, error: denied };
-      const parsed = TopupRequest.safeParse(body);
-      if (!parsed.success) {
-        return fail(
-          'validation_error',
-          'Запрос на пополнение не прошёл проверку',
-          parsed.error.issues.map((issue) => ({
-            path: issue.path.join('.'),
-            message: issue.message,
-          })),
-        );
-      }
-      const { amountMicroUsd, comment } = parsed.data;
-      if (amountMicroUsd > limits.maxTopupMicroUsd) {
-        return fail('validation_error', 'amount exceeds BALANCE_MAX_TOPUP_MICRO_USD');
-      }
-      const isSupervisor = actor.role === 'supervisor';
-      if (isSupervisor && comment === null) {
-        return fail('validation_error', 'comment is required');
-      }
-      if (isSupervisor) {
-        let exists: boolean;
-        try {
-          exists = await orgs.exists(orgId);
-        } catch (err) {
-          log.warn('org_directory_unavailable', { orgId, err });
-          return fail('org_directory_unavailable', 'Проверка организации временно недоступна');
+    listEntries(actor, orgId, query) {
+      return guarded(actor, orgId, 'balance.read', async () => {
+        const limit = query.limit === undefined ? LIMIT_DEFAULT : parseInteger(query.limit, 1, 100);
+        if (limit === null) return fail('validation_error', 'limit: целое от 1 до 100');
+        const before =
+          query.before === undefined
+            ? null
+            : parseInteger(query.before, 1, Number.MAX_SAFE_INTEGER);
+        if (query.before !== undefined && before === null) {
+          return fail('validation_error', 'before: целое от 1 до 9007199254740991');
         }
-        if (!exists) return { ok: false, error: NOT_FOUND };
-      }
-      const entry = await store.topup({
-        orgId,
-        amountMicroUsd,
-        actorId: actor.userId,
-        comment,
-        ts: clock.now(),
+        const page = await store.entries(orgId, before, limit);
+        const last = page.entries.at(-1);
+        return ok({
+          entries: page.entries,
+          nextBefore: page.hasMore && last ? last.id : null,
+        });
       });
-      log.info('balance_topup', { orgId, actorId: actor.userId, amountMicroUsd });
-      return ok(entry);
+    },
+
+    topup(actor, orgId, body) {
+      return guarded(actor, orgId, 'balance.topup', async () => {
+        const parsed = TopupRequest.safeParse(body);
+        if (!parsed.success) {
+          return fail(
+            'validation_error',
+            'Запрос на пополнение не прошёл проверку',
+            parsed.error.issues.map((issue) => ({
+              path: issue.path.join('.'),
+              message: issue.message,
+            })),
+          );
+        }
+        const { amountMicroUsd, comment } = parsed.data;
+        if (amountMicroUsd > limits.maxTopupMicroUsd) {
+          return fail('validation_error', 'amount exceeds BALANCE_MAX_TOPUP_MICRO_USD');
+        }
+        const isSupervisor = actor.role === 'supervisor';
+        if (isSupervisor && comment === null) {
+          return fail('validation_error', 'comment is required');
+        }
+        if (isSupervisor) {
+          let exists: boolean;
+          try {
+            exists = await orgs.exists(orgId);
+          } catch (err) {
+            log.warn('org_directory_unavailable', { orgId, err });
+            return fail('org_directory_unavailable', 'Проверка организации временно недоступна');
+          }
+          if (!exists) return { ok: false, error: NOT_FOUND };
+        }
+        const entry = await store.topup({
+          orgId,
+          amountMicroUsd,
+          actorId: actor.userId,
+          comment,
+          ts: clock.now(),
+        });
+        log.info('balance_topup', { orgId, actorId: actor.userId, amountMicroUsd });
+        return ok(entry);
+      });
     },
 
     async reserve(orgId, swarmId, amountMicroUsd) {
