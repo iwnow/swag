@@ -1,0 +1,39 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "references": [
+    {
+      "path": "../../packages/adapter-memory"
+    },
+    {
+      "path": "../../packages/adapter-crypto"
+    },
+    {
+      "path": "../../packages/adapter-jose"
+    },
+    {
+      "path": "../../packages/adapter-postgres"
+    },
+    {
+      "path": "../../packages/adapter-smtp"
+    },
+    {
+      "path": "../../packages/adapter-telemetry"
+    },
+    {
+      "path": "../../packages/config"
+    },
+    {
+      "path": "../../packages/contracts"
+    },
+    {
+      "path": "../../packages/identity-core"
+    }
+  ]
+}

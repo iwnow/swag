@@ -1,0 +1,24 @@
+{
+  "name": "@swag/identity",
+  "version": "0.0.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "dependencies": {
+    "@fastify/cookie": "11.1.3",
+    "@swag/adapter-crypto": "0.0.0",
+    "@swag/adapter-jose": "0.0.0",
+    "@swag/adapter-memory": "0.0.0",
+    "@swag/adapter-postgres": "0.0.0",
+    "@swag/adapter-smtp": "0.0.0",
+    "@swag/adapter-telemetry": "0.0.0",
+    "@swag/config": "0.0.0",
+    "@swag/contracts": "0.0.0",
+    "@swag/identity-core": "0.0.0",
+    "fastify": "5.12.7",
+    "pg": "8.23.1"
+  },
+  "scripts": {
+    "start": "node src/main.ts"
+  }
+}
