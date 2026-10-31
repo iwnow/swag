@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import pg from 'pg';
 import { describe, expect, it } from 'vitest';
-import { AuthSession, OrganizationList } from '@swag/contracts';
+import { AuthSession, BalanceView, OrganizationList } from '@swag/contracts';
+import { onHost } from '../../../scripts/host-url.ts';
 
 // Спека 024, AC-024-24 [stack], NFR-024-1, шаги S-1 1, 7–10 на уровне HTTP.
 // Нужен поднятый контур из compose: STACK_TEST_API_URL (например http://127.0.0.1:3000),
@@ -14,6 +16,9 @@ const REVOCATION_SLACK_MS = 1000;
 // D-122: новый вход после отзыва — не раньше чем через секунду (iat в секундах).
 const REENTRY_WAIT_MS = 1000;
 const SWARM_BUDGET_MICRO_USD = 1_000_000;
+const SWARM_WAIT_MS = 240_000;
+const SETTLE_POLL_MS = 500;
+const TERMINAL_STATUSES = ['completed', 'stopped', 'failed'];
 
 interface Stack {
   api: string;
@@ -96,6 +101,61 @@ async function register(
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+async function topup(stack: Stack, token: string, orgId: string, amountMicroUsd: number) {
+  const response = await call(stack.api, `/organizations/${orgId}/balance/topups`, {
+    method: 'POST',
+    token,
+    body: { amountMicroUsd, comment: null },
+  });
+  expect(response.status).toBe(201);
+  await response.text();
+}
+
+async function balanceOf(stack: Stack, token: string, orgId: string): Promise<BalanceView> {
+  const response = await call(stack.api, `/organizations/${orgId}/balance`, { token });
+  expect(response.status).toBe(200);
+  return BalanceView.parse(await response.json());
+}
+
+async function swarmStatus(
+  stack: Stack,
+  token: string,
+  swarmId: string,
+): Promise<{ status: string; spentMicroUsd: number }> {
+  const response = await call(stack.api, `/swarms/${swarmId}`, { token });
+  expect(response.status).toBe(200);
+  return (await response.json()) as { status: string; spentMicroUsd: number };
+}
+
+async function waitFor<T>(read: () => Promise<T>, done: (value: T) => boolean): Promise<T> {
+  const deadline = performance.now() + SWARM_WAIT_MS;
+  for (;;) {
+    const value = await read();
+    if (done(value)) return value;
+    if (performance.now() > deadline) throw new Error('AC-013-24: таймаут ожидания');
+    await sleep(SETTLE_POLL_MS);
+  }
+}
+
+// Ledger пишет gateway в Postgres той же базы, что и api; имя postgres видно только внутри compose.
+async function ledgerSum(swarmId: string): Promise<number> {
+  const url = process.env['DATABASE_URL'];
+  if (!url) throw new Error('AC-013-24: нужен DATABASE_URL (в .env)');
+  const db = new pg.Client({
+    connectionString: new URL(url).hostname === 'postgres' ? onHost(url) : url,
+  });
+  await db.connect();
+  try {
+    const result = await db.query<{ sum: string }>(
+      'select coalesce(sum(amount_micro_usd), 0)::text as sum from ledger_entries where swarm_id = $1',
+      [swarmId],
+    );
+    return Number(result.rows[0]?.sum);
+  } finally {
+    await db.end();
+  }
+}
+
 describe.skipIf(!process.env['STACK_TEST_API_URL'])('api [stack]', () => {
   it('AC-024-24: две компании, приглашённый пользователь видит свой рой, чужая организация получает 404, супервизор видит обе организации и рой, блокировка даёт 401 в api и 403 при входе', async () => {
     const stack = requireStack();
@@ -114,6 +174,7 @@ describe.skipIf(!process.env['STACK_TEST_API_URL'])('api [stack]', () => {
     const adminB = await register(stack, `stack024-admin-b-${tag}@example.test`, orgBName);
     expect(adminA.user.role).toBe('admin');
     expect(adminB.user.role).toBe('admin');
+    await topup(stack, adminA.accessToken, adminA.organization?.id ?? '', SWARM_BUDGET_MICRO_USD);
 
     const invitation = await call(stack.identity, '/auth/invitations', {
       method: 'POST',
@@ -233,4 +294,69 @@ describe.skipIf(!process.env['STACK_TEST_API_URL'])('api [stack]', () => {
       }
     }
   }, 180_000);
+
+  it('AC-013-24: пополнение $1, рой на $0.50 держит резерв, рой на $0.60 получает 402, после завершения первого held = 0 и баланс уменьшился на сумму ledger роя', async () => {
+    const stack = requireStack();
+    const tag = randomUUID();
+    const admin = await register(
+      stack,
+      `stack013-admin-${tag}@example.test`,
+      `Стек-тест 013 ${tag}`,
+    );
+    const orgId = admin.organization?.id ?? '';
+    expect(admin.user.role).toBe('admin');
+
+    await topup(stack, admin.accessToken, orgId, 1_000_000);
+    expect((await balanceOf(stack, admin.accessToken, orgId)).balanceMicroUsd).toBe(1_000_000);
+
+    const swarmBody = (budgetMicroUsd: number) => ({
+      task: 'стек-тест спеки 013',
+      budgetMicroUsd,
+      agents: [{ name: 'agent-1', role: 'Ответь одним словом', model: 'chat-small' }],
+    });
+    const first = await call(stack.api, '/swarms', {
+      method: 'POST',
+      token: admin.accessToken,
+      body: swarmBody(500_000),
+    });
+    expect(first.status).toBe(201);
+    const firstId = ((await first.json()) as { id: string }).id;
+
+    try {
+      const reserved = await balanceOf(stack, admin.accessToken, orgId);
+      expect(reserved.heldMicroUsd).toBe(500_000);
+
+      const second = await call(stack.api, '/swarms', {
+        method: 'POST',
+        token: admin.accessToken,
+        body: swarmBody(600_000),
+      });
+      expect(second.status).toBe(402);
+      expect(((await second.json()) as { error: { code: string } }).error.code).toBe(
+        'insufficient_balance',
+      );
+
+      const finished = await waitFor(
+        () => swarmStatus(stack, admin.accessToken, firstId),
+        (view) => TERMINAL_STATUSES.includes(view.status),
+      );
+      expect(finished.status).toBe('completed');
+
+      const settled = await waitFor(
+        () => balanceOf(stack, admin.accessToken, orgId),
+        (view) => view.heldMicroUsd === 0,
+      );
+      const spent = await ledgerSum(firstId);
+      expect(settled.balanceMicroUsd).toBe(1_000_000 - spent);
+      expect(settled.availableMicroUsd).toBe(1_000_000 - spent);
+    } finally {
+      // Уборка: рой мог уже завершиться, поэтому ответ не проверяем.
+      await call(stack.api, `/swarms/${firstId}/stop`, {
+        method: 'POST',
+        token: admin.accessToken,
+      })
+        .then((response) => response.text())
+        .catch(() => undefined);
+    }
+  }, 300_000);
 });
