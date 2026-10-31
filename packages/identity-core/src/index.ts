@@ -17,7 +17,11 @@ import {
   type OrgRole,
   type Role,
   type ServiceInfo,
+  type TokenRevocationList,
   type UserList,
+  UserUpdate,
+  InvitationAcceptRequest,
+  InvitationRequest,
 } from '@swag/contracts';
 import type { z } from 'zod';
 
@@ -166,6 +170,8 @@ export interface IdentityCoreDeps {
     accessTtlS: number;
     refreshTtlS: number;
     confirmTtlS: number;
+    inviteUrl: string; // IDENTITY_INVITE_URL
+    inviteTtlS: number; // IDENTITY_INVITE_TTL_S
     supervisor: { email: string; password: string } | null;
   };
 }
@@ -195,6 +201,15 @@ export interface IdentityCore {
   me(accessToken: string | undefined): Promise<Result<AuthMe>>;
   listUsers(accessToken: string | undefined, query: { orgId?: string }): Promise<Result<UserList>>;
   listOrganizations(accessToken: string | undefined): Promise<Result<OrganizationList>>;
+  inviteUser(accessToken: string | undefined, body: unknown): Promise<Result<void>>;
+  acceptInvitation(body: unknown, meta: RequestMeta): Promise<Result<IssuedSession>>;
+  updateUser(
+    accessToken: string | undefined,
+    userId: string,
+    body: unknown,
+  ): Promise<Result<ManagedUser>>;
+  tokenRevocations(): Promise<TokenRevocationList>; // проверку внутреннего токена делает оболочка
+  purgeExpired(): Promise<void>;
   ensureSupervisor(): Promise<void>; // бросает при занятом email (REQ-012-15); вызывает оболочка до listen
 }
 
@@ -204,6 +219,9 @@ export const ALREADY_REGISTERED_MAIL_TEXT =
   'На этот адрес уже есть аккаунт. Войдите по своему паролю. Если это были не вы, ничего не делайте.';
 export const confirmMailText = (link: string, ttlHours: number): string =>
   `Чтобы закончить регистрацию компании, откройте ссылку: ${link}\nСсылка действует ${ttlHours} ч. Если вы не регистрировались, ничего не делайте.`;
+export const INVITATION_MAIL_SUBJECT = 'Приглашение в Swag';
+export const invitationMailText = (orgName: string, link: string, ttlHours: number): string =>
+  `Вас пригласили в организацию «${orgName}» в Swag. Чтобы задать пароль и войти, откройте ссылку: ${link} Ссылка действует ${ttlHours} ч.`;
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -217,6 +235,7 @@ export const RATE_LIMITS = {
   confirmIp: { key: 'confirm:ip', limit: 20, windowMs: HOUR_MS },
   loginEmail: { key: 'login:email', limit: 10, windowMs: 15 * MINUTE_MS },
   loginIp: { key: 'login:ip', limit: 30, windowMs: 15 * MINUTE_MS },
+  inviteUser: { key: 'invite:user', limit: 20, windowMs: HOUR_MS },
 } as const;
 
 type RateRule = { readonly key: string; readonly limit: number; readonly windowMs: number };
@@ -315,6 +334,13 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     });
   };
 
+  const sendAlreadyRegistered = (email: string): Promise<boolean> =>
+    sendMail({
+      to: email,
+      subject: ALREADY_REGISTERED_MAIL_SUBJECT,
+      text: ALREADY_REGISTERED_MAIL_TEXT,
+    });
+
   const requestRegistration = async (body: unknown, meta: RequestMeta): Promise<Result<void>> => {
     const parsed = parse(RegistrationRequest, body);
     if (!parsed.ok) return parsed;
@@ -327,11 +353,7 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     }
     const existing = await store.findUserByEmail(email);
     const sent = existing
-      ? await sendMail({
-          to: email,
-          subject: ALREADY_REGISTERED_MAIL_SUBJECT,
-          text: ALREADY_REGISTERED_MAIL_TEXT,
-        })
+      ? await sendAlreadyRegistered(email)
       : await sendConfirmation(email, clock.now());
     return sent ? ok(undefined) : fail('mail_unavailable');
   };
@@ -564,6 +586,116 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     return ok({ organizations: organizations.map(organizationSummary) });
   };
 
+  // Спека 024, 4.8 и 4.10: приглашение создаёт пользователя в организации администратора.
+  const inviteUser = async (
+    accessToken: string | undefined,
+    body: unknown,
+  ): Promise<Result<void>> => {
+    const auth = await authenticate(accessToken);
+    if (!auth.ok) return auth;
+    const { actor, organization } = auth.value;
+    if (actor.role !== 'admin' || actor.orgId === null || organization === null) {
+      return fail('forbidden');
+    }
+    const parsed = parse(InvitationRequest, body);
+    if (!parsed.ok) return parsed;
+    const { email, role } = parsed.value;
+    if (await exceeded(RATE_LIMITS.inviteUser, actor.userId)) return fail('rate_limited');
+    if (await store.findUserByEmail(email)) {
+      return (await sendAlreadyRegistered(email)) ? ok(undefined) : fail('mail_unavailable');
+    }
+    const now = clock.now();
+    const { token, hash } = opaque.create();
+    await store.addInvitation({
+      tokenHash: hash,
+      email,
+      orgId: actor.orgId,
+      role,
+      invitedBy: actor.userId,
+      expiresAt: now + settings.inviteTtlS * 1000,
+      createdAt: now,
+    });
+    const link = `${settings.inviteUrl}?token=${token}`;
+    const sent = await sendMail({
+      to: email,
+      subject: INVITATION_MAIL_SUBJECT,
+      text: invitationMailText(organization.name, link, Math.ceil(settings.inviteTtlS / 3600)),
+    });
+    if (!sent) return fail('mail_unavailable');
+    log.info('user_invited', { userId: actor.userId, orgId: actor.orgId });
+    return ok(undefined);
+  };
+
+  const acceptInvitation = async (
+    body: unknown,
+    meta: RequestMeta,
+  ): Promise<Result<IssuedSession>> => {
+    const parsed = parse(InvitationAcceptRequest, body);
+    if (!parsed.ok) return parsed;
+    const { token, password } = parsed.value;
+    if (await exceeded(RATE_LIMITS.confirmIp, meta.ip)) return fail('rate_limited');
+    const now = clock.now();
+    const passwordHash = await hasher.hash(password);
+    const result = await store.acceptInvitation({
+      tokenHash: opaque.hash(token),
+      now,
+      user: { id: ids.uuid(), passwordHash, createdAt: now },
+    });
+    if (result.status === 'invalid_token') {
+      log.warn('invite_invalid_token');
+      return fail('invalid_token');
+    }
+    if (result.status === 'email_taken') return fail('email_taken');
+    return ok(await issueSession(result.user, result.organization));
+  };
+
+  // Спека 024, 4.8: роль и блокировка. Отзыв токенов — при новой блокировке или смене роли на другую.
+  const updateUser = async (
+    accessToken: string | undefined,
+    userId: string,
+    body: unknown,
+  ): Promise<Result<ManagedUser>> => {
+    const auth = await authenticate(accessToken);
+    if (!auth.ok) return auth;
+    const { actor } = auth.value;
+    if (!can(actor, 'user.manage')) return fail('forbidden');
+    const parsed = parse(UserUpdate, body);
+    if (!parsed.ok) return parsed;
+    const found = await store.findUserById(userId);
+    if (!found) return fail('not_found');
+    const { user } = found;
+    if (user.id === actor.userId || user.role === 'supervisor') return fail('forbidden');
+    if (actor.role === 'admin' && user.orgId !== actor.orgId) return fail('not_found');
+    const { role, blocked } = parsed.value;
+    const now = clock.now();
+    const blocking = blocked === true && user.blockedAt === null;
+    const roleChanged = role !== undefined && role !== user.role;
+    const updated = await store.updateUser({
+      id: user.id,
+      ...(role === undefined ? {} : { role }),
+      ...(blocked === undefined ? {} : { blockedAt: blocked ? now : null }),
+      ...(blocking || roleChanged ? { revokeAt: now } : {}),
+    });
+    log.info('user_updated', {
+      userId: actor.userId,
+      targetId: user.id,
+      role: updated.role,
+      blocked: updated.blockedAt !== null,
+    });
+    return ok(managedUser(updated));
+  };
+
+  // Отзывы для api (024, 4.12): только записи новее срока жизни токена доступа.
+  const tokenRevocations = async (): Promise<TokenRevocationList> => {
+    const since = clock.now() - settings.accessTtlS * 1000;
+    return { revocations: await store.tokenRevocations(since) };
+  };
+
+  const purgeExpired = async (): Promise<void> => {
+    const removed = await store.purge(clock.now() - RETENTION_MS);
+    log.info('identity_purged', removed);
+  };
+
   // Исключение хранилища или ядра превращается в internal_error. В лог пишется только имя операции:
   // текст ошибки (например, `detail` Postgres) может содержать email, поэтому `err` не передаём (4.3, D-115).
   const guarded =
@@ -587,6 +719,11 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     me: guarded('me', me),
     listUsers: guarded('listUsers', listUsers),
     listOrganizations: guarded('listOrganizations', listOrganizations),
+    inviteUser: guarded('inviteUser', inviteUser),
+    acceptInvitation: guarded('acceptInvitation', acceptInvitation),
+    updateUser: guarded('updateUser', updateUser),
+    tokenRevocations,
+    purgeExpired,
     ensureSupervisor,
   };
 }

@@ -1,13 +1,13 @@
-import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   ADMIN_EMAIL,
   ADMIN_PASSWORD,
-  HOUR_MS,
   NOW,
+  addMember,
   createTestEnv,
+  loginAs,
   seedAdmin,
-  type TestEnv,
+  seedOrganization,
 } from './fakes.ts';
 
 // Спека 024, T-7: блокировка, отзыв токенов, listUsers, listOrganizations (ядро).
@@ -16,52 +16,6 @@ const meta = { ip: '10.0.0.7' };
 const PASSWORD = ADMIN_PASSWORD;
 const SUPERVISOR_EMAIL = 'supervisor@example.test';
 const SUPERVISOR_PASSWORD = 'supervisor password 1';
-
-type Seeded = { userId: string; orgId: string };
-
-// Организация с администратором, как после confirmRegistration (через хранилище).
-async function seedOrganization(env: TestEnv, email: string, orgName: string): Promise<Seeded> {
-  const userId = randomUUID();
-  const orgId = randomUUID();
-  const tokenHash = `seed-org-${randomUUID()}`;
-  await env.store.addConfirmation({ tokenHash, email, expiresAt: NOW + HOUR_MS, createdAt: NOW });
-  await env.store.confirmRegistration({
-    tokenHash,
-    now: NOW,
-    org: { id: orgId, name: orgName, createdAt: NOW },
-    user: {
-      id: userId,
-      passwordHash: `fake-hash:${PASSWORD}`,
-      role: 'admin',
-      orgId,
-      createdAt: NOW,
-      blockedAt: null,
-      tokensValidAfter: null,
-    },
-  });
-  return { userId, orgId };
-}
-
-async function addMember(env: TestEnv, email: string, orgId: string): Promise<string> {
-  const id = randomUUID();
-  await env.store.createUser({
-    id,
-    email,
-    passwordHash: `fake-hash:${PASSWORD}`,
-    role: 'user',
-    orgId,
-    createdAt: NOW,
-    blockedAt: null,
-    tokensValidAfter: null,
-  });
-  return id;
-}
-
-async function loginAs(env: TestEnv, email: string, password = PASSWORD) {
-  const result = await env.core.login({ email, password }, meta);
-  if (!result.ok) throw new Error(`вход ${email}: ${result.error.code}`);
-  return result.value;
-}
 
 describe('identity-core — блокировка и отзыв (спека 024, T-7)', () => {
   it('AC-024-6: заблокированный с верным паролем — user_blocked и warn login_blocked; с неверным — invalid_credentials; после разблокировки вход проходит', async () => {

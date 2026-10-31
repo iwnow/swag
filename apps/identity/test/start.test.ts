@@ -41,6 +41,8 @@ function deps(
       accessTtlS: 900,
       refreshTtlS: 2592000,
       confirmTtlS: 86400,
+      inviteUrl: 'http://127.0.0.1:4200/auth/invite',
+      inviteTtlS: 604800,
       supervisor,
     },
   };

@@ -81,6 +81,8 @@ const { core, pool } = await startOrExit(
       accessTtlS: config.IDENTITY_ACCESS_TTL_S,
       refreshTtlS: config.IDENTITY_REFRESH_TTL_S,
       confirmTtlS: config.IDENTITY_CONFIRM_TTL_S,
+      inviteUrl: config.IDENTITY_INVITE_URL,
+      inviteTtlS: config.IDENTITY_INVITE_TTL_S,
       supervisor,
     },
   },
