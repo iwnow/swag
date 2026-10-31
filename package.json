@@ -31,7 +31,8 @@
     "infra:check": "node --env-file-if-exists=.env scripts/infra-check.ts",
     "db:migrate": "node --env-file-if-exists=.env scripts/db-migrate.ts",
     "llm:ping": "node --env-file-if-exists=.env scripts/llm-ping.ts",
-    "money:report": "node --env-file-if-exists=.env scripts/money-report.ts"
+    "money:report": "node --env-file-if-exists=.env scripts/money-report.ts",
+    "identity:keys": "node scripts/identity-keys.ts"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
