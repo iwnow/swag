@@ -1,25 +1,28 @@
 # @swag/adapter-postgres
 
-Адаптер Postgres: миграции схемы, хранилище роёв `SwarmStore` (порт `api-core`), бюджеты роёв и цены OpenRouter для LLM Gateway (порты `BudgetStore` и `PriceStore` из `llm-gateway-core`), хранилище identity `IdentityStore` (спеки 012 и 024: пользователи, организации, приглашения, блокировка, отзывы токенов, уборка). Оболочка `apps/api` подключает хранилище роёв вместо адаптера в памяти.
+Адаптер Postgres: миграции схемы, хранилище роёв `SwarmStore` (порт `api-core`), бюджеты роёв и цены OpenRouter для LLM Gateway (порты `BudgetStore` и `PriceStore` из `llm-gateway-core`), хранилище identity `IdentityStore` (спеки 012 и 024: пользователи, организации, приглашения, блокировка, отзывы токенов, уборка), хранилище баланса `BalanceStore` (спека 013: баланс организации, журнал, резерв роя). Оболочка `apps/api` подключает хранилище роёв вместо адаптера в памяти.
 
 ## Задачи
 
-- `runMigrations(databaseUrl, { schema? })` — применить миграции из `migrations/` (спека 003, 4.4, REQ-003-5; спека 004, 4.5; спека 012, 4.9). Повторный вызов ничего не меняет.
+- `runMigrations(databaseUrl, { schema? })` — применить миграции из `migrations/` (спека 003, 4.4, REQ-003-5; спека 004, 4.5; спека 012, 4.9; спека 013, 4.2). Повторный вызов ничего не меняет.
 - `createPostgresSwarmStore(pool)` — хранилище роёв: события и проекция (`SwarmView`) пишутся одной транзакцией (REQ-003-2, 4.4).
 - `createPostgresBudgetStore(pool)` — `BudgetStore` gateway (спека 004, 4.4, 4.5): регистрация роя, поиск агента, условный резерв (REQ-004-9), списание с записью ledger (REQ-004-10), закрытие роя, снятие резервов при старте.
 - `createPostgresPriceStore(pool)` — `PriceStore`: последние успешные цены OpenRouter по id модели OpenRouter (спека 004, 4.5, Q-8).
 - `createPostgresIdentityStore(pool)` — `IdentityStore` identity (спека 012, 4.3, 4.9; спека 024, 4.9): пользователи, организации, подтверждения регистрации, сессии, приглашения. `confirmRegistration`, `acceptInvitation`, `updateUser` и `rotateSession` — одна транзакция каждая (AC-012-9, AC-012-30, AC-024-4, AC-024-5).
+- `createPostgresBalanceStore(pool)` — `BalanceStore` (спека 013, 4.2): баланс и журнал организации, пополнение (`topup`), условный резерв роя (`reserve`, REQ-013-5), закрытие резерва (`settle`) и открытые резервы (`holds`). Каждая операция записи — одна транзакция.
 - `ledgerReport(pool, { swarmId?, since? })` — суммы и счётчики ledger по основанию списания и наличию факта провайдера (спека 004, 4.5, отчёт для 4.10). Формат строк `money:report` (4.13) — в T-16.
 - `npm run db:migrate` в корне — `runMigrations` для базы из `DATABASE_URL` с хоста (`127.0.0.1`, как у `infra:check`).
 
 ## Что внутри сейчас
 
-- `src/index.ts` — `runMigrations`, `createPostgresSwarmStore`, `createPostgresBudgetStore`, `createPostgresPriceStore`, `createPostgresIdentityStore`, `ledgerReport`, внутренние `transact`, `plainPrice`, `userFromRow`, `isEmailConflict`, `USER_COLUMNS`.
+- `src/index.ts` — `runMigrations`, `createPostgresSwarmStore`, `createPostgresBudgetStore`, `createPostgresPriceStore`, `createPostgresIdentityStore`, `createPostgresBalanceStore`, `ledgerReport`, внутренние `transact`, `plainPrice`, `userFromRow`, `isEmailConflict`, `USER_COLUMNS`, `toBalanceEntry`.
 - `migrations/0001_swarms.sql` — таблицы `swarms` и `swarm_events` (003, 4.4), формат `-- Up Migration` / `-- Down Migration`.
 - `migrations/0002_money.sql` — `swarm_budgets`, `swarm_agents`, `budget_holds`, `ledger_entries`, `model_prices` (004, 4.5), текст из спеки без изменений.
 - `migrations/0003_identity.sql` — `organizations`, `users`, `email_confirmations`, `sessions` (012, 4.9), текст из спеки без изменений. Ограничения: `users.role` — `user`, `admin`, `supervisor`; у супервизора нет `org_id`, у остальных есть.
 - `migrations/0004_identity_access.sql` — `users.blocked_at`, `users.tokens_valid_after` с индексом `users_tokens_valid_after`, таблица `invitations` (024, 4.11), текст из спеки без изменений.
+- `migrations/0005_billing.sql` — `org_balances`, `balance_entries`, `balance_holds` (013, 4.2), текст из спеки без изменений. Ограничения: `held <= balance`; запись `topup` с `actor_id` и без резерва, запись `swarm` с `swarm_id` и без `actor_id`; `swarm_id` в `balance_entries` уникален.
 - `test/migrations.test.ts` — AC-003-1, AC-004-20 (колонки, ограничения, параллельный запуск), AC-012-3 (таблицы identity, отказы ограничений, повторный запуск), AC-024-3 (0004 вверх и вниз, данные 0003 сохраняются).
+- `test/balance-store.test.ts` — общий набор `balanceStoreContract` из `adapter-memory` на Postgres (AC-013-1, AC-013-11, AC-013-12 и проверки пагинации, `insufficient`, повтора `swarmId`, `holds`) и AC-013-10 (10 параллельных резервов: ровно 3 `ok`, баланс не меняется).
 - `test/store.test.ts` — AC-003-2 и AC-003-3 на `createPostgresSwarmStore`.
 - `test/money.test.ts` — AC-004-13 (параллельные резервы роя и агента, закрытый рой, агент не из регистрации), AC-004-14 (списание, повтор, параллельный повтор, гонка с `releaseHolds`), AC-004-18, AC-004-32, AC-004-40 (часть хранилища); тесты `close`, `findAgent` и повторной регистрации.
 - `test/identity-store.test.ts` — общий набор `identityStoreContract` из `adapter-memory` на Postgres (AC-012-30, AC-024-4) и AC-012-9 (8 параллельных подтверждений одним токеном), AC-024-5 (5 раундов параллельных `rotateSession` одним старым хэшем: ровно один `ok` и один `reused`).
@@ -59,13 +62,14 @@
 - `releaseHolds` снимает все резервы таблицы `budget_holds`, а не резервы одного роя; вызывается при старте процесса gateway до приёма запросов.
 - `createPostgresIdentityStore`: `findUserById` с id, не являющимся UUID, бросает ошибку базы; память отдаёт `null`. Ядро получает id из базы или из подписанного токена, поэтому в 012 это не достижимо.
 - `updateUser` с неизвестным `id` бросает `Error` (откат транзакции), как в памяти.
+- `createPostgresBalanceStore`: `orgId` и `swarmId`, не являющиеся UUID, дают ошибку базы; проверку формата делает ядро `billing-core`.
 - `purge` (024, 4.9) только удаляет; когда и как его вызывать — решает ядро (`purgeExpired`, T-9).
 - `ledgerReport` с `swarmId`, не являющимся UUID, бросает ошибку базы (`invalid input syntax for type uuid`). В отличие от `view`, `events` и `close`, которые отдают `null` или `[]`, проверки формата здесь нет.
 
 ## Связи
 
-- Порты: `SwarmStore` из `@swag/api-core`; `BudgetStore`, `PriceStore`, `LedgerEntry`, `RegisteredAgent`, `ReserveResult`, `StoredPrice` из `@swag/llm-gateway-core` (только типы).
-- Использует: `@swag/api-core` (типы), `@swag/api-integration` (`applyEvent`, `SwarmView`), `@swag/contracts` (`SwarmId`, `PlatformEvent`, `LlmSwarmRegistration`, `LlmCaller`, `ChargeBasis`), `@swag/llm-gateway-core` (типы портов), `@swag/identity-core` (типы порта `IdentityStore`), `node-pg-migrate`, `pg` (тесты: `pg.Client`, `pg.Pool`). Тесты identity импортируют общий набор из `packages/adapter-memory/test/identity-store.contract.ts`.
+- Порты: `SwarmStore` из `@swag/api-core`; `BudgetStore`, `PriceStore`, `LedgerEntry`, `RegisteredAgent`, `ReserveResult`, `StoredPrice` из `@swag/llm-gateway-core`; `BalanceStore` из `@swag/billing-core` (только типы).
+- Использует: `@swag/api-core` (типы), `@swag/api-integration` (`applyEvent`, `SwarmView`), `@swag/contracts` (`SwarmId`, `PlatformEvent`, `LlmSwarmRegistration`, `LlmCaller`, `ChargeBasis`), `@swag/llm-gateway-core` (типы портов), `@swag/identity-core` (типы порта `IdentityStore`), `@swag/billing-core` (типы порта `BalanceStore`), `node-pg-migrate`, `pg` (тесты: `pg.Client`, `pg.Pool`). Тесты identity импортируют общий набор из `packages/adapter-memory/test/identity-store.contract.ts`.
 - Оболочки: `apps/api` (T-7), `scripts/db-migrate.ts`, `apps/llm-gateway` (подключение хранилища денег — отдельной задачей спеки 004).
 
 ## Ключевые решения
@@ -77,6 +81,7 @@
 - Таблица миграций `pgmigrations` лежит в той же схеме, что и таблицы роёв (`migrationsSchema = schema`), чтобы тестовая схема удалялась целиком.
 - Каталог миграций находится через `import.meta.url`, а не через `cwd`: скрипты и `api` запускаются из разных мест.
 - Проекция хранится целиком в `swarms.view` (jsonb) и обновляется при каждом событии; `swarm_events.event` — полное событие с `seq`, без разбора. `events` отдают сохранённый объект как есть, поэтому совпадают с `projectSwarm` по содержимому.
+- Баланс (013, 4.2): `reserve` — условный `update` org_balances (остаток проверяется в том же запросе), при 0 строк — `insufficient` и откат без записи; повтор `swarmId` — конфликт первичного ключа в `balance_holds`, откат и исключение. `settle` — `delete ... returning` резерва: повторное закрытие даёт `null`, без записей.
 - Вся логика применимости — в `applyEvent` (`api-integration`), адаптер только вызывает её внутри транзакции: одинаково с адаптером в памяти.
 
 ## Деньги (спека 004)
