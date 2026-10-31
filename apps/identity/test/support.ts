@@ -75,7 +75,8 @@ export async function makeHarness(options: HarnessOptions = {}): Promise<Harness
   });
   const mailer = createMemoryMailer();
   const store = createMemoryIdentityStore();
-  const start = Date.now();
+  // Середина секунды: отзыв на границе секунды (`iat * 1000 === validAfter`) не отзывает токен той же миллисекунды (D-122).
+  const start = Math.floor(Date.now() / 1000) * 1000 + 500;
   let shift = 0;
   const clock = { now: () => start + shift, shift: (ms: number) => void (shift += ms) };
   const key = privateKeyBase64();
