@@ -2,10 +2,13 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { ApiCore, OrchestratorClient } from '@swag/api-core';
+import type { ApiCore, Billing, OrchestratorClient } from '@swag/api-core';
 import { buildApp } from '../src/app.ts';
 import { startApiCore } from '../src/start.ts';
-import { body, bearer, makeStartedAuth, silentLog, T } from './support.ts';
+import { body, bearer, makeBilling, makeStartedAuth, silentLog, T } from './support.ts';
+
+// Баланс один на весь файл, как Postgres между перезапусками: фабрика и маршруты берут один экземпляр.
+const funded = await makeBilling();
 
 // Нужен запущенный Postgres: POSTGRES_TEST_URL (compose или сервис в CI). Схема создаётся на время файла.
 const url = process.env['POSTGRES_TEST_URL'];
@@ -22,9 +25,12 @@ describe.skipIf(!url)('история роёв на Postgres', () => {
   }
 
   // Порядок старта — тот же, что в main.ts: startApiCore. Перезапуск — новый пул и новое ядро на той же схеме.
-  async function start(orchestrator: OrchestratorClient): Promise<Run> {
+  async function start(
+    orchestrator: OrchestratorClient,
+    billing: (pool: pg.Pool) => Billing = () => funded,
+  ): Promise<Run> {
     const { core, pool } = await startApiCore(
-      { databaseUrl: url ?? '', schema },
+      { databaseUrl: url ?? '', schema, billing },
       {
         version: 'test',
         orchestrator,
@@ -37,7 +43,7 @@ describe.skipIf(!url)('история роёв на Postgres', () => {
     );
     const run = {
       core,
-      app: await buildApp(core, {}, (await makeStartedAuth({ core })).app),
+      app: await buildApp(core, funded, {}, (await makeStartedAuth({ core })).app),
       pool,
     };
     running.add(run);
@@ -138,6 +144,59 @@ describe.skipIf(!url)('история роёв на Postgres', () => {
       data: { reason: 'api_restarted' },
     });
     expect(stopped).toEqual([swarmId]);
+    await stop(second);
+  });
+
+  it('AC-013-16: startApiCore — фабрика billing получает пул, settlePending после closeInterrupted', async () => {
+    const orchestrator: OrchestratorClient = {
+      launch: async () => undefined,
+      stop: async () => undefined,
+    };
+    const first = await start(orchestrator);
+    const created = await first.app.inject({
+      headers: bearer(T.adminA),
+      method: 'POST',
+      url: '/swarms',
+      payload: body(1),
+    });
+    expect(created.statusCode).toBe(201);
+    const swarmId = created.json<{ id: string }>().id;
+    await first.core.ingestEvent({
+      id: randomUUID(),
+      swarmId,
+      ts: '2026-10-29T10:00:00.000Z',
+      source: 'orchestrator',
+      agentId: null,
+      traceId: null,
+      type: 'swarm.started',
+      data: {},
+    });
+    await stop(first);
+
+    const calls: string[] = [];
+    let seenPool: pg.Pool | undefined;
+    const second = await start(orchestrator, (pool) => {
+      seenPool = pool;
+      return {
+        reserve: async () => 'ok' as const,
+        settle: async (id, spentMicroUsd) => {
+          calls.push(`settle:${id}:${spentMicroUsd}`);
+        },
+        holds: async () => {
+          calls.push('holds');
+          return [{ swarmId, orgId: 'org-hold', amountMicroUsd: 100 }];
+        },
+      };
+    });
+
+    expect(seenPool).toBe(second.pool);
+    expect(calls).toEqual([`settle:${swarmId}:0`, 'holds', `settle:${swarmId}:0`]);
+    const after = await second.app.inject({
+      headers: bearer(T.adminA),
+      method: 'GET',
+      url: `/swarms/${swarmId}`,
+    });
+    expect(after.json()).toMatchObject({ status: 'failed', failure: { reason: 'api_restarted' } });
     await stop(second);
   });
 });

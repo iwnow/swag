@@ -53,10 +53,18 @@ export interface OrchestratorClient {
   stop(swarmId: string): Promise<void>;
 }
 
+// Спека 013, 4.4. Резерв бюджета роя из баланса организации; сбой хранилища баланса — исключение.
+export interface Billing {
+  reserve(orgId: string, swarmId: string, amountMicroUsd: number): Promise<'ok' | 'insufficient'>;
+  settle(swarmId: string, spentMicroUsd: number): Promise<void>;
+  holds(): Promise<{ swarmId: string; orgId: string; amountMicroUsd: number }[]>;
+}
+
 export interface ApiCoreDeps {
   version: string; // передаёт оболочка: ядро не читает package.json
   store: SwarmStore;
   orchestrator: OrchestratorClient;
+  billing: Billing;
   clock: Clock;
   ids: IdGenerator;
   log: Logger;
@@ -89,6 +97,7 @@ export interface ApiCore {
   ingestEvent(raw: unknown): Promise<void>; // из swarm.*.events
   ingestMessage(raw: unknown): Promise<void>; // из swarm.*.agent.*.inbox → bus.message
   closeInterrupted(): Promise<number>; // REQ-003-6; число закрытых роёв
+  settlePending(): Promise<number>; // 013, REQ-013-8; число закрытых резервов
 }
 
 // Подписчик роя: пока читается история, события копятся в buffer; потом уходят напрямую.
@@ -121,8 +130,24 @@ function forActor(actor: Actor, event: PlatformEvent): PlatformEvent {
   return { ...event, data: { ...event.data, providerCostMicroUsd: null } };
 }
 
+// Спека 013, 4.4 и Q-8: сумма закрытия — из итогового события; нет поля — из проекции после события.
+const FINAL_EVENT_TYPES: readonly string[] = ['swarm.completed', 'swarm.stopped', 'swarm.failed'];
+
+// Проекция читается только когда поля нет: при числовом spentMicroUsd хранилище не трогается.
+async function finalSpent(event: PlatformEvent, store: SwarmStore, log: Logger): Promise<number> {
+  const spent = 'spentMicroUsd' in event.data ? event.data.spentMicroUsd : undefined;
+  if (typeof spent === 'number') return spent;
+  const view = await store.view(event.swarmId);
+  if (view === null) throw new Error('проекция роя не найдена после записи');
+  log.warn('balance_settled_from_events', {
+    swarmId: event.swarmId,
+    spentMicroUsd: view.spentMicroUsd,
+  });
+  return view.spentMicroUsd;
+}
+
 export function createApiCore(deps: ApiCoreDeps): ApiCore {
-  const { store, orchestrator, clock, ids, log, trace } = deps;
+  const { store, orchestrator, billing, clock, ids, log, trace } = deps;
   const subscribers = new Map<string, Set<Subscriber>>();
   // Очередь записи (REQ-003-3): записи одного роя идут цепочкой, разных роёв — параллельно.
   const queues = new Map<string, Promise<unknown>>();
@@ -144,12 +169,23 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
     }
   }
 
+  // Закрытие резерва на итоговом событии (013, 4.4). Сбой не отменяет запись события.
+  async function settleFinal(swarmId: string, event: PlatformEvent): Promise<void> {
+    try {
+      await billing.settle(swarmId, await finalSpent(event, store, log));
+    } catch (err) {
+      log.error('billing_settle_failed', { swarmId, err });
+    }
+  }
+
   // Единственная точка записи события роя: номер назначает ядро, рассылка — подписчикам.
   function commit(swarmId: string, input: PlatformEventInput): Promise<PlatformEvent | null> {
     const write = async (): Promise<PlatformEvent | null> => {
       let event: PlatformEvent;
+      let before: SwarmView | null;
       try {
-        const seq = ((await store.view(swarmId))?.lastSeq ?? 0) + 1;
+        before = await store.view(swarmId);
+        const seq = (before?.lastSeq ?? 0) + 1;
         event = { ...input, seq } as PlatformEvent;
         await store.appendEvent(event);
       } catch (error) {
@@ -166,6 +202,9 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         if (sub.reading) sub.buffer.push(event);
         else deliver(swarmId, sub, event);
       }
+      // Повтор итогового события у уже финального роя резерв не закрывает второй раз (AC-013-12).
+      const wasFinal = before !== null && FINAL_SWARM_STATUSES.includes(before.status);
+      if (!wasFinal && FINAL_EVENT_TYPES.includes(event.type)) await settleFinal(swarmId, event);
       return event;
     };
     const written = (queues.get(swarmId) ?? Promise.resolve()).then(write);
@@ -211,6 +250,7 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
       ) {
         return fail('validation_error', 'max_tokens exceeds AGENT_MAX_TOKENS_LIMIT');
       }
+      if (actor.orgId === null) return fail('forbidden', 'У создателя роя нет организации');
       const views = await store.views();
       const active = views.filter((v) => v.status === 'starting' || v.status === 'running').length;
       if (active + reserving >= deps.limits.maxActiveSwarms) {
@@ -228,6 +268,9 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
       }));
       const ts = clock.now();
       try {
+        if ((await billing.reserve(actor.orgId, swarmId, budgetMicroUsd)) === 'insufficient') {
+          return fail('insufficient_balance', 'balance is not enough for budget');
+        }
         const created = await commit(swarmId, {
           id: ids.uuid(),
           swarmId,
@@ -245,35 +288,47 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
             createdBy: actor.userId,
           },
         });
-        if (created === null) throw new Error('swarm.created не записан');
+        if (created === null) {
+          try {
+            await billing.settle(swarmId, 0);
+          } catch (err) {
+            log.error('billing_settle_failed', { swarmId, err });
+          }
+          throw new Error('swarm.created не записан');
+        }
+        log.info('swarm created', { swarmId, agents: agents.length });
+
+        try {
+          await orchestrator.launch({
+            swarmId,
+            task: parsed.data.task,
+            budgetMicroUsd,
+            maxTokens,
+            agents,
+          });
+        } catch (error) {
+          log.error('orchestrator unavailable', { swarmId, err: error });
+          try {
+            await orchestrator.stop(swarmId);
+          } catch (err) {
+            log.warn('launch_stop_failed', { swarmId, err });
+          }
+          await commit(swarmId, {
+            id: ids.uuid(),
+            swarmId,
+            ts: clock.now(),
+            source: 'api',
+            agentId: null,
+            traceId: trace.currentTraceId(),
+            type: 'swarm.failed',
+            data: {
+              reason: 'orchestrator_unavailable',
+              detail: error instanceof Error ? error.message : String(error),
+            },
+          });
+        }
       } finally {
         reserving -= 1;
-      }
-      log.info('swarm created', { swarmId, agents: agents.length });
-
-      try {
-        await orchestrator.launch({
-          swarmId,
-          task: parsed.data.task,
-          budgetMicroUsd,
-          maxTokens,
-          agents,
-        });
-      } catch (error) {
-        log.error('orchestrator unavailable', { swarmId, err: error });
-        await commit(swarmId, {
-          id: ids.uuid(),
-          swarmId,
-          ts: clock.now(),
-          source: 'api',
-          agentId: null,
-          traceId: trace.currentTraceId(),
-          type: 'swarm.failed',
-          data: {
-            reason: 'orchestrator_unavailable',
-            detail: error instanceof Error ? error.message : String(error),
-          },
-        });
       }
       return ok((await store.view(swarmId)) as SwarmView);
     },
@@ -446,6 +501,29 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
       }
       log.info('interrupted swarms closed', { count: closed });
       return closed;
+    },
+
+    async settlePending() {
+      let settled = 0;
+      for (const hold of await billing.holds()) {
+        try {
+          const view = await store.view(hold.swarmId);
+          if (view !== null && !FINAL_SWARM_STATUSES.includes(view.status)) continue;
+          if (view === null) {
+            await billing.settle(hold.swarmId, 0);
+          } else {
+            const event = (await store.events(hold.swarmId, 0))
+              .filter((e) => FINAL_EVENT_TYPES.includes(e.type))
+              .at(-1);
+            if (event === undefined) throw new Error('итоговое событие роя не найдено');
+            await billing.settle(hold.swarmId, await finalSpent(event, store, log));
+          }
+          settled += 1;
+        } catch (err) {
+          log.error('billing_settle_failed', { swarmId: hold.swarmId, err });
+        }
+      }
+      return settled;
     },
   };
 }

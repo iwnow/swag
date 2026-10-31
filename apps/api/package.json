@@ -12,6 +12,7 @@
     "@swag/adapter-postgres": "0.0.0",
     "@swag/adapter-telemetry": "0.0.0",
     "@swag/api-core": "0.0.0",
+    "@swag/billing-core": "0.0.0",
     "@swag/config": "0.0.0",
     "@swag/contracts": "0.0.0",
     "fastify": "5.12.7",

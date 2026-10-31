@@ -19,8 +19,8 @@ import {
   body,
   captureLog,
   INTERNAL_TOKEN,
+  makeApi,
   makeAuth,
-  makeCore,
   makeStartedAuth,
   otherKeyToken,
   T,
@@ -54,16 +54,16 @@ async function setup(options: { maxStaleMs?: number } = {}) {
   const gate: { hold: Promise<void> | null } = { hold: null };
   const stops: string[] = [];
   const store = createMemorySwarmStore();
-  const core = makeCore(
-    {
+  const { core, billing } = await makeApi({
+    orchestrator: {
       launch: async () => undefined,
       stop: async (id) => {
         stops.push(id);
       },
     },
-    log.logger,
+    log: log.logger,
     store,
-  );
+  });
   const env = makeAuth({ core, maxStaleMs: options.maxStaleMs });
   await env.revocations.start();
   const auth: AppAuth = {
@@ -73,7 +73,12 @@ async function setup(options: { maxStaleMs?: number } = {}) {
     },
     streams: env.app.streams,
   };
-  const app = await buildApp(core, { logger: { level: 'warn', stream: log.stream } }, auth);
+  const app = await buildApp(
+    core,
+    billing,
+    { logger: { level: 'warn', stream: log.stream } },
+    auth,
+  );
   apps.push(app);
   await app.listen({ port: 0, host: '127.0.0.1' });
   const address = app.server.address();
@@ -365,8 +370,8 @@ describe('доступ в оболочке api', () => {
   it('AC-024-20: listen не выполняется до первой удачной синхронизации; после устаревания маршруты роёв — 503 auth_unavailable, /health — 200', async () => {
     const env = makeAuth();
     env.state.failing = true;
-    const core = makeCore();
-    const app = await buildApp(core, {}, env.app);
+    const { core, billing } = await makeApi();
+    const app = await buildApp(core, billing, {}, env.app);
     apps.push(app);
     const listening: boolean[] = [];
     let attempts = 0;
@@ -563,9 +568,14 @@ describe('секреты в логах', () => {
       exporters: { spans: memory.spans },
     });
     try {
-      const core = makeCore();
+      const { core, billing } = await makeApi();
       const env = await makeStartedAuth({ core });
-      const app = await buildApp(core, { serverFactory: tracedHttpServer(telemetry) }, env.app);
+      const app = await buildApp(
+        core,
+        billing,
+        { serverFactory: tracedHttpServer(telemetry) },
+        env.app,
+      );
       apps.push(app);
       await app.listen({ port: 0, host: '127.0.0.1' });
       const port = (app.server.address() as AddressInfo).port;

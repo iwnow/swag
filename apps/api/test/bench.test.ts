@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.ts';
-import { actorOf, bearer, body, makeAuth, makeCore, T, WHO } from './support.ts';
+import { actorOf, bearer, body, makeApi, makeAuth, T, WHO } from './support.ts';
 
 // NFR-024-2: проверка токена добавляет к p95 GET /swarms/:id не больше 5 мс. Запуск: API_BENCH=1 npx vitest run apps/api/test/bench.test.ts.
 const REQUESTS = 200;
@@ -30,13 +30,14 @@ async function measure(
 
 describe.skipIf(process.env['API_BENCH'] !== '1')('api [bench]', () => {
   it('NFR-024-2: p95 GET /swarms/:id с проверкой токена и без неё отличается не больше чем на 5 мс', async () => {
-    const core = makeCore();
+    const { core, billing } = await makeApi();
     const env = makeAuth({ core });
     await env.revocations.start();
-    const checked = await buildApp(core, {}, env.app);
+    const checked = await buildApp(core, billing, {}, env.app);
     // Без проверки: тот же маршрут и хук, но authenticate возвращает фиксированный Actor без разбора токена.
     const bypass = await buildApp(
       core,
+      billing,
       {},
       {
         authenticate: async () => ({ ok: true, actor: actorOf(WHO.u1) }),
