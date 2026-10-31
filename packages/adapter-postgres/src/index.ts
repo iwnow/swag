@@ -9,6 +9,7 @@ import {
   type ModelId,
   type PlatformEvent,
 } from '@swag/contracts';
+import type { IdentityStore, StoredOrganization, StoredUser } from '@swag/identity-core';
 import type {
   BudgetStore,
   LedgerEntry,
@@ -415,4 +416,162 @@ export async function ledgerReport(
     report.chargedWithProviderCostMicroUsd += Number(row.charged_with_provider);
   }
   return report;
+}
+
+// Спека 012, 4.3 и 4.9: хранилище identity. Времена порта — мс эпохи, в базе — timestamptz: в запросы идут Date, из базы — getTime().
+type RotateResult = Awaited<ReturnType<IdentityStore['rotateSession']>>;
+type ConfirmResult = Awaited<ReturnType<IdentityStore['confirmRegistration']>>;
+
+const toDate = (ms: number): Date => new Date(ms);
+
+interface UserRow {
+  id: string;
+  email: string;
+  password_hash: string;
+  role: StoredUser['role'];
+  org_id: string | null;
+  created_at: Date;
+}
+
+const userFromRow = (row: UserRow): StoredUser => ({
+  id: row.id,
+  email: row.email,
+  passwordHash: row.password_hash,
+  role: row.role,
+  orgId: row.org_id,
+  createdAt: row.created_at.getTime(),
+});
+
+// Конфликт уникального индекса users.email (4.3, п. 4 confirmRegistration): гонка двух регистраций одного email.
+function isEmailConflict(error: unknown): boolean {
+  const pgError = error as { code?: string; constraint?: string };
+  return pgError.code === '23505' && pgError.constraint === 'users_email_key';
+}
+
+export function createPostgresIdentityStore(pool: Pool): IdentityStore {
+  return {
+    async findUserByEmail(email: string): Promise<StoredUser | null> {
+      const result = await pool.query<UserRow>(
+        'select id, email, password_hash, role, org_id, created_at from users where email = $1',
+        [email],
+      );
+      const row = result.rows[0];
+      return row ? userFromRow(row) : null;
+    },
+
+    async findUserById(id: string) {
+      const result = await pool.query<
+        UserRow & { org_name: string | null; org_created_at: Date | null }
+      >(
+        `select u.id, u.email, u.password_hash, u.role, u.org_id, u.created_at,
+                o.name as org_name, o.created_at as org_created_at
+           from users u left join organizations o on o.id = u.org_id
+          where u.id = $1`,
+        [id],
+      );
+      const row = result.rows[0];
+      if (!row) return null;
+      const organization: StoredOrganization | null =
+        row.org_id === null || row.org_name === null || row.org_created_at === null
+          ? null
+          : { id: row.org_id, name: row.org_name, createdAt: row.org_created_at.getTime() };
+      return { user: userFromRow(row), organization };
+    },
+
+    async hasSupervisor(): Promise<boolean> {
+      const result = await pool.query<{ found: boolean }>(
+        `select exists (select 1 from users where role = 'supervisor') as found`,
+      );
+      return result.rows[0]?.found ?? false;
+    },
+
+    async createUser(user: StoredUser): Promise<void> {
+      await pool.query(
+        'insert into users (id, email, password_hash, role, org_id, created_at) values ($1, $2, $3, $4, $5, $6)',
+        [user.id, user.email, user.passwordHash, user.role, user.orgId, toDate(user.createdAt)],
+      );
+    },
+
+    async addConfirmation(c): Promise<void> {
+      await pool.query(
+        'insert into email_confirmations (token_hash, email, expires_at, used_at, created_at) values ($1, $2, $3, null, $4)',
+        [c.tokenHash, c.email, toDate(c.expiresAt), toDate(c.createdAt)],
+      );
+    },
+
+    // Одна транзакция. Гонка двух подтверждений одного токена: update берёт блокировку строки,
+    // проигравший после commit победителя не находит строку с used_at is null → invalid_token.
+    async confirmRegistration({ tokenHash, now, org, user }): Promise<ConfirmResult> {
+      return transact<ConfirmResult>(pool, async (client) => {
+        const confirmed = await client.query<{ email: string }>(
+          'update email_confirmations set used_at = $2 where token_hash = $1 and used_at is null and expires_at > $2 returning email',
+          [tokenHash, toDate(now)],
+        );
+        const email = confirmed.rows[0]?.email;
+        if (email === undefined) return { commit: false, value: { status: 'invalid_token' } };
+
+        const taken = await client.query('select 1 from users where email = $1', [email]);
+        if ((taken.rowCount ?? 0) > 0) return { commit: false, value: { status: 'email_taken' } };
+
+        try {
+          await client.query(
+            'insert into organizations (id, name, created_at) values ($1, $2, $3)',
+            [org.id, org.name, toDate(org.createdAt)],
+          );
+          await client.query(
+            'insert into users (id, email, password_hash, role, org_id, created_at) values ($1, $2, $3, $4, $5, $6)',
+            [user.id, email, user.passwordHash, user.role, user.orgId, toDate(user.createdAt)],
+          );
+        } catch (error) {
+          if (isEmailConflict(error)) return { commit: false, value: { status: 'email_taken' } };
+          throw error;
+        }
+        return { commit: true, value: { status: 'ok', email } };
+      });
+    },
+
+    async createSession(s): Promise<void> {
+      await pool.query(
+        'insert into sessions (id, user_id, refresh_hash, previous_hash, expires_at, revoked_at, created_at) values ($1, $2, $3, null, $4, null, $5)',
+        [s.id, s.userId, s.refreshHash, toDate(s.expiresAt), toDate(s.createdAt)],
+      );
+    },
+
+    // Одна транзакция. reused — отзыв найденной живой сессии; commit нужен, чтобы отзыв сохранился.
+    async rotateSession({ oldHash, newHash, now, expiresAt }): Promise<RotateResult> {
+      return transact<RotateResult>(pool, async (client) => {
+        const at = toDate(now);
+        const current = await client.query<{ id: string; user_id: string }>(
+          'select id, user_id from sessions where refresh_hash = $1 and revoked_at is null and expires_at > $2 for update',
+          [oldHash, at],
+        );
+        const session = current.rows[0];
+        if (session) {
+          await client.query(
+            'update sessions set previous_hash = refresh_hash, refresh_hash = $2, expires_at = $3 where id = $1',
+            [session.id, newHash, toDate(expiresAt)],
+          );
+          return { commit: true, value: { status: 'ok', userId: session.user_id } };
+        }
+
+        const previous = await client.query<{ id: string; user_id: string }>(
+          'select id, user_id from sessions where previous_hash = $1 and revoked_at is null and expires_at > $2 for update',
+          [oldHash, at],
+        );
+        const stale = previous.rows[0];
+        if (stale) {
+          await client.query('update sessions set revoked_at = $2 where id = $1', [stale.id, at]);
+          return { commit: true, value: { status: 'reused', userId: stale.user_id } };
+        }
+        return { commit: false, value: { status: 'invalid' } };
+      });
+    },
+
+    async revokeSession(refreshHash: string, now: number): Promise<void> {
+      await pool.query(
+        'update sessions set revoked_at = $2 where refresh_hash = $1 and revoked_at is null and expires_at > $2',
+        [refreshHash, toDate(now)],
+      );
+    },
+  };
 }
