@@ -1,11 +1,13 @@
 # @swag/contracts
 
-Общие схемы Zod и типы, которыми обмениваются сервисы и ядра: запрос на рой, рой, агент, запуск роя, сообщение шины, события платформы, subjects NATS, `ServiceInfo`, `traceId`, схема структурного лога, контракты LLM Gateway (каталог моделей, использование токенов, ошибки, вызывающий, деньги и списания, регистрация роя) и контракты identity (регистрация, вход, токены, коды ошибок).
+Общие схемы Zod и типы, которыми обмениваются сервисы и ядра: запрос на рой, рой, агент, запуск роя, сообщение шины, события платформы, subjects NATS, `ServiceInfo`, `traceId`, схема структурного лога, контракты LLM Gateway (каталог моделей, использование токенов, ошибки, вызывающий, деньги и списания, регистрация роя) и контракты identity (регистрация, вход, токены, коды ошибок), права и вызывающий (`Actor`, `Permission`, `can`) и управление пользователями (приглашения, список, смена роли и блокировка, отзывы токенов).
 
 ## Задачи
 
 - Единые контракты из [спеки 001, раздел 4](../../docs/spec/001-walking-skeleton.md#4-контракты): `swarm.ts` (4.1), `bus.ts` (4.2), `events.ts` (4.3).
 - Контракты наблюдаемости из [спеки 016](../../docs/spec/016-observability.md#4-контракты): `traceId` в конверте события (4.1), `LogRecord` (4.2).
+- Права и вызывающий из [спеки 024, раздел 4.1](../../docs/spec/024-organizations-access.md#41-swagcontracts-файл-srcaccessts): `access.ts` — `Permission`, `ROLE_PERMISSIONS`, `Actor`, `actorFromClaims`, `can`.
+- Управление пользователями из [спеки 024, раздел 4.2](../../docs/spec/024-organizations-access.md#42-swagcontracts-дополнения-srcauthts): дополнения `auth.ts` — коды `forbidden`, `not_found`, `user_blocked`, `OrgRole`, `ManagedUser`, `UserList`, `InvitationRequest`, `InvitationAcceptRequest`, `UserUpdate`, `OrganizationSummary`, `OrganizationList`, `TokenRevocation`, `TokenRevocationList`.
 - Контракты identity из [спеки 012, раздел 4.1](../../docs/spec/012-identity-signup-login.md#41-swagcontracts-файл-srcauthts): `auth.ts` — `UserId`, `OrgId`, `Role`, `Email`, `Password`, `OrganizationName`, запросы регистрации, подтверждения и входа, `AccessTokenClaims`, `AuthSession`, `AuthRefreshed`, `AuthMe`, `AuthErrorCode`.
 - Контракты LLM Gateway из [спеки 002, раздел 4.1](../../docs/spec/002-llm-gateway.md#41-packagescontractssrcllmts-и-изменения-существующих-схем): `llm.ts`; событие `llm.call` в `events.ts`, источник и сервис `llm-gateway`.
 - Типы выводятся из схем (`z.infer`), отдельно их не пишут.
@@ -16,6 +18,8 @@
 - `bus.ts` — `BusMessage`, subjects `inboxSubject`, `eventsSubject`, `ALL_INBOXES`, `ALL_EVENTS`.
 - `events.ts` — `TraceId`, `PlatformEventInput` (дискриминированное объединение по `type`, в конверте `traceId: TraceId | null`; вариант `llm.call` с `LlmCallData`, источник `llm-gateway`; `agent.step`, `agent.idle`; `swarm.created` с необязательными бюджетами и `maxTokens` роя и агентов, у событий до 004 и 031 их нет; причины `agent_failed`, `api_restarted`, `budget_exceeded` и `gateway_unavailable` в `swarm.failed`), `PlatformEvent` (с `seq`).
 - `auth.ts` — схемы identity (012, 4.1). `Email` — `trim`, нижний регистр, не больше 254 символов; `Password` — от 10 до 128 символов без `trim` (Q-10); `OrganizationName` — от 1 до 200 символов после `trim`; `AccessTokenClaims` — `iss: swag-identity`, `aud: swag`, `org` — `null` у supervisor.
+- `access.ts` — `Permission` (`swarm.create`, `swarm.read`, `swarm.stop`, `user.manage`, `organization.read`), `ROLE_PERMISSIONS` (таблица роль → права), `Actor` (`userId`, `orgId`, `role`, `permissions`), `actorFromClaims` (из `AccessTokenClaims`: `sub`, `org`, `role`), `can`.
+- `auth.ts` — дополнения 024: `OrgRole` (`user`, `admin`), `ManagedUser`, `UserList`, `InvitationRequest`, `InvitationAcceptRequest`, `UserUpdate` (хотя бы одно поле), `OrganizationSummary`, `OrganizationList`, `TokenRevocation`, `TokenRevocationList`.
 - `log.ts` — `LogLevel`, `ServiceName` (с `llm-gateway` и `identity`), `LogError`, `LogRecord`.
 - `service-info.ts` — `ServiceInfo` (`service` с `llm-gateway` и `identity`).
 - `llm.ts` — `ModelId`, `PricePerMTok`, `ModelPrices`, `CatalogModel` (с `openRouterModel`), `ModelCatalog` (`models.json`), `MicroUsd`, `BudgetMicroUsd` (1…1_000_000_000), `MaxTokens` (целое 1…1_000_000, лимит ответа агента, 031), `LlmUsage`, `GatewayErrorCode` (с кодами 403 и 402 из 004), `ChargeBasis`, `LlmCharge`, `LlmCallStatus`, `LlmCallData` (с `charge`, необязательным), `PlatformModel` (`chat-small`, `chat-large`), заголовки `SWARM_ID_HEADER`, `AGENT_ID_HEADER`. `LlmSwarmRegistration` и `LlmSwarmClosed` намеренно лежат в `swarm.ts`, а не здесь: `swarm.ts` импортирует `llm.ts`, обратный импорт дал бы цикл.
@@ -32,6 +36,7 @@
 
 ## Ключевые решения
 
+- Права (024, 4.1): `actorFromClaims` берёт права из `ROLE_PERMISSIONS`, отдельного хранения прав в токене нет. Роль супервизора не создаёт роёв (Q-4): у неё нет `swarm.create`.
 - Схемы zod 4 (`z.uuid()`, `z.iso.datetime()`, `z.strictObject`) — лишнее поле в запросе отклоняется (AC-001-1, AC-001-12).
 - `PlatformEvent` = `PlatformEventInput & { seq }`: `seq` не входит в публикуемый контракт (4.3).
 - `traceId` в конверте обязателен, но допускает `null` (016, 4.1): событие без контекста не отбрасывается, а отсутствие поля — ошибка схемы.
@@ -48,6 +53,7 @@
 
 ## Спеки
 
+- 024 — раздел 4.1 (`access.ts`), раздел 4.2 (дополнения `auth.ts`), T-1.
 - 000 — `ServiceInfo`.
 - 012 — раздел 4.1 (`auth.ts`).
 - 001 — разделы 4.1–4.3.
