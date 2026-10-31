@@ -4,7 +4,7 @@
 
 ## Задачи
 
-- Создать рой: проверить запрос (`SwarmCreateRequest`) и бюджеты (004, 4.7), лимит активных роёв, записать `swarm.created`, вызвать оркестратор; при отказе оркестратора — `swarm.failed` (`orchestrator_unavailable`).
+- Создать рой: проверить запрос (`SwarmCreateRequest`) и бюджеты (004, 4.7), лимит активных роёв, зарезервировать бюджет на балансе организации (013, 4.4), записать `swarm.created`, вызвать оркестратор; при отказе оркестратора — остановить рой и записать `swarm.failed` (`orchestrator_unavailable`).
 - Принять события роя (`swarm.*.events`) и сообщения агентов (`swarm.*.agent.*.inbox`): валидировать, назначить сквозной `seq`, превратить сообщение в `bus.message`. Событие `llm.call` от `llm-gateway` (спека 002) принимается и хранится так же, как остальные события из шины.
 - Отдать события с `seq > after` и подписать на новые (поток WebSocket) без пропусков и повторов.
 - Остановить рой; рой в финальном статусе — `swarm_finished`.
@@ -14,19 +14,20 @@
 
 ## Что внутри сейчас
 
-- `createApiCore(deps)` с портами `SwarmStore` (асинхронный), `OrchestratorClient`, `Clock`, `IdGenerator`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`.
+- `createApiCore(deps)` с портами `SwarmStore` (асинхронный), `OrchestratorClient`, `Billing`, `Clock`, `IdGenerator`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`.
+- Порт `Billing` (013, 4.4): `reserve(orgId, swarmId, amountMicroUsd)` → `'ok' | 'insufficient'` (сбой — исключение), `settle(swarmId, spentMicroUsd)`, `holds()`. Обязательная зависимость `ApiCoreDeps`; реализацию передаёт оболочка.
 - Операции (все асинхронные): `createSwarm(actor, body)`, `listSwarms(actor)`, `getSwarm(actor, id)`, `getEvents(actor, id, after)`, `stopSwarm(actor, id)`, `subscribe(actor, swarmId, after, listener)`, `stopSwarmsOfUser(userId)`, `ingestEvent`, `ingestMessage`, `closeInterrupted`; синхронная `info`.
 - Видимость (024, правило 1) — `visible(actor, view)`: `supervisor` видит всё; `admin` — рои своей организации (`view.orgId === actor.orgId`); `user` — рои, где `view.createdBy === actor.userId`. Рой до 024 (`orgId` и `createdBy` = `null`) виден только супервизору. Поля роя сравниваются с `?? null`, поэтому проекция без полей не даёт случайного совпадения.
 - Невидимый и несуществующий рой — `not_found` с одним текстом (`Рой {id} не найден`); `listSwarms` возвращает только видимые.
 - Права (024, правило 3) проверяются до разбора тела: `createSwarm` — `swarm.create`, `getSwarm`/`getEvents`/`listSwarms`/`subscribe` — `swarm.read`, `stopSwarm` — `swarm.stop`; нет права — `forbidden`. `listSwarms` без права возвращает пустой список (сигнатура без `Result`).
-- `createSwarm` пишет в `swarm.created` `orgId` и `createdBy` из `actor`.
+- `createSwarm` пишет в `swarm.created` `orgId` и `createdBy` из `actor`. Порядок после проверок 004/024/031 (013, 4.4): `actor.orgId === null` → `forbidden` (до лимита); место под `MAX_ACTIVE_SWARMS` (`reserving`) с `try/finally`, который освобождает его после шагов ниже; `billing.reserve(orgId, swarmId, budgetMicroUsd)` до записи `swarm.created`, `insufficient` → `insufficient_balance` (`balance is not enough for budget`), событий нет; `swarm.created` не записан → `billing.settle(swarmId, 0)` (сбой — лог `error` `billing_settle_failed`) и прежняя ошибка; сбой `orchestrator.launch` → `orchestrator.stop(swarmId)` (сбой — лог `warn` `launch_stop_failed`), затем `swarm.failed`. Закрытие резерва по итоговым событиям — в T-9.
 - Скрытие стоимости (024, правило 5): `getEvents` и `subscribe` для не супервизора отдают `llm.call` с `providerCostMicroUsd = null`; в хранилище событие не меняется.
 - `stopSwarmsOfUser(userId)` (024, правило 6): для каждого роя автора в `starting` или `running` вызывает `orchestrator.stop`, без проверки `Actor`; возвращает число остановленных; пишет `info` `user_swarms_stopped` с `userId` и `count`. Повторный вызов после финальных событий ничего не останавливает. Сбой остановки одного роя логируется `warn` `user_swarm_stop_failed` (`userId`, `swarmId`), остальные рои останавливаются, в конце вызов бросает `AggregateError`.
 - Бюджеты (004, 4.7): `deps.limits.maxBudgetMicroUsd` (из `SWARM_MAX_BUDGET_MICRO_USD`). Бюджет роя больше предела — `validation_error` `budget exceeds SWARM_MAX_BUDGET_MICRO_USD`; бюджет агента больше бюджета роя — `validation_error` `agent budget exceeds swarm budget`. Обе проверки идут до лимита активных роёв. Бюджеты пишутся в `swarm.created` и в `SwarmLaunch`.
 - Лимит ответа (031, 4.3): `deps.limits.maxTokens` (из `AGENT_MAX_TOKENS_LIMIT`). `maxTokens` роя или агента больше предела — `validation_error` `max_tokens exceeds AGENT_MAX_TOKENS_LIMIT`; проверка идёт после бюджетов и до лимита активных роёв. `maxTokens` роя пишется в `swarm.created` и в `SwarmLaunch`, у агентов — свой из черновика.
 - `closeInterrupted()` (REQ-003-6): вызывается оболочкой при старте, до подписок NATS (T-7). Для каждого роя в `starting` или `running` вызывает `orchestrator.stop` и записывает `swarm.failed` с `reason: 'api_restarted'` (`source: 'api'`, `agentId` и `traceId` — `null`). Ошибка `stop` пишется `warn` `interrupted stop failed` и не мешает закрытию. Возвращает число закрытых роёв (записи, которые не прошли, не считаются); в конце — `info` `interrupted swarms closed` с `count`. Закрытые рои не держат лимит `MAX_ACTIVE_SWARMS`.
 - Логи по таблице 4.8 спеки 016: `info swarm created`, `error orchestrator unavailable`, `warn event dropped` / `message dropped` с `reason` (`invalid_schema`, `created_from_bus`, `unknown_swarm`, `not_applicable`); `warn interrupted stop failed`, `info interrupted swarms closed`.
-- Тесты: `test/api-core.test.ts` — AC-000-16, AC-001-3…8, AC-001-10, AC-002-26, AC-003-4…6, AC-004-2, AC-016-4, AC-016-7, AC-031-2, AC-031-3, AC-024-16 (ядро), AC-024-17, AC-024-18 (ядро), AC-024-21 (ядро).
+- Тесты: `test/api-core.test.ts` — AC-000-16, AC-001-3…8, AC-001-10, AC-002-26, AC-003-4…6, AC-004-2, AC-013-8, AC-013-9, AC-013-14 (ядро), AC-013-15 (ядро), AC-016-4, AC-016-7, AC-031-2, AC-031-3, AC-024-16 (ядро), AC-024-17, AC-024-18 (ядро), AC-024-21 (ядро). Общий фейк `Billing` — `test/fake-billing.ts` (безлимитный, пишет `reserves` и `settles`, задаёт ответ `reserve` и сбой `settle`).
 
 ## Ограничения
 
