@@ -185,6 +185,9 @@ const MESSAGES: Record<AuthErrorCode, string> = {
   rate_limited: 'too many requests',
   mail_unavailable: 'mail unavailable',
   internal_error: 'internal error',
+  forbidden: 'forbidden',
+  not_found: 'not found',
+  user_blocked: 'user blocked',
 };
 
 const ok = <T>(value: T): Result<T> => ({ ok: true, value });

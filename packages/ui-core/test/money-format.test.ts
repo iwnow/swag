@@ -11,6 +11,8 @@ const view = (over: Partial<SwarmView>): SwarmView => ({
   task: 'задача',
   status: 'running' as SwarmStatus,
   createdAt: '2026-10-30T11:00:00.000Z',
+  orgId: null,
+  createdBy: null,
   spentMicroUsd: 0,
   agents: [],
   edges: [],

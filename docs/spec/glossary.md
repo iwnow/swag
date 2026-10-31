@@ -87,7 +87,7 @@
 | Супервизор | роль `supervisor`, фронтенд `apps/ui/supervisor` | Владелец платформы: вся платформа — организации, пользователи, пополнение балансов, цены, лимиты, все рои. |
 | Учётные данные | `Email`, `Password`, `UserId`, `OrgId`, `OrganizationName`, `LoginRequest`, `RegistrationConfirmRequest`, `AuthErrorCode` | Схемы регистрации, входа и кодов ошибок identity: email приводится к нижнему регистру, пароль 10–128 символов без `trim` (012, Q-10, 4.1). |
 | Роль | `Role` | Именованный набор прав. В MVP — `user`, `admin`, `supervisor`. |
-| Право | `Permission`, `ROLE_PERMISSIONS`, `can`, `forbidden` | Разрешение на действие, строка `<область>.<действие>`: `swarm.create`, `swarm.read`, `swarm.stop`, `user.manage`, `organization.read` (024, 4.1); `balance.topup` — 013. |
+| Право | `Permission`, `ROLE_PERMISSIONS`, `can`, `forbidden`, `not_found` | Разрешение на действие (нет права — `forbidden`, объект вне области видимости — `not_found`), строка `<область>.<действие>`: `swarm.create`, `swarm.read`, `swarm.stop`, `user.manage`, `organization.read` (024, 4.1); `balance.topup` — 013. |
 | Вызывающий | `Actor`, `actorFromClaims` | Кто вызывает операцию ядра: `userId`, `orgId`, `role`, `permissions`; оболочка собирает его из токена доступа (024, 4.1). |
 | Видимость роя | `orgId`, `createdBy` в `swarm.created` и `SwarmView`, `not_found` | `user` видит свои рои, `admin` — рои своей организации целиком, `supervisor` — все; чужой рой — `404` (024, 4.3, 4.4). |
 | Управление пользователями | `ManagedUser`, `UserList`, `UserUpdate`, `OrgRole`, `listUsers`, `updateUser`, `OrganizationSummary`, `OrganizationList`, `listOrganizations` | Администратор меняет роль и блокирует пользователей своей организации, супервизор — любых, кроме супервизоров (024, 4.7). |

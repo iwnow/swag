@@ -28,6 +28,9 @@ const STATUS: Record<AuthErrorCode, number> = {
   rate_limited: 429,
   mail_unavailable: 503,
   internal_error: 500,
+  forbidden: 403,
+  not_found: 404,
+  user_blocked: 403,
 };
 
 const bearer = (header: string | undefined): string | undefined =>

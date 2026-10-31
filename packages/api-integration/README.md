@@ -10,12 +10,13 @@
 
 ## Что внутри сейчас
 
-- `src/swarm-view.ts` — тип `SwarmView` (агенты с `model` и `steps`, деньги: `budgetMicroUsd`, `spentMicroUsd`), `applyEvent`, `projectSwarm`, `FINAL_SWARM_STATUSES` (итоговые статусы роя `completed`, `stopped`, `failed`; используются ядром `api-core`). Правила — спека 022, 4.6 (с 022 заменяют таблицу 4.4 спеки 001 в части `bus.message`, `agent.step`, `agent.idle`).
+- `src/swarm-view.ts` — тип `SwarmView` (агенты с `model` и `steps`, деньги: `budgetMicroUsd`, `spentMicroUsd`), `applyEvent`, `projectSwarm`, `FINAL_SWARM_STATUSES` (итоговые статусы роя `completed`, `stopped`, `failed`; используются ядром `api-core`), поля владельца `orgId` и `createdBy` (024, 4.3). Правила — спека 022, 4.6 (с 022 заменяют таблицу 4.4 спеки 001 в части `bus.message`, `agent.step`, `agent.idle`).
 - `test/swarm-view.test.ts` — AC-001-2 (таблица 4.4 с правками 4.6, рёбра при создании пустые), AC-022-2 (`steps`, рёбра по сообщениям, `bus.message` не меняет статус, `agent.idle` и `done`) и AC-003-7 (итоговый статус роя окончателен).
 
 ## Правила проекции (022, 4.6)
 
 - `swarm.created` — `edges: []`, агенты с `model` из `AgentSpec` и `steps: 0`.
+- `swarm.created` — `orgId` и `createdBy` из `data` (024, 4.3); отсутствующие поля (рой до 024) — `null`.
 - `bus.message` — `messagesIn + 1` у `to`; если `from` — агент, то `messagesOut + 1` у него и ребро `from → to` (создаётся с `messages: 1` или увеличивается). Статус агентов не меняет.
 - `agent.step` — `steps + 1` у агента.
 - `swarm.created` — `budgetMicroUsd` роя и агентов, если поля есть в событии; у событий до 004 полей нет, и в проекции их тоже нет.
@@ -46,11 +47,13 @@
 - Зависимость от `zod` объявлена (белый список ядер, REQ-001-18), но прямых импортов `zod` в коде нет — типы берутся из `@swag/contracts`.
 - `packages/api-integration` проверяется `arch:check` как ядро (T-2, Q-5).
 
+- Владелец (024, 4.3): `orgId` и `createdBy` проецируются только из `swarm.created`; проекция не знает о правах, видимость роя решает `api-core` (024, 4.4). Проекции, сохранённые до 024, читаются с `null` в обоих полях (как поля 004 — D-101).
 - Деньги (004, 4.7): поля `budgetMicroUsd` добавляются условно, а не как `undefined` (`exactOptionalPropertyTypes`). Проекция, сохранённая до 004 без `spentMicroUsd`, читается как 0 (D-101), иначе `llm.call` дал бы `NaN`.
 
 ## Спеки
 
 - 001 — проекция роя ([4.4](../../docs/spec/001-walking-skeleton.md#44-проекция-роя)).
 - 022 — правила проекции (4.6).
+- 024 — владелец роя в проекции (4.3, REQ-024-4): `orgId`, `createdBy`.
 - 003 — окончательный итоговый статус роя (4.3, REQ-003-7, AC-003-7).
 - 004 — деньги в проекции (4.7, REQ-004-2, AC-004-3, AC-004-26).

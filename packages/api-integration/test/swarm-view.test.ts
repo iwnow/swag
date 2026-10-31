@@ -412,3 +412,33 @@ describe('projectSwarm — AC-004-26: charge важнее costMicroUsd', () => {
     expect(view.agents[0]?.spentMicroUsd).toBe(900);
   });
 });
+
+const ORG = '0b6f6d2e-6a4c-4c3e-9f5e-444444444444';
+const USER = '0b6f6d2e-6a4c-4c3e-9f5e-555555555555';
+
+describe('projectSwarm — REQ-024-4: владелец роя', () => {
+  it('REQ-024-4: orgId и createdBy берутся из swarm.created', () => {
+    n = 0;
+    const view = projectSwarm([
+      ev({
+        ...base(null, 'api'),
+        type: 'swarm.created',
+        data: { task: 'T', orgId: ORG, createdBy: USER, agents: [] },
+      }),
+    ]);
+    expect(view).toMatchObject({ orgId: ORG, createdBy: USER });
+  });
+
+  it('REQ-024-4: swarm.created без полей владельца (рой до 024) — orgId и createdBy равны null', () => {
+    n = 0;
+    const view = projectSwarm([
+      ev({
+        ...base(null, 'api'),
+        type: 'swarm.created',
+        data: { task: 'T', agents: [] },
+      }),
+    ]);
+    expect(view.orgId).toBeNull();
+    expect(view.createdBy).toBeNull();
+  });
+});

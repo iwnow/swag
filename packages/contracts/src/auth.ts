@@ -66,5 +66,56 @@ export const AuthErrorCode = z.enum([
   'rate_limited',
   'mail_unavailable',
   'internal_error',
+  'forbidden', // 024, 4.2
+  'not_found',
+  'user_blocked',
 ]);
 export type AuthErrorCode = z.infer<typeof AuthErrorCode>;
+
+// Спека 024, 4.2. Управление пользователями и организациями.
+export const OrgRole = z.enum(['user', 'admin']); // роль, которую можно выдать через API
+export type OrgRole = z.infer<typeof OrgRole>;
+
+export const ManagedUser = z.object({
+  id: UserId,
+  email: z.string(),
+  role: Role,
+  orgId: OrgId.nullable(),
+  blocked: z.boolean(),
+  createdAt: z.iso.datetime(),
+});
+export type ManagedUser = z.infer<typeof ManagedUser>;
+export const UserList = z.object({ users: z.array(ManagedUser) }); // по email, по возрастанию
+export type UserList = z.infer<typeof UserList>;
+
+export const InvitationRequest = z.object({ email: Email, role: OrgRole });
+export type InvitationRequest = z.infer<typeof InvitationRequest>;
+export const InvitationAcceptRequest = z.object({
+  token: z.string().min(1).max(200),
+  password: Password,
+});
+export type InvitationAcceptRequest = z.infer<typeof InvitationAcceptRequest>;
+
+export const UserUpdate = z
+  .object({ role: OrgRole.optional(), blocked: z.boolean().optional() })
+  .refine((u) => u.role !== undefined || u.blocked !== undefined);
+export type UserUpdate = z.infer<typeof UserUpdate>;
+
+export const OrganizationSummary = z.object({
+  id: OrgId,
+  name: z.string(),
+  createdAt: z.iso.datetime(),
+  userCount: z.number().int(),
+});
+export type OrganizationSummary = z.infer<typeof OrganizationSummary>;
+export const OrganizationList = z.object({ organizations: z.array(OrganizationSummary) }); // по name
+export type OrganizationList = z.infer<typeof OrganizationList>;
+
+export const TokenRevocation = z.object({
+  userId: UserId,
+  validAfter: z.number().int(), // мс эпохи: токен с iat * 1000 < validAfter недействителен
+  blocked: z.boolean(),
+});
+export type TokenRevocation = z.infer<typeof TokenRevocation>;
+export const TokenRevocationList = z.object({ revocations: z.array(TokenRevocation) });
+export type TokenRevocationList = z.infer<typeof TokenRevocationList>;
