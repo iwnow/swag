@@ -1,6 +1,6 @@
 # @swag/identity-core
 
-Ядро identity: регистрация компании, вход, сессии и токены, роли и первый супервизор (спека 012). Блокировка пользователей и проверка доступа в других сервисах — спека 024, здесь не входит. Чистый TypeScript, не знает про HTTP, Fastify, Postgres, почту и криптобиблиотеки.
+Ядро identity: регистрация компании, вход, сессии и токены, роли и первый супервизор (спека 012). Порт хранилища дополнен управлением доступом (спека 024, 4.9): список пользователей и организаций, блокировка, смена роли, приглашения, отзывы токенов, уборка. Операции 024 над портом (`authenticate`, приглашения, управление пользователями) — T-7…T-9, здесь пока не входят. Чистый TypeScript, не знает про HTTP, Fastify, Postgres, почту и криптобиблиотеки.
 
 ## Задачи
 
@@ -16,7 +16,9 @@
 
 - `createIdentityCore(deps)` — фабрика ядра. `createIdentityCore` собирает все операции 4.2 и `info()`.
 - Порты: `Clock`, `IdGenerator`, `Logger` (с `LogContext`), `IdentityStore`, `PasswordHasher`, `OpaqueTokens`, `TokenSigner`, `TokenVerifier`, `Mailer`, `RateLimiter`. Собраны в `IdentityCoreDeps`.
-- Типы операций: `RequestMeta`, `IssuedSession`, `IdentityCore`, `IdentityError`, `Result<T>` (той же формы, что в `api-core`; код — из `AuthErrorCode`), `StoredUser`, `StoredOrganization`, `MailMessage`.
+- `IdentityStore` (024, 4.9): `listUsers`, `updateUser`, `addInvitation`, `acceptInvitation`, `listOrganizations`, `tokenRevocations`, `purge` — сигнатуры 4.9, реализации в `@swag/adapter-memory` и `@swag/adapter-postgres`.
+- `RETENTION_MS` — срок хранения закрытых записей для `purge`: 7 суток (Q-11, 024).
+- Типы операций: `RequestMeta`, `IssuedSession`, `IdentityCore`, `IdentityError`, `Result<T>` (той же формы, что в `api-core`; код — из `AuthErrorCode`), `StoredUser` (с `blockedAt` и `tokensValidAfter`), `StoredOrganization`, `MailMessage`.
 - Константы писем: `CONFIRM_MAIL_SUBJECT`, `ALREADY_REGISTERED_MAIL_SUBJECT`, `ALREADY_REGISTERED_MAIL_TEXT`, функция `confirmMailText(link, ttlHours)`.
 - Константы лимитов: `RATE_LIMITS` — ключи `register:email`, `register:ip`, `confirm:ip`, `login:email`, `login:ip`, лимиты и окна в мс.
 - Тесты: `test/identity-core.test.ts` — `info()`; `test/registration.test.ts` — `requestRegistration`, лимиты, письма; `test/confirm.test.ts` — `confirmRegistration`; `test/login.test.ts` — `login`, `me`, `dummyHash`, лимиты входа; `test/session.test.ts` — `refresh`, `logout`, сценарий без секретов в логах (AC-012-22, ядро); `test/supervisor.test.ts` — `ensureSupervisor`, вход супервизора; `test/fakes.ts` — общие фейки ядра (`createTestEnv`, часы, хэшер, токены, JWT, `tokenFromMail`, `sentMail`). Фейки: хэш `fake-hash:<пароль>`, токены — 43 цифры, JWT — `fake.<json>`, хранилище, почта и лимиты — из `@swag/adapter-memory` (как в тестах `api-core`).
@@ -56,5 +58,6 @@
 
 ## Спеки
 
+- 024 — 4.9, 4.10 (`RETENTION_MS`, константы 4.10 пока не объявлены); задача T-5 (порт и типы; поведение — T-7…T-9).
 - 012 — 4.2, 4.3, 4.6, 4.8; задачи T-4 (REQ-012-1, AC-012-31), T-6 (регистрация, AC-012-4, AC-012-13, AC-012-25 — тесты в `test/registration.test.ts`), T-7 (подтверждение, AC-012-7, AC-012-8, AC-012-10 — `test/confirm.test.ts`), T-8 (вход и `me`, AC-012-12, AC-012-13 — `test/login.test.ts`), T-9 (обновление и выход, AC-012-15, AC-012-16 — `test/session.test.ts`), T-10 (супервизор, AC-012-20, AC-012-21 — `test/supervisor.test.ts`).
 - 000 — правила ядра.

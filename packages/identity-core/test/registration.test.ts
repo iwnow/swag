@@ -60,6 +60,8 @@ describe('identity-core — requestRegistration (спека 012, T-6)', () => {
       role: 'supervisor',
       orgId: null,
       createdAt: NOW,
+      blockedAt: null,
+      tokensValidAfter: null,
     });
     const addSpy = vi.spyOn(env.store, 'addConfirmation');
 
@@ -137,6 +139,8 @@ describe('identity-core — requestRegistration (спека 012, T-6)', () => {
       role: 'supervisor',
       orgId: null,
       createdAt: NOW,
+      blockedAt: null,
+      tokensValidAfter: null,
     });
     env.mailer.fail = true;
 

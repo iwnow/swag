@@ -51,6 +51,17 @@ type MemoryConfirmation = {
   usedAt: number | null;
 };
 
+type MemoryInvitation = {
+  tokenHash: string;
+  email: string;
+  orgId: string;
+  role: 'user' | 'admin';
+  invitedBy: string;
+  expiresAt: number;
+  createdAt: number;
+  usedAt: number | null;
+};
+
 type MemorySession = {
   id: string;
   userId: string;
@@ -63,11 +74,15 @@ type MemorySession = {
 
 export type MemoryIdentityStore = IdentityStore;
 
+const byEmail = (a: StoredUser, b: StoredUser): number =>
+  a.email < b.email ? -1 : a.email > b.email ? 1 : 0;
+
 export function createMemoryIdentityStore(): MemoryIdentityStore {
   const users = new Map<string, StoredUser>();
   const organizations = new Map<string, StoredOrganization>();
   const confirmations = new Map<string, MemoryConfirmation>();
   const sessions = new Map<string, MemorySession>();
+  const invitations = new Map<string, MemoryInvitation>();
 
   const userByEmail = (email: string): StoredUser | undefined =>
     [...users.values()].find((user) => user.email === email);
@@ -139,6 +154,95 @@ export function createMemoryIdentityStore(): MemoryIdentityStore {
     async revokeSession(refreshHash: string, now: number): Promise<void> {
       const session = liveSession(now, (s) => s.refreshHash === refreshHash);
       if (session) session.revokedAt = now;
+    },
+
+    async listUsers({ orgId }) {
+      return [...users.values()]
+        .filter((user) => orgId === undefined || user.orgId === orgId)
+        .sort(byEmail)
+        .map((user) => ({ ...user }));
+    },
+
+    async updateUser({ id, role, blockedAt, revokeAt }) {
+      const user = users.get(id);
+      if (!user) throw new Error('user not found');
+      if (role !== undefined) user.role = role;
+      if (blockedAt !== undefined) user.blockedAt = blockedAt;
+      if (revokeAt !== undefined) {
+        user.tokensValidAfter = revokeAt;
+        for (const session of sessions.values()) {
+          if (session.userId === id && session.revokedAt === null) session.revokedAt = revokeAt;
+        }
+      }
+      return { ...user };
+    },
+
+    async addInvitation(i) {
+      if (invitations.has(i.tokenHash)) throw new Error('token hash already exists');
+      invitations.set(i.tokenHash, { ...i, usedAt: null });
+    },
+
+    async acceptInvitation({ tokenHash, now, user }) {
+      const invitation = invitations.get(tokenHash);
+      if (!invitation || invitation.usedAt !== null || invitation.expiresAt <= now) {
+        return { status: 'invalid_token' };
+      }
+      if (userByEmail(invitation.email)) return { status: 'email_taken' }; // приглашение не гасится
+      const organization = organizations.get(invitation.orgId);
+      if (!organization) throw new Error('organization not found');
+      invitation.usedAt = now;
+      const created: StoredUser = {
+        id: user.id,
+        email: invitation.email,
+        passwordHash: user.passwordHash,
+        role: invitation.role,
+        orgId: invitation.orgId,
+        createdAt: user.createdAt,
+        blockedAt: null,
+        tokensValidAfter: null,
+      };
+      users.set(created.id, created);
+      return { status: 'ok', user: { ...created }, organization: { ...organization } };
+    },
+
+    async listOrganizations() {
+      return [...organizations.values()]
+        .map((organization) => ({
+          ...organization,
+          userCount: [...users.values()].filter((user) => user.orgId === organization.id).length,
+        }))
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    },
+
+    async tokenRevocations(since: number) {
+      return [...users.values()]
+        .filter((user) => user.tokensValidAfter !== null && user.tokensValidAfter > since)
+        .map((user) => ({
+          userId: user.id,
+          validAfter: user.tokensValidAfter ?? 0,
+          blocked: user.blockedAt !== null,
+        }));
+    },
+
+    async purge(before: number) {
+      const removeOld = <T>(map: Map<string, T>, isOld: (value: T) => boolean): number => {
+        let removed = 0;
+        for (const [key, value] of map) {
+          if (isOld(value)) {
+            map.delete(key);
+            removed++;
+          }
+        }
+        return removed;
+      };
+      return {
+        confirmations: removeOld(confirmations, (c) => c.expiresAt < before),
+        invitations: removeOld(invitations, (i) => i.expiresAt < before),
+        sessions: removeOld(
+          sessions,
+          (s) => s.expiresAt < before || (s.revokedAt !== null && s.revokedAt < before),
+        ),
+      };
     },
   };
 }
