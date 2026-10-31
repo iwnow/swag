@@ -1,5 +1,5 @@
 import { createPrivateKey, generateKeyPairSync, randomUUID } from 'node:crypto';
-import { SignJWT, decodeProtectedHeader } from 'jose';
+import { SignJWT, decodeJwt, decodeProtectedHeader } from 'jose';
 import { describe, expect, it } from 'vitest';
 import type { AccessTokenClaims } from '@swag/contracts';
 import { createJoseSigner, createJoseVerifier, publicKeyFromPrivate } from '../src/index.ts';
@@ -51,9 +51,13 @@ const signRaw = (
 const base64url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
 
 describe('createJoseSigner и createJoseVerifier', () => {
-  it('REQ-012-10: токен — JWT с alg EdDSA и kid в заголовке', async () => {
-    const token = await signer.sign(claimsFor());
-    expect(decodeProtectedHeader(token)).toMatchObject({ alg: 'EdDSA', kid: KID });
+  it('REQ-012-10: токен — JWT с alg EdDSA, kid и typ JWT в заголовке; iss, aud и срок в payload', async () => {
+    const claims = claimsFor();
+    const token = await signer.sign(claims);
+    expect(decodeProtectedHeader(token)).toMatchObject({ alg: 'EdDSA', kid: KID, typ: 'JWT' });
+    const payload = decodeJwt(token);
+    expect(payload).toMatchObject({ iss: 'swag-identity', aud: 'swag' });
+    expect((payload.exp ?? 0) - (payload.iat ?? 0)).toBe(claims.exp - claims.iat);
   });
 
   it('AC-012-19: свой токен проверяется и отдаёт утверждения', async () => {

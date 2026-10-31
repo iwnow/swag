@@ -1,8 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { createPrivateKey, createPublicKey } from 'node:crypto';
+import { createPrivateKey, createPublicKey, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createJoseSigner, createJoseVerifier, publicKeyFromPrivate } from '@swag/adapter-jose';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFixture } from './fixture.ts';
 
@@ -23,9 +24,10 @@ const valueOf = (name: string, text: string): string =>
   text.match(new RegExp(`^${name}=(.+)$`, 'm'))?.[1]?.trim() ?? '';
 const privateValue = (text: string): string => valueOf('IDENTITY_JWT_PRIVATE_KEY', text);
 const publicValue = (text: string): string => valueOf('IDENTITY_JWT_PUBLIC_KEY', text);
+const pemOf = (base64: string): string => Buffer.from(base64, 'base64').toString('utf8');
 
 describe('identity:keys', () => {
-  it('4.11: без аргументов печатает пару Ed25519 в base64 DER (PKCS8 и SPKI)', () => {
+  it('4.11: без аргументов печатает пару Ed25519: base64 от PEM (PKCS8 и SPKI)', () => {
     const { code, stdout } = run();
     expect(code).toBe(0);
     const [privateLine, publicLine, extra] = stdout.trimEnd().split('\n');
@@ -33,18 +35,33 @@ describe('identity:keys', () => {
     expect(privateLine).toMatch(PRIVATE_LINE);
     expect(publicLine).toMatch(/^IDENTITY_JWT_PUBLIC_KEY=[A-Za-z0-9+/]+={0,2}$/);
 
-    const privateKey = createPrivateKey({
-      key: Buffer.from(privateValue(stdout), 'base64'),
-      format: 'der',
-      type: 'pkcs8',
+    const privatePem = pemOf(privateValue(stdout));
+    const publicPem = pemOf(publicValue(stdout));
+    expect(privatePem).toMatch(/^-----BEGIN PRIVATE KEY-----/);
+    expect(publicPem).toMatch(/^-----BEGIN PUBLIC KEY-----/);
+    expect(createPrivateKey(privatePem).asymmetricKeyType).toBe('ed25519');
+    expect(createPublicKey(publicPem).asymmetricKeyType).toBe('ed25519');
+  });
+
+  it('AC-012-2: ключ из identity:keys подписывает и проверяется adapter-jose', async () => {
+    const { stdout } = run();
+    const privateKeyPem = pemOf(privateValue(stdout));
+    const publicKeyPem = pemOf(publicValue(stdout));
+    expect(publicKeyFromPrivate(privateKeyPem)).toBe(publicKeyPem);
+
+    const signer = createJoseSigner({ privateKeyPem, kid: 'test' });
+    const verifier = createJoseVerifier({ publicKeyPem, kid: 'test' });
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signer.sign({
+      sub: randomUUID(),
+      org: randomUUID(),
+      role: 'admin',
+      iss: 'swag-identity',
+      aud: 'swag',
+      iat: now,
+      exp: now + 900,
     });
-    const publicKey = createPublicKey({
-      key: Buffer.from(publicValue(stdout), 'base64'),
-      format: 'der',
-      type: 'spki',
-    });
-    expect(privateKey.asymmetricKeyType).toBe('ed25519');
-    expect(publicKey.asymmetricKeyType).toBe('ed25519');
+    expect(await verifier.verify(token)).not.toBeNull();
   });
 
   it('4.11: --write-env во временный файл создаёт строку IDENTITY_JWT_PRIVATE_KEY и не печатает ключ', () => {
