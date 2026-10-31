@@ -68,6 +68,8 @@ describe.skipIf(!url)('безопасность денег на Postgres (спе
           trace: telemetry.trace,
           log: telemetry.logger,
           version: 'test',
+          sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)), // спека 013, 4.7
+          closeWaitMs: 5000,
         },
       );
       let app: FastifyInstance | undefined;

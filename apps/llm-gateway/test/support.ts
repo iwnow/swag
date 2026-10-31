@@ -99,6 +99,8 @@ export function makeCore(
     version: 'test',
     budgets: options.budgets ?? registeredBudgets(),
     prices: options.prices ?? createCatalogHolder(catalog).book,
+    sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+    closeWaitMs: 5000,
   });
 }
 

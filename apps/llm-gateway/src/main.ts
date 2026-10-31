@@ -81,6 +81,8 @@ const { core, pool, holder, priceStore } = await startLlmGatewayCore(
     trace: telemetry.trace,
     log,
     version,
+    sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)), // спека 013, 4.7
+    closeWaitMs: config.LLM_GATEWAY_CLOSE_WAIT_MS,
   },
 ).catch((error: unknown) => fail('startup failed', error));
 

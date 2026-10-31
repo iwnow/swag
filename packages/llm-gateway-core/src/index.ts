@@ -379,6 +379,8 @@ export interface LlmGatewayDeps {
   version: string;
   budgets: BudgetStore; // спека 004, 4.4
   prices: PriceBook; // цены модели для списания; catalog остаётся списком моделей
+  sleep: (ms: number) => Promise<void>; // спека 013, 4.7: ожидание списаний при закрытии роя
+  closeWaitMs: number; // LLM_GATEWAY_CLOSE_WAIT_MS, спека 013, 4.10
 }
 
 export type CompleteResult =
@@ -511,6 +513,8 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
     version,
     budgets,
     prices: priceBook,
+    sleep,
+    closeWaitMs,
   } = deps;
 
   // Спека 004, 4.3 и 4.4: отказ на шагах 2–7 — без события, лог warn `call_refused` с кодом.
@@ -863,10 +867,21 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
       if (!SwarmId.safeParse(swarmId).success) {
         return internalError(404, 'not_found', 'Swarm not found');
       }
-      const closed = await budgets.close(swarmId, clock.now());
-      return closed
-        ? { ok: true, value: { ...closed, heldMicroUsd: 0 } } // 013, T-5
-        : internalError(404, 'not_found', 'Swarm not found');
+      // Спека 013, 4.7: закрытие ждёт списания идущих вызовов, но не дольше closeWaitMs.
+      const startedAt = clock.monotonicMs();
+      let totals = await budgets.close(swarmId, clock.now());
+      if (!totals) return internalError(404, 'not_found', 'Swarm not found');
+      while (totals.heldMicroUsd > 0 && clock.monotonicMs() - startedAt < closeWaitMs) {
+        await sleep(CLOSE_POLL_MS);
+        totals = (await budgets.totals(swarmId)) ?? totals;
+      }
+      if (totals.heldMicroUsd > 0) {
+        log.warn('close_holds_pending', { swarmId, heldMicroUsd: totals.heldMicroUsd });
+      }
+      return {
+        ok: true,
+        value: { spentMicroUsd: totals.spentMicroUsd, heldMicroUsd: totals.heldMicroUsd },
+      };
     },
 
     async releaseHolds() {
@@ -882,6 +897,9 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
     },
   };
 }
+
+// Спека 013, 4.7: шаг опроса хранилища, пока закрытие роя ждёт списания.
+const CLOSE_POLL_MS = 100;
 
 // Спека 004, 4.4. Порты денег: только интерфейсы, логика — в T-5 (ядро) и в адаптере (T-3).
 export interface RegisteredAgent {
@@ -906,7 +924,12 @@ export interface BudgetStore {
   ): Promise<ReserveResult>;
   // Одна транзакция: удалить резерв callId, held −= резерв, spent += charge, запись ledger.
   settle(entry: LedgerEntry): Promise<void>;
-  close(swarmId: string, now: Date): Promise<{ spentMicroUsd: number } | null>; // null — роя нет
+  close(
+    swarmId: string,
+    now: Date,
+  ): Promise<{ spentMicroUsd: number; heldMicroUsd: number } | null>; // null — роя нет
+  // Спека 013, 4.7: суммы роя для ожидания списаний при закрытии; null — роя нет.
+  totals(swarmId: string): Promise<{ spentMicroUsd: number; heldMicroUsd: number } | null>;
   releaseHolds(): Promise<{ callId: string; swarmId: string; amountMicroUsd: number }[]>;
 }
 

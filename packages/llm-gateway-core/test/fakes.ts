@@ -210,6 +210,10 @@ export function fakeDeps(
     version: 'test',
     budgets,
     prices: fakePrices(testCatalog),
+    sleep: async (ms) => {
+      clock.advance(ms);
+    },
+    closeWaitMs: 5000,
   };
   return { deps, upstream, events, clock, log, budgets };
 }

@@ -251,15 +251,30 @@ export function createPostgresBudgetStore(pool: Pool): BudgetStore {
       });
     },
 
-    async close(swarmId: string, now: Date): Promise<{ spentMicroUsd: number } | null> {
+    async close(
+      swarmId: string,
+      now: Date,
+    ): Promise<{ spentMicroUsd: number; heldMicroUsd: number } | null> {
       if (!SwarmId.safeParse(swarmId).success) return null;
       // coalesce: повторное закрытие не переписывает время и отдаёт тот же spent (4.2).
-      const result = await pool.query<{ spent: string }>(
-        'update swarm_budgets set closed_at = coalesce(closed_at, $2) where swarm_id = $1 returning spent_micro_usd as spent',
+      const result = await pool.query<{ spent: string; held: string }>(
+        `update swarm_budgets set closed_at = coalesce(closed_at, $2) where swarm_id = $1
+         returning spent_micro_usd as spent, held_micro_usd as held`,
         [swarmId, now],
       );
       const row = result.rows[0];
-      return row ? { spentMicroUsd: Number(row.spent) } : null;
+      return row ? { spentMicroUsd: Number(row.spent), heldMicroUsd: Number(row.held) } : null;
+    },
+
+    // Спека 013, 4.7: суммы роя для ожидания списаний; не UUID — null без запроса (как в close).
+    async totals(swarmId: string): Promise<{ spentMicroUsd: number; heldMicroUsd: number } | null> {
+      if (!SwarmId.safeParse(swarmId).success) return null;
+      const result = await pool.query<{ spent: string; held: string }>(
+        'select spent_micro_usd as spent, held_micro_usd as held from swarm_budgets where swarm_id = $1',
+        [swarmId],
+      );
+      const row = result.rows[0];
+      return row ? { spentMicroUsd: Number(row.spent), heldMicroUsd: Number(row.held) } : null;
     },
 
     async releaseHolds(): Promise<{ callId: string; swarmId: string; amountMicroUsd: number }[]> {

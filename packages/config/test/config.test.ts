@@ -287,6 +287,19 @@ describe('loadConfig', () => {
     ]);
     expect(LlmGatewayConfig.safeParse(examples).success).toBe(true);
   });
+
+  it('спека 013, 4.10: LLM_GATEWAY_CLOSE_WAIT_MS — целое 0…8000, по умолчанию 5000', () => {
+    const examples = gatewayExamples();
+    const closeWait = (LLM_GATEWAY_CLOSE_WAIT_MS: string | undefined) =>
+      LlmGatewayConfig.safeParse({ ...examples, LLM_GATEWAY_CLOSE_WAIT_MS }).success;
+    const { LLM_GATEWAY_CLOSE_WAIT_MS: _omitted, ...withoutWait } = examples;
+    expect(LlmGatewayConfig.parse(withoutWait).LLM_GATEWAY_CLOSE_WAIT_MS).toBe(5000);
+    expect(closeWait('0')).toBe(true);
+    expect(closeWait('8000')).toBe(true);
+    expect(closeWait('8001')).toBe(false);
+    expect(closeWait('-1')).toBe(false);
+    expect(closeWait('1.5')).toBe(false);
+  });
 });
 
 // Спека 012, 4.10: примеры окружения identity. Ключ подписи в .env.example пустой (Q-2), здесь — фейк.

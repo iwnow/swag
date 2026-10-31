@@ -81,6 +81,8 @@ describe.skipIf(!url)('llm-gateway с Postgres (спека 004, 4.4, 4.5)', () =
         trace: fakeTrace(),
         log,
         version: 'test',
+        sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)), // спека 013, 4.7
+        closeWaitMs: 5000,
       },
     );
     try {

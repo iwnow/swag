@@ -433,11 +433,29 @@ describe.skipIf(!url)('adapter-postgres деньги', () => {
     expect(await store.findAgent(swarmId, 'agent-9')).toBeNull();
 
     await store.settle(entry(randomUUID(), swarmId, 'agent-1', 250));
-    expect(await store.close(swarmId, NOW)).toEqual({ spentMicroUsd: 250 });
+    expect(await store.close(swarmId, NOW)).toEqual({ spentMicroUsd: 250, heldMicroUsd: 0 });
     expect(await store.close(swarmId, new Date('2026-10-30T12:00:00.000Z'))).toEqual({
       spentMicroUsd: 250,
+      heldMicroUsd: 0,
     });
     expect((await store.findAgent(swarmId, 'agent-1'))?.closed).toBe(true);
     expect(await store.close(randomUUID(), NOW)).toBeNull();
+  });
+
+  it('AC-013-18: close отдаёт heldMicroUsd идущего резерва, totals — spent и held; роя нет и не UUID — null', async () => {
+    const pool = newPool();
+    const store = createPostgresBudgetStore(pool);
+    const swarmId = randomUUID();
+    await store.register(registration(swarmId, 10_000), NOW);
+    await store.settle(entry(randomUUID(), swarmId, 'agent-1', 250));
+    expect(await store.reserve(randomUUID(), { swarmId, agentId: 'agent-1' }, 300, NOW)).toEqual({
+      ok: true,
+    });
+
+    expect(await store.totals(swarmId)).toEqual({ spentMicroUsd: 250, heldMicroUsd: 300 });
+    expect(await store.close(swarmId, NOW)).toEqual({ spentMicroUsd: 250, heldMicroUsd: 300 });
+    expect(await store.totals(swarmId)).toEqual({ spentMicroUsd: 250, heldMicroUsd: 300 });
+    expect(await store.totals(randomUUID())).toBeNull();
+    expect(await store.totals('not-a-uuid')).toBeNull();
   });
 });
