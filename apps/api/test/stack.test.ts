@@ -132,6 +132,13 @@ describe.skipIf(!process.env['STACK_TEST_API_URL'])('api [stack]', () => {
     expect(user.user.role).toBe('user');
     expect(user.organization?.id).toBe(adminA.organization?.id);
 
+    const userLogin = await call(stack.identity, '/auth/login', {
+      method: 'POST',
+      body: { email: userEmail, password: PASSWORD },
+    });
+    expect(userLogin.status).toBe(200);
+    expect(AuthSession.parse(await userLogin.json()).user.role).toBe('user');
+
     let swarmId: string | undefined;
     let supervisorToken: string | undefined;
     try {
@@ -150,6 +157,10 @@ describe.skipIf(!process.env['STACK_TEST_API_URL'])('api [stack]', () => {
       const ownView = await call(stack.api, `/swarms/${swarmId}`, { token: user.accessToken });
       expect(ownView.status).toBe(200);
       await ownView.text();
+      const ownList = (await (
+        await call(stack.api, '/swarms', { token: user.accessToken })
+      ).json()) as { id: string }[];
+      expect(ownList.map((swarm) => swarm.id)).toEqual([swarmId]);
 
       const foreignView = await call(stack.api, `/swarms/${swarmId}`, {
         token: adminB.accessToken,
@@ -197,7 +208,7 @@ describe.skipIf(!process.env['STACK_TEST_API_URL'])('api [stack]', () => {
         await sleep(POLL_STEP_MS);
       }
       const revokeMs = performance.now() - blockedAt;
-      console.log('NFR-024-1', Math.round(revokeMs));
+      console.log('NFR-024-1, мс:', Math.round(revokeMs));
       expect(status).toBe(401);
       expect(revokeMs).toBeLessThanOrEqual(limitMs);
 
@@ -211,11 +222,11 @@ describe.skipIf(!process.env['STACK_TEST_API_URL'])('api [stack]', () => {
         'user_blocked',
       );
     } finally {
-      if (swarmId && supervisorToken) {
+      if (swarmId) {
         // Уборка: рой мог уже остановиться при блокировке, поэтому ответ не проверяем.
         await call(stack.api, `/swarms/${swarmId}/stop`, {
           method: 'POST',
-          token: supervisorToken,
+          token: supervisorToken ?? user.accessToken,
         })
           .then((response) => response.text())
           .catch(() => undefined);
