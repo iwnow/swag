@@ -10,16 +10,16 @@
 - Первый супервизор из конфигурации, если его ещё нет.
 - Лимиты частоты по IP и email (спека 012, 4.8).
 
-Реализовано: `info()` и `requestRegistration` (T-6). Остальные операции — заглушки `internal_error` (`not implemented`), `ensureSupervisor` бросает. Реализация идёт задачами T-7…T-10.
+Реализовано: `info()`, `requestRegistration` (T-6), `confirmRegistration` (T-7). Остальные операции — заглушки `internal_error` (`not implemented`), `ensureSupervisor` бросает. Реализация идёт задачами T-8…T-10.
 
 ## Что внутри сейчас
 
-- `createIdentityCore(deps)` — фабрика ядра. `info()` и `requestRegistration` реализованы; `confirmRegistration`, `login`, `refresh`, `logout`, `me`, `ensureSupervisor` — заглушки.
+- `createIdentityCore(deps)` — фабрика ядра. `info()`, `requestRegistration` и `confirmRegistration` реализованы; `login`, `refresh`, `logout`, `me`, `ensureSupervisor` — заглушки.
 - Порты: `Clock`, `IdGenerator`, `Logger` (с `LogContext`), `IdentityStore`, `PasswordHasher`, `OpaqueTokens`, `TokenSigner`, `TokenVerifier`, `Mailer`, `RateLimiter`. Собраны в `IdentityCoreDeps`.
 - Типы операций: `RequestMeta`, `IssuedSession`, `IdentityCore`, `IdentityError`, `Result<T>` (той же формы, что в `api-core`; код — из `AuthErrorCode`), `StoredUser`, `StoredOrganization`, `MailMessage`.
 - Константы писем: `CONFIRM_MAIL_SUBJECT`, `ALREADY_REGISTERED_MAIL_SUBJECT`, `ALREADY_REGISTERED_MAIL_TEXT`, функция `confirmMailText(link, ttlHours)`.
 - Константы лимитов: `RATE_LIMITS` — ключи `register:email`, `register:ip`, `confirm:ip`, `login:email`, `login:ip`, лимиты и окна в мс.
-- Тесты: `test/identity-core.test.ts` — `info()` и заглушки; `test/registration.test.ts` — `requestRegistration`, лимиты, письма; `test/fakes.ts` — общие фейки ядра (`createTestEnv`, часы, хэшер, токены, JWT, `tokenFromMail`, `sentMail`). Фейки: хэш `fake-hash:<пароль>`, токены — 43 цифры, JWT — `fake.<json>`, хранилище, почта и лимиты — из `@swag/adapter-memory` (как в тестах `api-core`).
+- Тесты: `test/identity-core.test.ts` — `info()` и заглушки; `test/registration.test.ts` — `requestRegistration`, лимиты, письма; `test/confirm.test.ts` — `confirmRegistration`; `test/fakes.ts` — общие фейки ядра (`createTestEnv`, часы, хэшер, токены, JWT, `tokenFromMail`, `sentMail`). Фейки: хэш `fake-hash:<пароль>`, токены — 43 цифры, JWT — `fake.<json>`, хранилище, почта и лимиты — из `@swag/adapter-memory` (как в тестах `api-core`).
 
 ## Ограничения
 
@@ -46,9 +46,11 @@
 - Срок ссылки подтверждения в письме — число часов, округлённое вверх (D-113, вариант б): 600 с → 1 ч, 5400 с → 2 ч.
 - `requestRegistration`: сначала лимит по IP, потом по email (одна попытка расходует оба). Ответ один и тот же для нового и существующего email (Q-9).
 - Почта: при ошибке отправки лог `mail_send_failed` без поля `err` — текст ошибки SMTP может содержать адрес (D-115).
+- Подтверждение: сначала лимит `confirm:ip`, затем хэш пароля и одна операция хранилища `confirmRegistration`. Погашенный, просроченный и неизвестный токен дают один ответ `invalid_token`; занятый email — `email_taken`, токен при этом не гасится.
+- `issueSession` (внутренняя): токен обновления — непрозрачный, в хранилище только SHA-256; токен доступа подписывает `TokenSigner` с `iat = floor(now/1000)`, `exp = iat + accessTtl`.
 - Неожиданное исключение порта — `internal_error`, событие `identity_operation_failed` (D-115).
 
 ## Спеки
 
-- 012 — 4.2, 4.3, 4.6, 4.8; задачи T-4 (REQ-012-1, AC-012-31), T-6 (регистрация, AC-012-4, AC-012-13, AC-012-25 — тесты в `test/registration.test.ts`).
+- 012 — 4.2, 4.3, 4.6, 4.8; задачи T-4 (REQ-012-1, AC-012-31), T-6 (регистрация, AC-012-4, AC-012-13, AC-012-25 — тесты в `test/registration.test.ts`), T-7 (подтверждение, AC-012-7, AC-012-8, AC-012-10 — `test/confirm.test.ts`).
 - 000 — правила ядра.

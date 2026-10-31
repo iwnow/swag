@@ -1,4 +1,5 @@
 import {
+  RegistrationConfirmRequest,
   RegistrationRequest,
   type AccessTokenClaims,
   type AuthErrorCode,
@@ -199,7 +200,7 @@ const notImplemented = async <T>(): Promise<Result<T>> => ({
 });
 
 export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
-  const { store, clock, log, limiter, mailer, opaque, settings } = deps;
+  const { store, clock, log, limiter, mailer, opaque, settings, hasher, signer, ids } = deps;
 
   const parse = <S extends z.ZodType>(schema: S, body: unknown): Result<z.output<S>> => {
     const parsed = schema.safeParse(body);
@@ -270,6 +271,75 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     return sent ? ok(undefined) : fail('mail_unavailable');
   };
 
+  // Выдаёт токен доступа и токен обновления; токен обновления в хранилище — только хэш.
+  const issueSession = async (
+    user: StoredUser,
+    organization: StoredOrganization | null,
+  ): Promise<IssuedSession> => {
+    const now = clock.now();
+    const { token, hash } = opaque.create();
+    await store.createSession({
+      id: ids.uuid(),
+      userId: user.id,
+      refreshHash: hash,
+      expiresAt: now + settings.refreshTtlS * 1000,
+      createdAt: now,
+    });
+    const iat = Math.floor(now / 1000);
+    const accessToken = await signer.sign({
+      sub: user.id,
+      org: user.orgId,
+      role: user.role,
+      iss: 'swag-identity',
+      aud: 'swag',
+      iat,
+      exp: iat + settings.accessTtlS,
+    });
+    return {
+      session: {
+        accessToken,
+        expiresIn: settings.accessTtlS,
+        user: { id: user.id, email: user.email, role: user.role, orgId: user.orgId },
+        organization: organization ? { id: organization.id, name: organization.name } : null,
+      },
+      refreshToken: token,
+    };
+  };
+
+  const confirmRegistration = async (
+    body: unknown,
+    meta: RequestMeta,
+  ): Promise<Result<IssuedSession>> => {
+    const parsed = parse(RegistrationConfirmRequest, body);
+    if (!parsed.ok) return parsed;
+    const { token, password, organizationName } = parsed.value;
+    if (await exceeded(RATE_LIMITS.confirmIp, meta.ip)) return fail('rate_limited');
+    const now = clock.now();
+    const passwordHash = await hasher.hash(password);
+    const org: StoredOrganization = { id: ids.uuid(), name: organizationName, createdAt: now };
+    const userId = ids.uuid();
+    const result = await store.confirmRegistration({
+      tokenHash: opaque.hash(token),
+      now,
+      org,
+      user: { id: userId, passwordHash, role: 'admin', orgId: org.id, createdAt: now },
+    });
+    if (result.status === 'invalid_token') {
+      log.warn('confirm_invalid_token');
+      return fail('invalid_token');
+    }
+    if (result.status === 'email_taken') return fail('email_taken');
+    const user: StoredUser = {
+      id: userId,
+      email: result.email,
+      passwordHash,
+      role: 'admin',
+      orgId: org.id,
+      createdAt: now,
+    };
+    return ok(await issueSession(user, org));
+  };
+
   // Исключение хранилища или ядра превращается в internal_error; наружу текст не уходит.
   const guarded =
     <A extends unknown[], T>(fn: (...args: A) => Promise<Result<T>>) =>
@@ -285,7 +355,7 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
   return {
     info: () => ({ service: 'identity', version: deps.version }),
     requestRegistration: guarded(requestRegistration),
-    confirmRegistration: notImplemented,
+    confirmRegistration: guarded(confirmRegistration),
     login: notImplemented,
     refresh: notImplemented,
     logout: notImplemented,
