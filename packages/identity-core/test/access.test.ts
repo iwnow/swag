@@ -105,13 +105,17 @@ describe('identity-core — блокировка и отзыв (спека 024, 
     });
   });
 
-  it('AC-024-7: блокировка без отзыва сессий — refresh заблокированного → invalid_refresh_token', async () => {
+  it('AC-024-7: блокировка без отзыва сессий — токен доступа → unauthorized, refresh → invalid_refresh_token', async () => {
     const env = createTestEnv();
     const { userId } = await seedAdmin(env);
-    const { refreshToken } = await loginAs(env, ADMIN_EMAIL);
+    const { accessToken, refreshToken } = await loginAs(env, ADMIN_EMAIL);
 
     await env.store.updateUser({ id: userId, blockedAt: NOW });
 
+    expect(await env.core.me(accessToken)).toMatchObject({
+      ok: false,
+      error: { code: 'unauthorized' },
+    });
     expect(await env.core.refresh(refreshToken)).toMatchObject({
       ok: false,
       error: { code: 'invalid_refresh_token' },
