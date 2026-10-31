@@ -10,6 +10,7 @@
   "dependencies": {
     "@swag/api-core": "0.0.0",
     "@swag/api-integration": "0.0.0",
-    "@swag/contracts": "0.0.0"
+    "@swag/contracts": "0.0.0",
+    "@swag/identity-core": "0.0.0"
   }
 }
