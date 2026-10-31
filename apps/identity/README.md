@@ -34,7 +34,7 @@
 - HTTP-спаны в тестах не создаются: `app.inject` идёт мимо `serverFactory` (проверено), поэтому тесты `logs.test.ts` проверяют логи и отсутствие секретов в спанах, но не сами серверные спаны запросов.
 - Логика не здесь: решения принимает `identity-core`.
 - Миграции применяются при каждом старте до `listen`; параллельные запуски ждут друг друга (блокировка `node-pg-migrate`).
-- Тест `[stack]` (`test/stack.test.ts`) идёт по поднятому контуру и не запускается без `STACK_TEST_IDENTITY_URL` и `STACK_TEST_MAILPIT_URL`. Бенч входа NFR-012-2 — под `IDENTITY_BENCH=1`, на тех же переменных; лимит `login:email` (10 за 15 мин) не даёт 100 последовательных входов одного супервизора (см. журнал T-18).
+- Тест `[stack]` (`test/stack.test.ts`) идёт по поднятому контуру и не запускается без `STACK_TEST_IDENTITY_URL` и `STACK_TEST_MAILPIT_URL`. Бенч входа NFR-012-2 — под `IDENTITY_BENCH=1`, на тех же переменных: 10 серий по 10 входов супервизора, перед каждой серией и после последней identity перезапускается (`docker compose restart identity`), потому что лимиты 4.8 (`login:email` 10 за 15 мин) не дают 100 последовательных входов одного супервизора (трактовка D-120, см. журнал T-18).
 - Образ — `apps/identity/Dockerfile` (как `apps/api`, пакеты identity); в `compose.yaml` — сервисы `identity` и `mailpit` (порт `127.0.0.1:${IDENTITY_PORT}`, UI Mailpit на `127.0.0.1:${MAILPIT_UI_PORT}`).
 
 ## Связи

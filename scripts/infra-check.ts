@@ -39,7 +39,15 @@ function readConfig() {
 
 const config = readConfig();
 // Спека 012, 4.11: порт UI Mailpit — переменная compose, не входит в IdentityConfig.
-const mailpitUiPort = Number(process.env['MAILPIT_UI_PORT']);
+function readMailpitUiPort(): number {
+  const port = Number(process.env['MAILPIT_UI_PORT']);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    console.error('MAILPIT_UI_PORT должен быть целым числом от 1 до 65535 (см. .env).');
+    process.exit(1);
+  }
+  return port;
+}
+const mailpitUiPort = readMailpitUiPort();
 
 async function checkPostgres(): Promise<void> {
   const client = new pg.Client({
