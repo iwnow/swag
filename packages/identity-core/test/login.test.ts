@@ -1,39 +1,25 @@
-import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { RATE_LIMITS } from '../src/index.ts';
-import { HOUR_MS, NOW, createTestEnv, type TestEnv } from './fakes.ts';
+import {
+  ADMIN_EMAIL,
+  ADMIN_PASSWORD,
+  NOW,
+  createTestEnv,
+  seedAdmin,
+  type TestEnv,
+} from './fakes.ts';
 
 // Спека 012, T-8: login, me, dummyHash (4.2), лимиты входа (4.8).
 
 const meta = { ip: '10.0.0.3' };
-const PASSWORD = 'correct horse battery';
-const EMAIL = 'admin@example.test';
+const PASSWORD = ADMIN_PASSWORD;
+const EMAIL = ADMIN_EMAIL;
 const MINUTE_MS = 60_000;
 
 // Пользователь с организацией, как после confirmRegistration (через хранилище, без HTTP).
 async function seedEnv(): Promise<{ env: TestEnv; userId: string; orgId: string }> {
   const env = createTestEnv();
-  await env.store.addConfirmation({
-    tokenHash: 'seed-token-hash',
-    email: EMAIL,
-    expiresAt: NOW + HOUR_MS,
-    createdAt: NOW,
-  });
-  const userId = randomUUID();
-  const orgId = randomUUID();
-  await env.store.confirmRegistration({
-    tokenHash: 'seed-token-hash',
-    now: NOW,
-    org: { id: orgId, name: 'Компания', createdAt: NOW },
-    user: {
-      id: userId,
-      passwordHash: `fake-hash:${PASSWORD}`,
-      role: 'admin',
-      orgId,
-      createdAt: NOW,
-    },
-  });
-  return { env, userId, orgId };
+  return { env, ...(await seedAdmin(env)) };
 }
 
 describe('identity-core — login и me (спека 012, T-8)', () => {

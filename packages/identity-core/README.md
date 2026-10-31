@@ -10,16 +10,16 @@
 - Первый супервизор из конфигурации, если его ещё нет.
 - Лимиты частоты по IP и email (спека 012, 4.8).
 
-Реализовано: `info()`, `requestRegistration` (T-6), `confirmRegistration` (T-7), `login` и `me` (T-8). Остались заглушки `refresh` и `logout` (`internal_error`, `not implemented`) и `ensureSupervisor`, который бросает. Реализация идёт задачами T-9 и T-10.
+Реализовано: `info()`, `requestRegistration` (T-6), `confirmRegistration` (T-7), `login` и `me` (T-8), `refresh` и `logout` (T-9). Остался `ensureSupervisor` — пока бросает `not implemented`, реализация в T-10.
 
 ## Что внутри сейчас
 
-- `createIdentityCore(deps)` — фабрика ядра. `info()`, `requestRegistration`, `confirmRegistration`, `login` и `me` реализованы; `refresh`, `logout`, `ensureSupervisor` — заглушки.
+- `createIdentityCore(deps)` — фабрика ядра. `info()`, `requestRegistration`, `confirmRegistration`, `login`, `me`, `refresh`, `logout` реализованы; `ensureSupervisor` — заглушка.
 - Порты: `Clock`, `IdGenerator`, `Logger` (с `LogContext`), `IdentityStore`, `PasswordHasher`, `OpaqueTokens`, `TokenSigner`, `TokenVerifier`, `Mailer`, `RateLimiter`. Собраны в `IdentityCoreDeps`.
 - Типы операций: `RequestMeta`, `IssuedSession`, `IdentityCore`, `IdentityError`, `Result<T>` (той же формы, что в `api-core`; код — из `AuthErrorCode`), `StoredUser`, `StoredOrganization`, `MailMessage`.
 - Константы писем: `CONFIRM_MAIL_SUBJECT`, `ALREADY_REGISTERED_MAIL_SUBJECT`, `ALREADY_REGISTERED_MAIL_TEXT`, функция `confirmMailText(link, ttlHours)`.
 - Константы лимитов: `RATE_LIMITS` — ключи `register:email`, `register:ip`, `confirm:ip`, `login:email`, `login:ip`, лимиты и окна в мс.
-- Тесты: `test/identity-core.test.ts` — `info()` и заглушки; `test/registration.test.ts` — `requestRegistration`, лимиты, письма; `test/confirm.test.ts` — `confirmRegistration`; `test/login.test.ts` — `login`, `me`, `dummyHash`, лимиты входа; `test/fakes.ts` — общие фейки ядра (`createTestEnv`, часы, хэшер, токены, JWT, `tokenFromMail`, `sentMail`). Фейки: хэш `fake-hash:<пароль>`, токены — 43 цифры, JWT — `fake.<json>`, хранилище, почта и лимиты — из `@swag/adapter-memory` (как в тестах `api-core`).
+- Тесты: `test/identity-core.test.ts` — `info()` и заглушки; `test/registration.test.ts` — `requestRegistration`, лимиты, письма; `test/confirm.test.ts` — `confirmRegistration`; `test/login.test.ts` — `login`, `me`, `dummyHash`, лимиты входа; `test/session.test.ts` — `refresh`, `logout`, сценарий без секретов в логах; `test/fakes.ts` — общие фейки ядра (`createTestEnv`, часы, хэшер, токены, JWT, `tokenFromMail`, `sentMail`). Фейки: хэш `fake-hash:<пароль>`, токены — 43 цифры, JWT — `fake.<json>`, хранилище, почта и лимиты — из `@swag/adapter-memory` (как в тестах `api-core`).
 
 ## Ограничения
 
@@ -49,10 +49,12 @@
 - Подтверждение: сначала лимит `confirm:ip`, затем хэш пароля и одна операция хранилища `confirmRegistration`. Погашенный, просроченный и неизвестный токен дают один ответ `invalid_token`; занятый email — `email_taken`, токен при этом не гасится.
 - `issueSession` (внутренняя): токен обновления — непрозрачный, в хранилище только SHA-256; токен доступа подписывает `TokenSigner` с `iat = floor(now/1000)`, `exp = iat + accessTtl`.
 - `login`: сначала лимит `login:ip`, потом `login:email`. Неверный пароль и неизвестный email дают один ответ `invalid_credentials`; `hasher.verify` вызывается ровно один раз в обоих случаях: на неизвестный email — с `dummyHash` (хэш от случайной строки, считается один раз и кешируется).
+- `refresh`: токен обновления меняется на каждом вызове; повтор заменённого токена отзывает сессию (`refresh_reuse_detected`). Если пользователя сессии нет, ответ — `invalid_refresh_token`.
+- `logout`: нет токена или неизвестен — `ok`.
 - `me`: токен проверяет `TokenVerifier` (null — `unauthorized`), затем пользователь из `findUserById`.
 - Неожиданное исключение порта — `internal_error`, событие `identity_operation_failed` (D-115).
 
 ## Спеки
 
-- 012 — 4.2, 4.3, 4.6, 4.8; задачи T-4 (REQ-012-1, AC-012-31), T-6 (регистрация, AC-012-4, AC-012-13, AC-012-25 — тесты в `test/registration.test.ts`), T-7 (подтверждение, AC-012-7, AC-012-8, AC-012-10 — `test/confirm.test.ts`), T-8 (вход и `me`, AC-012-12, AC-012-13 — `test/login.test.ts`).
+- 012 — 4.2, 4.3, 4.6, 4.8; задачи T-4 (REQ-012-1, AC-012-31), T-6 (регистрация, AC-012-4, AC-012-13, AC-012-25 — тесты в `test/registration.test.ts`), T-7 (подтверждение, AC-012-7, AC-012-8, AC-012-10 — `test/confirm.test.ts`), T-8 (вход и `me`, AC-012-12, AC-012-13 — `test/login.test.ts`), T-9 (обновление и выход, AC-012-15, AC-012-16 — `test/session.test.ts`).
 - 000 — правила ядра.

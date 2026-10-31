@@ -137,3 +137,31 @@ export function sentMail(env: TestEnv, index = 0): MailMessage {
   if (!mail) throw new Error();
   return mail;
 }
+
+export const ADMIN_EMAIL = 'admin@example.test';
+export const ADMIN_PASSWORD = 'correct horse battery';
+
+// Пользователь с организацией, как после confirmRegistration (через хранилище, без HTTP).
+export async function seedAdmin(env: TestEnv): Promise<{ userId: string; orgId: string }> {
+  const userId = randomUUID();
+  const orgId = randomUUID();
+  await env.store.addConfirmation({
+    tokenHash: 'seed-token-hash',
+    email: ADMIN_EMAIL,
+    expiresAt: NOW + HOUR_MS,
+    createdAt: NOW,
+  });
+  await env.store.confirmRegistration({
+    tokenHash: 'seed-token-hash',
+    now: NOW,
+    org: { id: orgId, name: 'Компания', createdAt: NOW },
+    user: {
+      id: userId,
+      passwordHash: `fake-hash:${ADMIN_PASSWORD}`,
+      role: 'admin',
+      orgId,
+      createdAt: NOW,
+    },
+  });
+  return { userId, orgId };
+}

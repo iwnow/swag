@@ -196,11 +196,6 @@ const fail = <T>(code: AuthErrorCode, issues?: IdentityError['issues']): Result<
       : { code, message: MESSAGES[code], issues },
 });
 
-const notImplemented = async <T>(): Promise<Result<T>> => ({
-  ok: false,
-  error: { code: 'internal_error', message: 'not implemented' },
-});
-
 export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
   const { store, clock, log, limiter, mailer, opaque, settings, hasher, signer, verifier, ids } =
     deps;
@@ -283,6 +278,19 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
   const authOrganization = (organization: StoredOrganization | null) =>
     organization ? { id: organization.id, name: organization.name } : null;
 
+  const signAccessToken = (user: StoredUser, now: number): Promise<string> => {
+    const iat = Math.floor(now / 1000);
+    return signer.sign({
+      sub: user.id,
+      org: user.orgId,
+      role: user.role,
+      iss: 'swag-identity',
+      aud: 'swag',
+      iat,
+      exp: iat + settings.accessTtlS,
+    });
+  };
+
   // Выдаёт токен доступа и токен обновления; токен обновления в хранилище — только хэш.
   const issueSession = async (
     user: StoredUser,
@@ -297,19 +305,9 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
       expiresAt: now + settings.refreshTtlS * 1000,
       createdAt: now,
     });
-    const iat = Math.floor(now / 1000);
-    const accessToken = await signer.sign({
-      sub: user.id,
-      org: user.orgId,
-      role: user.role,
-      iss: 'swag-identity',
-      aud: 'swag',
-      iat,
-      exp: iat + settings.accessTtlS,
-    });
     return {
       session: {
-        accessToken,
+        accessToken: await signAccessToken(user, now),
         expiresIn: settings.accessTtlS,
         user: authUser(user),
         organization: authOrganization(organization),
@@ -350,6 +348,37 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
       createdAt: now,
     };
     return ok(await issueSession(user, org));
+  };
+
+  const refresh = async (
+    refreshToken: string | undefined,
+  ): Promise<Result<{ refreshed: AuthRefreshed; refreshToken: string }>> => {
+    if (refreshToken === undefined) return fail('invalid_refresh_token');
+    const now = clock.now();
+    const { token, hash } = opaque.create();
+    const rotated = await store.rotateSession({
+      oldHash: opaque.hash(refreshToken),
+      newHash: hash,
+      now,
+      expiresAt: now + settings.refreshTtlS * 1000,
+    });
+    if (rotated.status === 'reused') {
+      log.warn('refresh_reuse_detected', { userId: rotated.userId });
+      return fail('invalid_refresh_token');
+    }
+    if (rotated.status === 'invalid') return fail('invalid_refresh_token');
+    const found = await store.findUserById(rotated.userId);
+    if (!found) return fail('invalid_refresh_token');
+    const accessToken = await signAccessToken(found.user, now);
+    return ok({ refreshed: { accessToken, expiresIn: settings.accessTtlS }, refreshToken: token });
+  };
+
+  // Нет токена или он неизвестен — тоже ok: выход идемпотентен.
+  const logout = async (refreshToken: string | undefined): Promise<Result<void>> => {
+    if (refreshToken !== undefined) {
+      await store.revokeSession(opaque.hash(refreshToken), clock.now());
+    }
+    return ok(undefined);
   };
 
   // Хэш от случайной строки: на несуществующий email хэшер всё равно работает столько же, сколько на существующий.
@@ -404,8 +433,8 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     requestRegistration: guarded(requestRegistration),
     confirmRegistration: guarded(confirmRegistration),
     login: guarded(login),
-    refresh: notImplemented,
-    logout: notImplemented,
+    refresh: guarded(refresh),
+    logout: guarded(logout),
     me: guarded(me),
     ensureSupervisor: async () => {
       throw new Error('not implemented');
