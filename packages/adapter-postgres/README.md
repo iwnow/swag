@@ -6,7 +6,7 @@
 
 - `runMigrations(databaseUrl, { schema? })` — применить миграции из `migrations/` (спека 003, 4.4, REQ-003-5; спека 004, 4.5; спека 012, 4.9; спека 013, 4.2). Повторный вызов ничего не меняет.
 - `createPostgresSwarmStore(pool)` — хранилище роёв: события и проекция (`SwarmView`) пишутся одной транзакцией (REQ-003-2, 4.4).
-- `createPostgresBudgetStore(pool)` — `BudgetStore` gateway (спека 004, 4.4, 4.5): регистрация роя, поиск агента, условный резерв (REQ-004-9), списание с записью ledger (REQ-004-10), закрытие роя, снятие резервов при старте.
+- `createPostgresBudgetStore(pool)` — `BudgetStore` gateway (спека 004, 4.4, 4.5): регистрация роя, поиск агента, условный резерв (REQ-004-9), списание с записью ledger (REQ-004-10), закрытие роя (`close` отдаёт `spentMicroUsd` и `heldMicroUsd`), `totals` (суммы роя для ожидания списаний при закрытии, спека 013, 4.7), снятие резервов при старте.
 - `createPostgresPriceStore(pool)` — `PriceStore`: последние успешные цены OpenRouter по id модели OpenRouter (спека 004, 4.5, Q-8).
 - `createPostgresIdentityStore(pool)` — `IdentityStore` identity (спека 012, 4.3, 4.9; спека 024, 4.9): пользователи, организации, подтверждения регистрации, сессии, приглашения. `confirmRegistration`, `acceptInvitation`, `updateUser` и `rotateSession` — одна транзакция каждая (AC-012-9, AC-012-30, AC-024-4, AC-024-5).
 - `createPostgresBalanceStore(pool)` — `BalanceStore` (спека 013, 4.2): баланс и журнал организации, пополнение (`topup`), условный резерв роя (`reserve`, REQ-013-5), закрытие резерва (`settle`) и открытые резервы (`holds`). Каждая операция записи — одна транзакция.
@@ -90,7 +90,8 @@
 - `reserve`: сначала условный `update` роя, потом агента, потом вставка в `budget_holds`. Условный `update` берёт блокировку строки, поэтому параллельные резервы одного роя выстраиваются в очередь без `for update`. Агент не найден в `swarm_agents` → `agent_budget_exceeded`: ядро проверяет агента через `findAgent` раньше, так что до адаптера это не доходит.
 - `settle` — отклонение от порядка шагов 4.5, сделано ради AC-004-14: запись в `ledger_entries` (`on conflict (call_id) do nothing`) идёт первой. Если строка не вставилась (повтор того же `callId`), транзакция откатывается и `spent` не меняется. По порядку из 4.5 повтор увеличивал бы `spent`, потому что резерв уже удалён. Резерва нет — `held` не меняется, трата и запись пишутся.
 - `register` — рой и агенты в одной транзакции; повтор `swarmId` — `false`, ничего не пишется (`on conflict (swarm_id) do nothing`).
-- `close` — `closed_at = coalesce(closed_at, $now)`: повтор не переписывает время и отдаёт тот же `spent` (4.2). Неизвестный рой — `null`. `swarmId`, не являющийся UUID, — `null` без запроса.
+- `close` — `closed_at = coalesce(closed_at, $now)`: повтор не переписывает время и отдаёт тот же `spent` (4.2). Возвращает и `held_micro_usd` (013, 4.7). Неизвестный рой — `null`. `swarmId`, не являющийся UUID, — `null` без запроса.
+- `totals` — `select spent_micro_usd, held_micro_usd from swarm_budgets` для ожидания списаний при закрытии (013, 4.7); неизвестный рой и не UUID — `null`.
 - `findAgent` — строка `swarm_agents` с `expires_at` и `closed` (`closed_at is not null`) роя из `swarm_budgets`; срок и закрытие проверяет ядро.
 - `releaseHolds` — удаляет все строки `budget_holds` и уменьшает `held` роёв и агентов на их суммы одной транзакцией. Вызывается ядром до приёма запросов (AC-004-18); записей ledger не пишет.
 - Цены: `numeric(9, 4)` в базе, строка `PricePerMTok` в порту. Чтение обрезает незначащие нули (`"3.0000"` → `"3"`, `plainPrice`), запись отдаёт строку в SQL без `Number`. `save` — `insert … on conflict (open_router_model) do update` в одной транзакции.

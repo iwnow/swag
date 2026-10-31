@@ -286,6 +286,8 @@ services:
       # Спека 004, 4.11: бюджеты, ledger и цены — в Postgres.
       DATABASE_URL: ${DATABASE_URL}
       LLM_CATALOG_PATH: /etc/swag/models.json
+      # Спека 013, 4.10: ожидание идущих вызовов при закрытии роя.
+      LLM_GATEWAY_CLOSE_WAIT_MS: ${LLM_GATEWAY_CLOSE_WAIT_MS:-5000}
     ports:
       - 127.0.0.1:${LLM_GATEWAY_PORT}:${LLM_GATEWAY_PORT}
     networks:

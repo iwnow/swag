@@ -133,6 +133,7 @@ export const LlmGatewayConfig = z.object({
   LITELLM_MASTER_KEY: z.string().startsWith('sk-').min(16),
   LLM_GATEWAY_UPSTREAM_TIMEOUT_MS: z.coerce.number().int().min(1).default(120000),
   LLM_GATEWAY_STARTUP_TIMEOUT_MS: z.coerce.number().int().min(1).default(60000),
+  LLM_GATEWAY_CLOSE_WAIT_MS: z.coerce.number().int().min(0).max(8000).default(5000), // спека 013, 4.10
   LLM_GATEWAY_BODY_LIMIT_BYTES: z.coerce.number().int().min(1024).default(8388608),
   LLM_PROFILE: z.enum(['test', 'dev', 'test-pay', 'prod']), // спека 002, 4.8; 032, 4.1; test не обращается к OpenRouter (004, 4.9)
   LLM_PRICES_REFRESH_MS: z.coerce.number().int().min(0).default(3600000), // спека 004, 4.11; 0 — выключено

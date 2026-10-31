@@ -114,7 +114,11 @@ export function fakeBudgets(options: { settleFails?: boolean } = {}): FakeBudget
       const swarm = swarms.get(swarmId);
       if (!swarm) return null;
       swarm.closed = true;
-      return { spentMicroUsd: swarm.spent };
+      return totals(swarm);
+    },
+    async totals(swarmId) {
+      const swarm = swarms.get(swarmId);
+      return swarm ? totals(swarm) : null;
     },
     async releaseHolds() {
       const released = [...holds].map(([callId, hold]) => ({

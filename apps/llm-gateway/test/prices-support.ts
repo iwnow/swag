@@ -119,5 +119,7 @@ export function gatewayDeps(catalog: ModelCatalog, log: Logger) {
     trace: fakeTrace(),
     log,
     version: 'test',
+    sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)), // спека 013, 4.7
+    closeWaitMs: 5000,
   };
 }
