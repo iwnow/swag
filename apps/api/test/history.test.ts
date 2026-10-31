@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ApiCore, OrchestratorClient } from '@swag/api-core';
 import { buildApp } from '../src/app.ts';
 import { startApiCore } from '../src/start.ts';
-import { body, silentLog } from './support.ts';
+import { body, bearer, makeStartedAuth, silentLog, T } from './support.ts';
 
 // Нужен запущенный Postgres: POSTGRES_TEST_URL (compose или сервис в CI). Схема создаётся на время файла.
 const url = process.env['POSTGRES_TEST_URL'];
@@ -35,7 +35,11 @@ describe.skipIf(!url)('история роёв на Postgres', () => {
         limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
       },
     );
-    const run = { core, app: await buildApp(core), pool };
+    const run = {
+      core,
+      app: await buildApp(core, {}, (await makeStartedAuth({ core })).app),
+      pool,
+    };
     running.add(run);
     return run;
   }
@@ -68,7 +72,12 @@ describe.skipIf(!url)('история роёв на Postgres', () => {
     };
 
     const first = await start(orchestrator);
-    const created = await first.app.inject({ method: 'POST', url: '/swarms', payload: body(1) });
+    const created = await first.app.inject({
+      headers: bearer(T.adminA),
+      method: 'POST',
+      url: '/swarms',
+      payload: body(1),
+    });
     expect(created.statusCode).toBe(201);
     const swarmId = created.json<{ id: string }>().id;
     // Оркестратор сообщает о запуске через шину: событие приходит в ядро (REQ-001-4).
@@ -82,26 +91,46 @@ describe.skipIf(!url)('история роёв на Postgres', () => {
       type: 'swarm.started',
       data: {},
     });
-    const beforeView = await first.app.inject({ method: 'GET', url: `/swarms/${swarmId}` });
+    const beforeView = await first.app.inject({
+      headers: bearer(T.adminA),
+      method: 'GET',
+      url: `/swarms/${swarmId}`,
+    });
     expect(beforeView.json()).toMatchObject({ status: 'running' });
     const eventsBefore = (
-      await first.app.inject({ method: 'GET', url: `/swarms/${swarmId}/events` })
+      await first.app.inject({
+        headers: bearer(T.adminA),
+        method: 'GET',
+        url: `/swarms/${swarmId}/events`,
+      })
     ).json<unknown[]>();
     expect(eventsBefore).toHaveLength(2);
     await stop(first);
 
     const second = await start(orchestrator);
 
-    const list = await second.app.inject({ method: 'GET', url: '/swarms' });
+    const list = await second.app.inject({
+      headers: bearer(T.adminA),
+      method: 'GET',
+      url: '/swarms',
+    });
     expect(list.json()).toEqual([expect.objectContaining({ id: swarmId, status: 'failed' })]);
-    const after = await second.app.inject({ method: 'GET', url: `/swarms/${swarmId}` });
+    const after = await second.app.inject({
+      headers: bearer(T.adminA),
+      method: 'GET',
+      url: `/swarms/${swarmId}`,
+    });
     expect(after.json()).toMatchObject({
       id: swarmId,
       status: 'failed',
       failure: { reason: 'api_restarted' },
     });
     const eventsAfter = (
-      await second.app.inject({ method: 'GET', url: `/swarms/${swarmId}/events` })
+      await second.app.inject({
+        headers: bearer(T.adminA),
+        method: 'GET',
+        url: `/swarms/${swarmId}/events`,
+      })
     ).json<{ type: string; data: unknown }[]>();
     expect(eventsAfter.slice(0, 2)).toEqual(eventsBefore);
     expect(eventsAfter[2]).toMatchObject({

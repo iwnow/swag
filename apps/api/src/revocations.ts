@@ -1,5 +1,5 @@
 import type { Logger } from '@swag/api-core';
-import type { AccessTokenClaims, TokenRevocationList } from '@swag/contracts';
+import { TokenRevocationList, type AccessTokenClaims } from '@swag/contracts';
 
 // Спека 024, 4.12: синхронизация отзывов токенов из identity. Таблица userId → validAfter целиком заменяется каждой удачной синхронизацией.
 export interface RevocationSync {
@@ -90,4 +90,22 @@ export function createRevocationSync(deps: RevocationSyncDeps): RevocationSync {
       return 'ok';
     },
   };
+}
+
+// Спека 024, 4.12 и 4.13: GET {IDENTITY_URL}/internal/token-revocations с IDENTITY_INTERNAL_TOKEN; ошибка — reject, текст токена в ошибке не появляется.
+export async function fetchTokenRevocations(options: {
+  baseUrl: string;
+  token: string;
+  timeoutMs: number;
+  fetch?: typeof fetch;
+}): Promise<TokenRevocationList> {
+  const response = await (options.fetch ?? fetch)(
+    new URL('/internal/token-revocations', options.baseUrl),
+    {
+      headers: { authorization: `Bearer ${options.token}` },
+      signal: AbortSignal.timeout(options.timeoutMs),
+    },
+  );
+  if (!response.ok) throw new Error(`token revocations: HTTP ${response.status}`);
+  return TokenRevocationList.parse(await response.json());
 }
