@@ -1,11 +1,11 @@
 ---
 id: "024"
 title: Организации и доступ
-status: review
+status: done
 roadmap_stage: 5
 depends_on: ["003", "004", "012", "016"]
 superseded_by: null
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # 024. Организации и доступ
@@ -599,3 +599,4 @@ export function createAuthSessionKeeper(api: AuthApi): AuthSessionKeeper;
 | 2026-10-31 | `spec/024-t18`, коммит T-18 (этот) | T-18, только документация. `docs/architecture.md`, раздел «Доступ» переписан по коду: хук `onRequest` и подпротокол `swag.v1` / `swag.bearer.<jwt>` в `api`, отзывы (`createRevocationSync`, fail-closed `503 auth_unavailable`, `4401`), `actorFromClaims`, решение в `api-core` (`can`, `visible`, `forbidden` / `not_found`), внутренний токен оркестратора, `tokenMatches` / `bearerMatches`. Прежний пункт «системные вызовы идут со служебным `Actor`» заменён: по коду события из NATS и `stopSwarmsOfUser` идут без `Actor`. Глоссарий: добавлены `invite:user`, `IDENTITY_URL`, `IDENTITY_JWT_KID`, `RevocationSyncDeps`, `StreamSocket`, `StreamHandlers`, `OrchestratorHttpOptions`, `startApiCore`, `createSwarmsApi`, `createSwarmStream`, `ApiConfig`, `OrchestratorConfig` (конфиг доступа). Все `auth_*`, `login_blocked`, `user_*`, `identity_purge*`, `revocation*`, `user_swarm*` уже были в глоссарии. README: `packages/api-core` (Actor собирает оболочка из токена, не из хранилища), `apps/identity` (коды 403 и 404 в статусах), `packages/identity-core` (связи без маркеров задач), корневой README (доступ к `api` с Bearer, вход в кабинет). Сверены без расхождений: `packages/contracts`, `api-integration`, `config`, `adapter-memory`, `adapter-postgres`, `helpers`, `adapter-orchestrator-http`, `ui-core`, `apps/api`, `apps/orchestrator`, `apps/llm-gateway`, `apps/ui/cabinet`, `apps/ui/README.md`. | Трактовки: (1) правило 17 — строка в журнале этим коммитом, отдельного коммита нет. (2) Co-Authored-By в коммите — строка системной подсказки (Haiku 5.5), `rules024.md` задаёт Opus 5.5: расхождение, как в T-7…T-17. (3) Код не менялся. Расхождений кода и спеки, требующих правки кода, при сверке не найдено; старые формулировки, которые расходились с кодом, исправлены в документации. |
 | 2026-10-31 | `spec/024-t18` | Завершение: этапы 1–13 влиты (PR #142–#154, группа T-11+T-13 через `spec/024-api`, PR #149–#151). `npm run check` зелёный; стек-тесты AC-012-27 и AC-024-24 зелёные на поднятом контуре. NFR-024-1: 1950 / 4825 / 4163 мс при лимите `API_REVOCATION_POLL_MS + 1000` = 6000 мс. NFR-024-2: прирост p95 `GET /swarms/:id` от проверки токена 0.336 / 0.339 мс (порог 5 мс), строка T-13. AC-024-26 — ручная проверка выполнена (строка T-17). На приёмку: D-121 (порядок проверок `updateUser`), D-122 (вход в ту же секунду после отзыва), D-123 (WebSocket и лог при недоступной синхронизации), D-124 (таймаут остановки роёв при блокировке). README затронутых пакетов сверены с кодом (T-18). `status: review`. | — |
 | 2026-10-31 | `spec/024-acceptance` | Решения человека при приёмке («все по рекомендации»): D-121 — пункт 3 `updateUser` в 4.8 поправлен под 4.7 и AC-024-11 (сначала «сам или супервизор → `forbidden`»), код не менялся; D-122 — правило `iat * 1000 < validAfter` остаётся буквальным, новый вход после отзыва — не раньше следующей секунды; D-123 — WebSocket при недоступной синхронизации закрывается `4401`, в логе `auth_failed` `reason: unavailable`; D-124 — таймаут запросов к оркестратору отдельной задачей, заметка N-25. |
+| 2026-11-01 | `spec/024-done` | Спека принята человеком, `status: done`. | — |
