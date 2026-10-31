@@ -2,15 +2,22 @@ import {
   LoginRequest,
   RegistrationConfirmRequest,
   RegistrationRequest,
+  actorFromClaims,
+  can,
   type AccessTokenClaims,
+  type Actor,
   type AuthErrorCode,
   type AuthMe,
   type AuthUser,
   type AuthRefreshed,
   type AuthSession,
+  type ManagedUser,
+  type OrganizationList,
+  type OrganizationSummary,
   type OrgRole,
   type Role,
   type ServiceInfo,
+  type UserList,
 } from '@swag/contracts';
 import type { z } from 'zod';
 
@@ -186,6 +193,8 @@ export interface IdentityCore {
   ): Promise<Result<{ refreshed: AuthRefreshed; refreshToken: string }>>;
   logout(refreshToken: string | undefined): Promise<Result<void>>; // нет или неизвестен — тоже ok
   me(accessToken: string | undefined): Promise<Result<AuthMe>>;
+  listUsers(accessToken: string | undefined, query: { orgId?: string }): Promise<Result<UserList>>;
+  listOrganizations(accessToken: string | undefined): Promise<Result<OrganizationList>>;
   ensureSupervisor(): Promise<void>; // бросает при занятом email (REQ-012-15); вызывает оболочка до listen
 }
 
@@ -226,6 +235,24 @@ const MESSAGES: Record<AuthErrorCode, string> = {
   not_found: 'not found',
   user_blocked: 'user blocked',
 };
+
+// Спека 024, 4.8: маппинг хранилища в ответы API. Пароль и хэш сюда не попадают.
+const managedUser = (user: StoredUser): ManagedUser => ({
+  id: user.id,
+  email: user.email,
+  role: user.role,
+  orgId: user.orgId,
+  blocked: user.blockedAt !== null,
+  createdAt: new Date(user.createdAt).toISOString(),
+});
+const organizationSummary = (
+  organization: StoredOrganization & { userCount: number },
+): OrganizationSummary => ({
+  id: organization.id,
+  name: organization.name,
+  createdAt: new Date(organization.createdAt).toISOString(),
+  userCount: organization.userCount,
+});
 
 const ok = <T>(value: T): Result<T> => ({ ok: true, value });
 const fail = <T>(code: AuthErrorCode, issues?: IdentityError['issues']): Result<T> => ({
@@ -418,7 +445,7 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     }
     if (rotated.status === 'invalid') return fail('invalid_refresh_token');
     const found = await store.findUserById(rotated.userId);
-    if (!found) return fail('invalid_refresh_token');
+    if (!found || found.user.blockedAt !== null) return fail('invalid_refresh_token');
     const accessToken = await signAccessToken(found.user, now);
     return ok({ refreshed: { accessToken, expiresIn: settings.accessTtlS }, refreshToken: token });
   };
@@ -479,16 +506,62 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
       log.warn('login_failed', user ? { userId: user.id } : {});
       return fail('invalid_credentials');
     }
+    if (user.blockedAt !== null) {
+      log.warn('login_blocked', { userId: user.id });
+      return fail('user_blocked');
+    }
     const found = await store.findUserById(user.id);
     return ok(await issueSession(user, found?.organization ?? null));
   };
 
-  const me = async (accessToken: string | undefined): Promise<Result<AuthMe>> => {
+  // Внутренняя: проверка токена доступа и отзыва (спека 024, 4.8). Роль и организация — из хранилища, не из токена.
+  const authenticate = async (
+    accessToken: string | undefined,
+  ): Promise<
+    Result<{ actor: Actor; user: StoredUser; organization: StoredOrganization | null }>
+  > => {
     const claims = accessToken === undefined ? null : await verifier.verify(accessToken);
     if (!claims) return fail('unauthorized');
     const found = await store.findUserById(claims.sub);
     if (!found) return fail('unauthorized');
-    return ok({ user: authUser(found.user), organization: authOrganization(found.organization) });
+    const { user, organization } = found;
+    const revoked = user.tokensValidAfter !== null && claims.iat * 1000 < user.tokensValidAfter;
+    if (user.blockedAt !== null || revoked) return fail('unauthorized');
+    const actor = actorFromClaims({ ...claims, org: user.orgId, role: user.role });
+    return ok({ actor, user, organization });
+  };
+
+  const me = async (accessToken: string | undefined): Promise<Result<AuthMe>> => {
+    const auth = await authenticate(accessToken);
+    if (!auth.ok) return auth;
+    const { user, organization } = auth.value;
+    return ok({ user: authUser(user), organization: authOrganization(organization) });
+  };
+
+  // admin — только своя организация, query.orgId игнорируется; supervisor — все или orgId (4.7).
+  const listUsers = async (
+    accessToken: string | undefined,
+    query: { orgId?: string },
+  ): Promise<Result<UserList>> => {
+    const auth = await authenticate(accessToken);
+    if (!auth.ok) return auth;
+    const { actor } = auth.value;
+    if (!can(actor, 'user.manage')) return fail('forbidden');
+    const orgId = actor.role === 'supervisor' ? query.orgId : actor.orgId;
+    // admin без организации контракт не допускает; без фильтра такой вызов показал бы всех.
+    if (orgId === null) return fail('forbidden');
+    const users = await store.listUsers(orgId === undefined ? {} : { orgId });
+    return ok({ users: users.map(managedUser) });
+  };
+
+  const listOrganizations = async (
+    accessToken: string | undefined,
+  ): Promise<Result<OrganizationList>> => {
+    const auth = await authenticate(accessToken);
+    if (!auth.ok) return auth;
+    if (!can(auth.value.actor, 'organization.read')) return fail('forbidden');
+    const organizations = await store.listOrganizations();
+    return ok({ organizations: organizations.map(organizationSummary) });
   };
 
   // Исключение хранилища или ядра превращается в internal_error. В лог пишется только имя операции:
@@ -512,6 +585,8 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     refresh: guarded('refresh', refresh),
     logout: guarded('logout', logout),
     me: guarded('me', me),
+    listUsers: guarded('listUsers', listUsers),
+    listOrganizations: guarded('listOrganizations', listOrganizations),
     ensureSupervisor,
   };
 }
