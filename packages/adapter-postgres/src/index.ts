@@ -421,6 +421,7 @@ export async function ledgerReport(
 // Спека 012, 4.3 и 4.9: хранилище identity. Времена порта — мс эпохи, в базе — timestamptz: в запросы идут Date, из базы — getTime().
 type RotateResult = Awaited<ReturnType<IdentityStore['rotateSession']>>;
 type ConfirmResult = Awaited<ReturnType<IdentityStore['confirmRegistration']>>;
+type AcceptResult = Awaited<ReturnType<IdentityStore['acceptInvitation']>>;
 
 const toDate = (ms: number): Date => new Date(ms);
 
@@ -431,7 +432,12 @@ interface UserRow {
   role: StoredUser['role'];
   org_id: string | null;
   created_at: Date;
+  blocked_at: Date | null;
+  tokens_valid_after: Date | null;
 }
+
+const USER_COLUMNS =
+  'id, email, password_hash, role, org_id, created_at, blocked_at, tokens_valid_after';
 
 const userFromRow = (row: UserRow): StoredUser => ({
   id: row.id,
@@ -440,6 +446,8 @@ const userFromRow = (row: UserRow): StoredUser => ({
   role: row.role,
   orgId: row.org_id,
   createdAt: row.created_at.getTime(),
+  blockedAt: row.blocked_at?.getTime() ?? null,
+  tokensValidAfter: row.tokens_valid_after?.getTime() ?? null,
 });
 
 // Конфликт уникального индекса users.email (4.3, п. 4 confirmRegistration): гонка двух регистраций одного email.
@@ -452,7 +460,7 @@ export function createPostgresIdentityStore(pool: Pool): IdentityStore {
   return {
     async findUserByEmail(email: string): Promise<StoredUser | null> {
       const result = await pool.query<UserRow>(
-        'select id, email, password_hash, role, org_id, created_at from users where email = $1',
+        `select ${USER_COLUMNS} from users where email = $1`,
         [email],
       );
       const row = result.rows[0];
@@ -464,6 +472,7 @@ export function createPostgresIdentityStore(pool: Pool): IdentityStore {
         UserRow & { org_name: string | null; org_created_at: Date | null }
       >(
         `select u.id, u.email, u.password_hash, u.role, u.org_id, u.created_at,
+                u.blocked_at, u.tokens_valid_after,
                 o.name as org_name, o.created_at as org_created_at
            from users u left join organizations o on o.id = u.org_id
           where u.id = $1`,
@@ -572,6 +581,172 @@ export function createPostgresIdentityStore(pool: Pool): IdentityStore {
         'update sessions set revoked_at = $2 where refresh_hash = $1 and revoked_at is null and expires_at > $2',
         [refreshHash, toDate(now)],
       );
+    },
+
+    async listUsers({ orgId }: { orgId?: string }): Promise<StoredUser[]> {
+      const result = await pool.query<UserRow>(
+        `select ${USER_COLUMNS} from users where $1::uuid is null or org_id = $1 order by email`,
+        [orgId ?? null],
+      );
+      return result.rows.map(userFromRow);
+    },
+
+    // Одна транзакция. Непереданные поля не меняются; revokeAt отзывает живые сессии пользователя.
+    async updateUser({ id, role, blockedAt, revokeAt }): Promise<StoredUser> {
+      return transact<StoredUser>(pool, async (client) => {
+        const updated = await client.query<UserRow>(
+          `update users
+              set role = coalesce($2::text, role),
+                  blocked_at = case when $3::boolean then $4::timestamptz else blocked_at end,
+                  tokens_valid_after = coalesce($5::timestamptz, tokens_valid_after)
+            where id = $1
+        returning ${USER_COLUMNS}`,
+          [
+            id,
+            role ?? null,
+            blockedAt !== undefined,
+            blockedAt === undefined || blockedAt === null ? null : toDate(blockedAt),
+            revokeAt === undefined ? null : toDate(revokeAt),
+          ],
+        );
+        const user = updated.rows[0];
+        if (!user) throw new Error('user not found');
+        if (revokeAt !== undefined) {
+          await client.query(
+            'update sessions set revoked_at = $2 where user_id = $1 and revoked_at is null',
+            [id, toDate(revokeAt)],
+          );
+        }
+        return { commit: true, value: userFromRow(user) };
+      });
+    },
+
+    async addInvitation(i): Promise<void> {
+      await pool.query(
+        'insert into invitations (token_hash, email, org_id, role, invited_by, expires_at, used_at, created_at) values ($1, $2, $3, $4, $5, $6, null, $7)',
+        [
+          i.tokenHash,
+          i.email,
+          i.orgId,
+          i.role,
+          i.invitedBy,
+          toDate(i.expiresAt),
+          toDate(i.createdAt),
+        ],
+      );
+    },
+
+    // Одна транзакция, как confirmRegistration: приглашение гасится, при занятом email — rollback.
+    async acceptInvitation({ tokenHash, now, user }): Promise<AcceptResult> {
+      return transact<AcceptResult>(pool, async (client) => {
+        const accepted = await client.query<{
+          email: string;
+          org_id: string;
+          role: StoredUser['role'];
+        }>(
+          'update invitations set used_at = $2 where token_hash = $1 and used_at is null and expires_at > $2 returning email, org_id, role',
+          [tokenHash, toDate(now)],
+        );
+        const invitation = accepted.rows[0];
+        if (!invitation) return { commit: false, value: { status: 'invalid_token' } };
+
+        const taken = await client.query('select 1 from users where email = $1', [
+          invitation.email,
+        ]);
+        if ((taken.rowCount ?? 0) > 0) return { commit: false, value: { status: 'email_taken' } };
+
+        try {
+          await client.query(
+            'insert into users (id, email, password_hash, role, org_id, created_at) values ($1, $2, $3, $4, $5, $6)',
+            [
+              user.id,
+              invitation.email,
+              user.passwordHash,
+              invitation.role,
+              invitation.org_id,
+              toDate(user.createdAt),
+            ],
+          );
+        } catch (error) {
+          if (isEmailConflict(error)) return { commit: false, value: { status: 'email_taken' } };
+          throw error;
+        }
+        const organization = await client.query<{ id: string; name: string; created_at: Date }>(
+          'select id, name, created_at from organizations where id = $1',
+          [invitation.org_id],
+        );
+        const org = organization.rows[0];
+        if (!org) throw new Error('organization not found');
+        return {
+          commit: true,
+          value: {
+            status: 'ok',
+            user: {
+              id: user.id,
+              email: invitation.email,
+              passwordHash: user.passwordHash,
+              role: invitation.role,
+              orgId: invitation.org_id,
+              createdAt: user.createdAt,
+              blockedAt: null,
+              tokensValidAfter: null,
+            },
+            organization: { id: org.id, name: org.name, createdAt: org.created_at.getTime() },
+          },
+        };
+      });
+    },
+
+    async listOrganizations(): Promise<(StoredOrganization & { userCount: number })[]> {
+      const result = await pool.query<{
+        id: string;
+        name: string;
+        created_at: Date;
+        user_count: number;
+      }>(
+        `select o.id, o.name, o.created_at, count(u.id)::int as user_count
+           from organizations o left join users u on u.org_id = o.id
+          group by o.id order by o.name`,
+      );
+      return result.rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        createdAt: row.created_at.getTime(),
+        userCount: row.user_count,
+      }));
+    },
+
+    async tokenRevocations(since: number) {
+      const result = await pool.query<{
+        id: string;
+        tokens_valid_after: Date;
+        blocked_at: Date | null;
+      }>('select id, tokens_valid_after, blocked_at from users where tokens_valid_after > $1', [
+        toDate(since),
+      ]);
+      return result.rows.map((row) => ({
+        userId: row.id,
+        validAfter: row.tokens_valid_after.getTime(),
+        blocked: row.blocked_at !== null,
+      }));
+    },
+
+    async purge(before: number) {
+      const at = toDate(before);
+      const confirmations = await pool.query(
+        'delete from email_confirmations where expires_at < $1',
+        [at],
+      );
+      const invitations = await pool.query('delete from invitations where expires_at < $1', [at]);
+      const sessions = await pool.query(
+        'delete from sessions where expires_at < $1 or revoked_at < $1',
+        [at],
+      );
+      return {
+        confirmations: confirmations.rowCount ?? 0,
+        invitations: invitations.rowCount ?? 0,
+        sessions: sessions.rowCount ?? 0,
+      };
     },
   };
 }

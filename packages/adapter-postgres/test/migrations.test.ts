@@ -212,6 +212,7 @@ describe.skipIf(!url)('adapter-postgres миграции', () => {
         schema: fresh,
         migrationsSchema: fresh,
         migrationsTable: 'pgmigrations',
+        advisoryLockMode: 'wait', // параллельные файлы тестов ждут блокировку базы, а не падают
         log: () => undefined,
       });
     const userColumns = async (): Promise<string[]> => {

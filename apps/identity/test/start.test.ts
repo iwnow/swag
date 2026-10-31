@@ -112,7 +112,15 @@ describe.skipIf(!url)('старт identity на Postgres', () => {
       tokenHash: 'a'.repeat(64),
       now,
       org: { id: orgId, name: 'Компания', createdAt: now },
-      user: { id: randomUUID(), passwordHash: 'x', role: 'admin', orgId, createdAt: now },
+      user: {
+        id: randomUUID(),
+        passwordHash: 'x',
+        role: 'admin',
+        orgId,
+        createdAt: now,
+        blockedAt: null,
+        tokensValidAfter: null,
+      },
     });
     await pool.end();
 
