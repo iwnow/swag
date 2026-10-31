@@ -232,9 +232,9 @@ describe('доступ в оболочке api', () => {
     expect(plain.statusCode).not.toBe(200);
     expect(plain.body).not.toContain(SWARM_TASK);
     // Клиент без swag.v1: ws на handleProtocols → false принимает апгрейд без Sec-WebSocket-Protocol, клиент рвёт соединение
-    // (1006, не 4401). Серверный сокет при этом остаётся открытым до закрытия TCP, поэтому его завершаем вручную.
+    // (1006, не 4401), а сервер закрывает свой сокет сам, не подписываясь на рой.
     expect(await streamResult(port, id, [`swag.bearer.${T.u1}`])).toBe(1006);
-    for (const client of app.websocketServer.clients) client.terminate();
+    await vi.waitFor(() => expect(app.websocketServer.clients.size).toBe(0));
     expect(core).toBeDefined();
   });
 

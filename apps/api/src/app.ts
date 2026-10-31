@@ -114,6 +114,11 @@ export async function buildApp(
       };
       socket.on('close', dispose);
       socket.on('error', dispose);
+      // Без swag.v1 ws принимает апгрейд без подпротокола, а клиент такое соединение не принимает: сервер обрывает его сразу.
+      if (socket.protocol !== 'swag.v1') {
+        socket.terminate();
+        return;
+      }
 
       const outcome = await auth.authenticate(
         protocolToken(request.headers['sec-websocket-protocol']),
