@@ -43,7 +43,7 @@ describe.skipIf(!url)('adapter-postgres миграции', () => {
     const rowsAfterFirst = await migrationRows();
 
     expect(afterFirst).toEqual(expect.arrayContaining(['swarm_events', 'swarms']));
-    expect(rowsAfterFirst).toBe(2); // 0001_swarms и 0002_money
+    expect(rowsAfterFirst).toBe(3); // 0001_swarms, 0002_money и 0003_identity
 
     await expect(runMigrations(url ?? '', { schema })).resolves.toBeUndefined();
 
@@ -71,6 +71,8 @@ describe.skipIf(!url)('adapter-postgres миграции', () => {
       }
       expect(byTable).toEqual({
         budget_holds: ['call_id', 'swarm_id', 'agent_id', 'amount_micro_usd', 'created_at'],
+        email_confirmations: ['token_hash', 'email', 'expires_at', 'used_at', 'created_at'],
+        organizations: ['id', 'name', 'created_at'],
         ledger_entries: [
           'call_id',
           'ts',
@@ -90,6 +92,16 @@ describe.skipIf(!url)('adapter-postgres миграции', () => {
           'updated_at',
         ],
         pgmigrations: expect.any(Array),
+        sessions: [
+          'id',
+          'user_id',
+          'refresh_hash',
+          'previous_hash',
+          'expires_at',
+          'revoked_at',
+          'created_at',
+        ],
+        users: ['id', 'email', 'password_hash', 'role', 'org_id', 'created_at'],
         swarm_agents: [
           'swarm_id',
           'agent_id',
@@ -132,5 +144,33 @@ describe.skipIf(!url)('adapter-postgres миграции', () => {
     } finally {
       await client.query(`drop schema ${fresh} cascade`);
     }
+  });
+  it('AC-012-3: миграция 0003 создаёт таблицы identity с ограничениями; повторный запуск ничего не меняет', async () => {
+    await runMigrations(url ?? '', { schema });
+    const tablesBefore = await tables();
+    const rowsBefore = await migrationRows();
+    const orgId = randomUUID();
+    await client.query(
+      `insert into ${schema}.organizations (id, name, created_at) values ($1, 'Магазин', now())`,
+      [orgId],
+    );
+    const insertUser = (role: string, org: string | null, email: string) =>
+      client.query(
+        `insert into ${schema}.users (id, email, password_hash, role, org_id, created_at)
+         values ($1, $2, 'hash', $3, $4, now())`,
+        [randomUUID(), email, role, org],
+      );
+
+    await expect(insertUser('supervisor', orgId, 'sup-a@swag.local')).rejects.toThrow(/check/);
+    await expect(insertUser('admin', null, 'admin-a@swag.local')).rejects.toThrow(/check/);
+    await insertUser('admin', orgId, 'admin-b@swag.local');
+    await expect(insertUser('user', orgId, 'admin-b@swag.local')).rejects.toThrow(
+      /unique|duplicate/,
+    );
+    await insertUser('supervisor', null, 'sup-b@swag.local');
+
+    await runMigrations(url ?? '', { schema });
+    expect(await tables()).toEqual(tablesBefore);
+    expect(await migrationRows()).toBe(rowsBefore);
   });
 });

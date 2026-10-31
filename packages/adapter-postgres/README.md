@@ -4,7 +4,7 @@
 
 ## Задачи
 
-- `runMigrations(databaseUrl, { schema? })` — применить миграции из `migrations/` (спека 003, 4.4, REQ-003-5; спека 004, 4.5). Повторный вызов ничего не меняет.
+- `runMigrations(databaseUrl, { schema? })` — применить миграции из `migrations/` (спека 003, 4.4, REQ-003-5; спека 004, 4.5; спека 012, 4.9). Повторный вызов ничего не меняет.
 - `createPostgresSwarmStore(pool)` — хранилище роёв: события и проекция (`SwarmView`) пишутся одной транзакцией (REQ-003-2, 4.4).
 - `createPostgresBudgetStore(pool)` — `BudgetStore` gateway (спека 004, 4.4, 4.5): регистрация роя, поиск агента, условный резерв (REQ-004-9), списание с записью ledger (REQ-004-10), закрытие роя, снятие резервов при старте.
 - `createPostgresPriceStore(pool)` — `PriceStore`: последние успешные цены OpenRouter по id модели OpenRouter (спека 004, 4.5, Q-8).
@@ -16,7 +16,8 @@
 - `src/index.ts` — `runMigrations`, `createPostgresSwarmStore`, `createPostgresBudgetStore`, `createPostgresPriceStore`, `ledgerReport`, внутренние `transact` и `plainPrice`.
 - `migrations/0001_swarms.sql` — таблицы `swarms` и `swarm_events` (003, 4.4), формат `-- Up Migration` / `-- Down Migration`.
 - `migrations/0002_money.sql` — `swarm_budgets`, `swarm_agents`, `budget_holds`, `ledger_entries`, `model_prices` (004, 4.5), текст из спеки без изменений.
-- `test/migrations.test.ts` — AC-003-1, AC-004-20 (колонки, ограничения, параллельный запуск).
+- `migrations/0003_identity.sql` — `organizations`, `users`, `email_confirmations`, `sessions` (012, 4.9), текст из спеки без изменений. Ограничения: `users.role` — `user`, `admin`, `supervisor`; у супервизора нет `org_id`, у остальных есть.
+- `test/migrations.test.ts` — AC-003-1, AC-004-20 (колонки, ограничения, параллельный запуск), AC-012-3 (таблицы identity, отказы ограничений, повторный запуск).
 - `test/store.test.ts` — AC-003-2 и AC-003-3 на `createPostgresSwarmStore`.
 - `test/money.test.ts` — AC-004-13 (параллельные резервы роя и агента, закрытый рой, агент не из регистрации), AC-004-14 (списание, повтор, параллельный повтор, гонка с `releaseHolds`), AC-004-18, AC-004-32, AC-004-40 (часть хранилища); тесты `close`, `findAgent` и повторной регистрации.
 - `test/bench.test.ts` — замер NFR-003-2 (1000 событий одного роя, p50 и p95 в stdout, без порога).
@@ -90,3 +91,4 @@
 - 003 — 4.4, REQ-003-1, REQ-003-2, REQ-003-5, REQ-003-8, AC-003-1, AC-003-2, AC-003-3, NFR-003-2 (T-5, T-6).
 - 003, Q-2 — выбор инструмента миграций.
 - 004 — 4.4 и 4.5 (хранилище), REQ-004-9, REQ-004-10, AC-004-13, AC-004-14, AC-004-18 (хранилище), AC-004-20, AC-004-32, AC-004-40 (хранилище), NFR-004-1 (T-3).
+- 012 — 4.9 (миграция 0003), AC-012-3.
