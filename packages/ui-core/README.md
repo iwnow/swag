@@ -9,6 +9,7 @@
 - `listSwarms()` — список роёв.
 - `openSwarm(id)` — страница роя: `view` строится через `applyEvent` из `@swag/api-integration`, `feed` — список принятых событий; при обрыве потока переподключение с `after = lastSeq` через паузу (1 с по умолчанию); повторные события не попадают в ленту.
 - `SwarmPage.stop()` — остановка через `SwarmsApi.stop`; `close()` — закрыть поток и отменить переподключение.
+- `createAuthSessionKeeper(api)` — сессия входа кабинета (спека 024, 4.15): `restore()` по cookie, `login`, `logout`, токен доступа в памяти (`accessToken()`), `renew()` с одним общим `refresh` на все одновременные вызовы (он же делит `restore()`), `onSignedOut(listener)` — при неудаче обновления токен стирается и слушатели вызываются. Порт `AuthApi` — адаптер на `fetch` в `apps/ui/cabinet`.
 - `traceUrl(traceId)` — адрес трейса события в Grafana по шаблону из зависимостей; без `traceId` — `null` (спека 016, 4.10).
 - `formatLlmCall(data)` — строка события `llm.call` для ленты роя: модель, токены с кэшем, стоимость в долларах (6 знаков), статус `прерван` или `ошибка <код>`; при `usage: null` — `без usage`, при оценке из `charge` (`basis: estimate`) — `≈$…` (спека 002, 4.11; изменено 004, 4.8). Сумма — `charge.microUsd`, без `charge` — `costMicroUsd`. Чистая функция вне `createUiCore`: фронтенд вызывает её напрямую.
 - `formatUsd(microUsd)` — сумма в долларах, 4 знака, округление вверх (`$0.0124`); целочисленная арифметика (спека 004, 4.8).
@@ -25,6 +26,7 @@
 
 ## Что внутри сейчас
 
+- `src/auth-session.ts` — `createAuthSessionKeeper`, порт `AuthApi`, интерфейс `AuthSessionKeeper` (реэкспорт из `src/index.ts`).
 - `src/index.ts` — `createUiCore`, порты `SwarmsApi`, `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функции `formatLlmCall`, `formatAgentStep`, `unreadMessageIds`, `formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney`, `agentBudgetMicro`, `maxTokensInput`, `swarmFormInput`, `failureReasonText`.
 - `test/ui-core.test.ts` — AC-001-23, AC-016-14, AC-022-23, AC-031-6 (проекция `swarm.created` без `maxTokens`).
 - `test/format-llm-call.test.ts` — AC-002-24, AC-004-27 (строки `formatLlmCall` из 4.8).
@@ -32,10 +34,12 @@
 - `test/money-input.test.ts` — перевод полей формы (`agentBudgetMicro`, `swarmFormInput`), проверка результата через `SwarmCreateRequest`, тексты причин `failureReasonText` (спека 004, 4.8; T-15); AC-031-5 — лимит ответа роя и агента, `abc` → `NaN` и ошибка `validateForm` (спека 031, T-5).
 - `test/format-agent-step.test.ts` — AC-022-23.
 - `test/unread-message-ids.test.ts` — AC-030-7.
+- `test/auth-session.test.ts` — AC-024-23 (восстановление, вход, один `refresh` на `renew`, один `refresh` на `restore` и `renew`, `onSignedOut`, `logout`, отписка, поздний `refresh` после `logout`/`login`).
 
 ## Ключевые решения
 
-- Порты, а не `fetch`/`WebSocket` в ядре: адаптеры живут в `apps/ui/cabinet/src/app/api.ts` (T-12, T-13).
+- Порты, а не `fetch`/`WebSocket` в ядре: адаптеры живут в `apps/ui/cabinet/src/app/api.ts` (T-12, T-13) и в `apps/ui/cabinet/src/app/auth-api.ts` (024, T-16).
+- Сессия входа (024, 4.15): токен доступа только в памяти; reject `refresh` в `restore()` и `renew()` — неудача, как `null`; код ошибки входа — `error.code`, иначе `'unknown'`; `logout()` не вызывает `onSignedOut` (выход инициирует вызывающий код), ошибка `api.logout` пробрасывается, токен стирается в любом случае. Поколение сессии (`epoch`) увеличивается в `login`, `logout` и при выходе по неудачному `renew`: `refresh`, начатый до этого, при ответе не пишет токен и считается устаревшим; `renew` в этом случае не вызывает `onSignedOut`. `restore` делит общий `refresh` с `renew`, но при неудаче `onSignedOut` не вызывает.
 - Переподключение: `onError` от потока → `Timers.setTimeout` → `open(id, lastSeq)`; защита от повторов — проверкой `event.seq <= view.lastSeq` до `applyEvent`; событие, не подходящее к состоянию, пропускается.
 - Модель формы роя не дублируется: список моделей UI берёт из `PlatformModel.options` контракта, форма валидируется `SwarmCreateRequest`, значение по умолчанию — из схемы (`chat-small`).
 - Зависимости (`package.json`): `@swag/contracts`, `@swag/api-integration`, `zod`; в исходниках `zod` напрямую не импортируется. Белый список ядра — REQ-001-18.
@@ -57,6 +61,7 @@
 - 001 — 4.8, REQ-001-13.
 - 016 — 4.10, REQ-016-13, AC-016-14.
 - 014 — деление `ui-core` по фронтендам (D-11).
+- 024 — 4.15, REQ-024-13 (ядро), AC-024-23.
 - 002 — 4.11, REQ-002-15, AC-002-24.
 - 022 — 4.1 (`PlatformModel`, `AgentDraft.model`), 4.10, REQ-022-15, AC-022-23.
 - 030 — 4.4, REQ-030-6, AC-030-7.

@@ -10,11 +10,16 @@
 
 ## Что внутри сейчас
 
-- `src/app/api.ts` — адаптеры портов `ui-core`: REST и WebSocket по относительному пути `/api`.
+- `src/app/api.ts` — адаптеры портов `ui-core`: REST и WebSocket по относительному пути `/api`; `createSwarmsApi(session)` и `createSwarmStream(session)` кладут `Authorization: Bearer` (REST) и подпротокол `swag.bearer.<token>` (WebSocket); на `401` — `renew()` и один повтор, на закрытие `4401` потока — `renew()`, переподключение (`onError` ui-core) только после удачного обновления; без токена поток не открывается и не переподключается.
+- `src/app/auth-api.ts` — адаптер `AuthApi` из `ui-core` на `fetch` по `/auth` (`credentials: 'same-origin'`); ошибка с полем `code` из тела `{ error: { code } }`.
+- `src/app/session.ts` — токен `SESSION`: один `AuthSessionKeeper` на приложение.
+- `src/app/auth.guard.ts` — guard маршрутов роёв: токен есть или `restore()` по cookie, иначе `/login`.
+- `src/app/login.page.ts` — страница `/login`: email, пароль, текст ошибки по коду (русский).
+- `src/app/app.ts` — шапка с кнопкой «Выйти» (вне `/login`): `logout()` и переход на `/login`; `onSignedOut` → `/login`.
 - `src/app/ui.ts` — `ui-core` в DI-токене `UI`; `TRACE_URL_TEMPLATE` — шаблон ссылки на трейс в Grafana Explore.
 - `src/app/swarm-graph.ts` — граф роя, чистый SVG без библиотеки (Q-4). Геометрия — чистые функции `layoutNodes` (узлы по кругу) и `edgePath` (путь ребра, дуга, петля).
 - Страницы: `swarm-list.page.ts`, `swarm-new.page.ts`, `swarm.page.ts`.
-- `proxy.conf.json` — `/api` → `api:3000` (снимает префикс; WebSocket включён); `/grafana` → `lgtm:3000` без снятия префикса (Grafana на подпути).
+- `proxy.conf.json` — `/api` → `api:3000` (снимает префикс; WebSocket включён); `/auth` → `identity:3003` без снятия префикса; `/grafana` → `lgtm:3000` без снятия префикса (Grafana на подпути). `/internal` не проксируется.
 - `Dockerfile` — dev-образ для `npm run up` (`ng serve`).
 
 ## Ограничения
@@ -22,7 +27,7 @@
 - Только `ng serve` (Q-4). Скрипт `build` (`ng build`) в `package.json` есть, но в CI и в Docker-образе не используется; раздачи собранного приложения в 001 нет.
 - Компоненты не содержат правил: валидация, перевод денег, тексты причин, состояние роя и переподключение — в `@swag/ui-core`. Компонент передаёт значения полей и выводит готовые строки.
 - Пользовательский текст выводится только интерполяцией Angular, без `innerHTML`.
-- Входа нет (до спеки 012).
+- Вход — спека 024 (T-16): страница `/login`, токен доступа только в памяти страницы, обновление по cookie `swag_refresh`. Экранов регистрации, приглашения и админки нет (014).
 - Тестов в cabinet нет: Angular-тестового раннера в проекте нет. Компоненты проверяются сборкой `ng build` и ручной проверкой UI (T-20). Логика денег и её тесты — в `@swag/ui-core` (`packages/ui-core/test/money-input.test.ts`).
 - Превышение бюджета агента над бюджетом роя форма не проверяет: `SwarmCreateRequest` этого не требует, сервер отвечает `400`, текст выводится в ошибке формы (спека 004, 4.7, D-105).
 
@@ -41,6 +46,8 @@
 - Строка денег обновляется таймером раз в 5 с (`MONEY_TICK_MS` в `swarm.page.ts`) и по каждому событию. Таймер запускается в конструкторе страницы и очищается в `ngOnDestroy`, поэтому на другой странице не работает. Таймер ui-core (`Timers`) для него не используется: он нужен только для переподключения потока.
 - Тексты причин `budget_exceeded` и `gateway_unavailable` — `failureReasonText` из `ui-core` (4.8), прочие причины выводятся как пришли (D-107).
 - Логика вне компонентов: `createUiCore` из `@swag/ui-core` подключается через токен `UI`.
+- Сессия (024, 4.15): `createAuthSessionKeeper` из `@swag/ui-core` в токене `SESSION`. Один `renew()` на все одновременные `401` — в `ui-core` через общий промис. Неудача обновления — `onSignedOut` → `/login`. Трактовка: при закрытии потока `4401` вызывается `renew()`; только при `true` поток сообщает `onError`, и `ui-core` переподключается через 1 с с новым токеном; при `false` переподключения нет, `onSignedOut` уводит на `/login`. Без токена поток не открывается и не сообщает `onError`: сессии нет, `onSignedOut`/guard уведёт на `/login`, бесконечного переподключения нет.
+- Вход не проверяет `Authorization` сам: guard смотрит только наличие токена в памяти; истёкший токен обновляется на первом `401` от `api`.
 - Dev-сервер и прокси `/api` → `api:3000` (Q-4). Отклонение: в CI сборка `ng build` не запускается (спека требует `npm run check` без UI-шага).
 - `allowImportingTsExtensions` и `rewriteRelativeImportExtensions` в tsconfig — чтобы Angular собирал TS-исходники `packages/*` с расширениями `.ts`.
 - Ссылка «Трейс» (016, Q-6): относительный адрес `/grafana/explore?...` через прокси `ng serve`, без конфигурации в UI. Шаблон — Explore Grafana с источником Tempo (uid `tempo` в `grafana/otel-lgtm`), запрос TraceQL — сам `traceId`, диапазон — последние 7 дней. Адрес строит `ui-core.traceUrl`, компонент только рисует `<a target="_blank" rel="noopener">`. SDK OpenTelemetry в браузере нет (Q-7).
@@ -54,3 +61,4 @@
 - 002 — 4.11, REQ-002-15 (строка `llm.call` в ленте, T-30).
 - 030 — 4.4, REQ-030-6, T-5 (отметка «не прочитано» в ленте).
 - 014 — каркас и микрофронтенд.
+- 024 — 4.6, 4.15, REQ-024-13, T-16 (вход, сессия, прокси `/auth`; ручная проверка AC-024-26 — в T-17).

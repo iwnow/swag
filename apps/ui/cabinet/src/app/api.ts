@@ -1,48 +1,82 @@
 import type { PlatformEvent, SwarmCreateRequest, SwarmSummary } from '@swag/contracts';
-import type { EventStream, SwarmsApi, StreamHandlers } from '@swag/ui-core';
+import type { AuthSessionKeeper, EventStream, SwarmsApi } from '@swag/ui-core';
 import type { SwarmView } from '@swag/api-integration';
 
 // Адаптеры UI к API: REST и WebSocket идут по относительному пути /api (прокси снимает префикс).
+// Спека 024, 4.15: каждый запрос с Bearer-токеном сессии; на 401 — renew и один повтор.
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    method,
-    headers: body === undefined ? undefined : { 'content-type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const payload =
-    response.status === 202 || response.status === 204 ? undefined : await response.json();
-  if (!response.ok) {
-    const message =
-      (payload as { error?: { message?: string } } | undefined)?.error?.message ??
-      `HTTP ${response.status}`;
-    throw new Error(message);
-  }
-  return payload as T;
+function createRequest(session: AuthSessionKeeper) {
+  const send = (method: string, path: string, body?: unknown): Promise<Response> => {
+    const token = session.accessToken();
+    return fetch(`/api${path}`, {
+      method,
+      headers: {
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        ...(token === null ? {} : { authorization: `Bearer ${token}` }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  };
+
+  // Неудачный renew сам выводит на /login через onSignedOut (App).
+  return async <T>(method: string, path: string, body?: unknown): Promise<T> => {
+    let response = await send(method, path, body);
+    if (response.status === 401 && (await session.renew())) {
+      response = await send(method, path, body);
+    }
+    const payload =
+      response.status === 202 || response.status === 204 ? undefined : await response.json();
+    if (!response.ok) {
+      const message =
+        (payload as { error?: { message?: string } } | undefined)?.error?.message ??
+        `HTTP ${response.status}`;
+      throw new Error(message);
+    }
+    return payload as T;
+  };
 }
 
-export const swarmsApi: SwarmsApi = {
-  list: () => request<SwarmSummary[]>('GET', '/swarms'),
-  create: (body: SwarmCreateRequest) => request<SwarmView>('POST', '/swarms', body),
-  get: (id: string) => request<SwarmView>('GET', `/swarms/${encodeURIComponent(id)}`),
-  stop: async (id: string) => {
-    await request<void>('POST', `/swarms/${encodeURIComponent(id)}/stop`);
-  },
-};
+export function createSwarmsApi(session: AuthSessionKeeper): SwarmsApi {
+  const request = createRequest(session);
+  return {
+    list: () => request<SwarmSummary[]>('GET', '/swarms'),
+    create: (body: SwarmCreateRequest) => request<SwarmView>('POST', '/swarms', body),
+    get: (id: string) => request<SwarmView>('GET', `/swarms/${encodeURIComponent(id)}`),
+    stop: async (id: string) => {
+      await request<void>('POST', `/swarms/${encodeURIComponent(id)}/stop`);
+    },
+  };
+}
 
-export const swarmStream: EventStream = {
-  open(swarmId: string, after: number, handlers: StreamHandlers) {
-    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-    const socket = new WebSocket(
-      `${scheme}://${location.host}/api/swarms/${encodeURIComponent(swarmId)}/stream?after=${after}`,
-    );
-    socket.addEventListener('message', (message: MessageEvent<string>) => {
-      handlers.onEvent(JSON.parse(message.data) as PlatformEvent);
-    });
-    socket.addEventListener('close', () => handlers.onError());
-    socket.addEventListener('error', () => undefined); // закрытие придёт отдельным событием
-    return {
-      close: () => socket.close(),
-    };
-  },
-};
+// Спека 024, 4.6: токен в подпротоколе `swag.bearer.<token>`. Закрытие 4401 — обновить токен до переподключения.
+export function createSwarmStream(session: AuthSessionKeeper): EventStream {
+  return {
+    open(swarmId, after, handlers) {
+      const token = session.accessToken();
+      // Сессии нет: переподключаться незачем, onSignedOut уведёт на /login (иначе ui-core крутил бы таймер бесконечно).
+      if (token === null) return { close: () => undefined };
+      const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+      const socket = new WebSocket(
+        `${scheme}://${location.host}/api/swarms/${encodeURIComponent(swarmId)}/stream?after=${after}`,
+        ['swag.v1', `swag.bearer.${token}`],
+      );
+      socket.addEventListener('message', (message: MessageEvent<string>) => {
+        handlers.onEvent(JSON.parse(message.data) as PlatformEvent);
+      });
+      socket.addEventListener('close', (event: CloseEvent) => {
+        if (event.code !== 4401) {
+          handlers.onError();
+          return;
+        }
+        // Переподключение только после удачного renew; неудача — onSignedOut уведёт на /login.
+        void session.renew().then((renewed) => {
+          if (renewed) handlers.onError();
+        });
+      });
+      socket.addEventListener('error', () => undefined); // закрытие придёт отдельным событием
+      return {
+        close: () => socket.close(),
+      };
+    },
+  };
+}
