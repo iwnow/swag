@@ -676,7 +676,7 @@ settlePending(): Promise<number>; // число закрытых резерво�
   - существующие тесты `apps/api`, которые создают рои, пополняют баланс организации или передают безлимитный фейк.
 
   HTTP-тесты на `inject`. Закрывает: AC-013-2…AC-013-9 на HTTP. Готово, когда: `npm run check` зелёный и группа влита в `main`.
-- [ ] **T-15.** Кабинет по 4.11: `api.ts`, `balance.page.ts`, `app.routes.ts`, `app.ts`. Закрывает: REQ-013-11 (страница). Готово, когда: `npm run check` зелёный.
+- [x] **T-15.** Кабинет по 4.11: `api.ts`, `balance.page.ts`, `app.routes.ts`, `app.ts`. Закрывает: REQ-013-11 (страница). Готово, когда: `npm run check` зелёный.
 - [ ] **T-16.** Кабинет: форма пополнения в `balance.page.ts` и отказ `402` в `swarm-new.page.ts` по 4.11. Закрывает: REQ-013-11 (форма). Готово, когда: `npm run check` зелёный.
 - [ ] **T-17.** Стек-тесты в `apps/api/test/stack.test.ts`:
   - новый `it` для AC-013-24: сумма ledger роя читается из Postgres по `DATABASE_URL` теста;
