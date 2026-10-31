@@ -11,3 +11,18 @@ describe('createMemoryIdentityStore: пустое хранилище', () => {
     expect(await store.hasSupervisor()).toBe(false);
   });
 });
+
+describe('createMemoryIdentityStore: пустое хранилище доступа (спека 024)', () => {
+  it('AC-024-4: listUsers, listOrganizations и tokenRevocations пусты, purge возвращает нули', async () => {
+    const store = createMemoryIdentityStore();
+
+    expect(await store.listUsers({})).toEqual([]);
+    expect(await store.listOrganizations()).toEqual([]);
+    expect(await store.tokenRevocations(0)).toEqual([]);
+    expect(await store.purge(Date.now())).toEqual({
+      confirmations: 0,
+      invitations: 0,
+      sessions: 0,
+    });
+  });
+});
