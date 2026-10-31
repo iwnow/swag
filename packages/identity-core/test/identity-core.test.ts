@@ -3,7 +3,6 @@ import { ServiceInfo } from '@swag/contracts';
 import { createIdentityCore, type IdentityCoreDeps } from '../src/index.ts';
 
 const deps = { version: 'test' } as IdentityCoreDeps;
-const meta = { ip: '127.0.0.1' };
 
 describe('identity-core — каркас (спека 012, T-4)', () => {
   it('REQ-012-1: info() возвращает service identity и версию из deps', () => {
@@ -11,14 +10,9 @@ describe('identity-core — каркас (спека 012, T-4)', () => {
     expect(ServiceInfo.parse(info)).toEqual({ service: 'identity', version: 'test' });
   });
 
-  it('REQ-012-1: операции до T-8..T-10 отвечают internal_error, ensureSupervisor бросает', async () => {
+  it('REQ-012-1: операции до T-9..T-10 отвечают internal_error, ensureSupervisor бросает', async () => {
     const core = createIdentityCore(deps);
-    const stubs = [
-      core.login({}, meta),
-      core.refresh(undefined),
-      core.logout(undefined),
-      core.me(undefined),
-    ];
+    const stubs = [core.refresh(undefined), core.logout(undefined)];
     for (const result of await Promise.all(stubs)) {
       expect(result).toEqual({
         ok: false,

@@ -1,9 +1,11 @@
 import {
+  LoginRequest,
   RegistrationConfirmRequest,
   RegistrationRequest,
   type AccessTokenClaims,
   type AuthErrorCode,
   type AuthMe,
+  type AuthUser,
   type AuthRefreshed,
   type AuthSession,
   type Role,
@@ -200,7 +202,8 @@ const notImplemented = async <T>(): Promise<Result<T>> => ({
 });
 
 export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
-  const { store, clock, log, limiter, mailer, opaque, settings, hasher, signer, ids } = deps;
+  const { store, clock, log, limiter, mailer, opaque, settings, hasher, signer, verifier, ids } =
+    deps;
 
   const parse = <S extends z.ZodType>(schema: S, body: unknown): Result<z.output<S>> => {
     const parsed = schema.safeParse(body);
@@ -271,6 +274,15 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     return sent ? ok(undefined) : fail('mail_unavailable');
   };
 
+  const authUser = (user: StoredUser): AuthUser => ({
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    orgId: user.orgId,
+  });
+  const authOrganization = (organization: StoredOrganization | null) =>
+    organization ? { id: organization.id, name: organization.name } : null;
+
   // Выдаёт токен доступа и токен обновления; токен обновления в хранилище — только хэш.
   const issueSession = async (
     user: StoredUser,
@@ -299,8 +311,8 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
       session: {
         accessToken,
         expiresIn: settings.accessTtlS,
-        user: { id: user.id, email: user.email, role: user.role, orgId: user.orgId },
-        organization: organization ? { id: organization.id, name: organization.name } : null,
+        user: authUser(user),
+        organization: authOrganization(organization),
       },
       refreshToken: token,
     };
@@ -340,6 +352,41 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     return ok(await issueSession(user, org));
   };
 
+  // Хэш от случайной строки: на несуществующий email хэшер всё равно работает столько же, сколько на существующий.
+  let dummyHash: Promise<string> | undefined;
+  const getDummyHash = (): Promise<string> => {
+    dummyHash ??= hasher.hash(opaque.create().token);
+    return dummyHash;
+  };
+
+  const login = async (body: unknown, meta: RequestMeta): Promise<Result<IssuedSession>> => {
+    const parsed = parse(LoginRequest, body);
+    if (!parsed.ok) return parsed;
+    const { email, password } = parsed.value;
+    if (
+      (await exceeded(RATE_LIMITS.loginIp, meta.ip)) ||
+      (await exceeded(RATE_LIMITS.loginEmail, email))
+    ) {
+      return fail('rate_limited');
+    }
+    const user = await store.findUserByEmail(email);
+    const valid = await hasher.verify(user?.passwordHash ?? (await getDummyHash()), password);
+    if (!user || !valid) {
+      log.warn('login_failed', user ? { userId: user.id } : {});
+      return fail('invalid_credentials');
+    }
+    const found = await store.findUserById(user.id);
+    return ok(await issueSession(user, found?.organization ?? null));
+  };
+
+  const me = async (accessToken: string | undefined): Promise<Result<AuthMe>> => {
+    const claims = accessToken === undefined ? null : await verifier.verify(accessToken);
+    if (!claims) return fail('unauthorized');
+    const found = await store.findUserById(claims.sub);
+    if (!found) return fail('unauthorized');
+    return ok({ user: authUser(found.user), organization: authOrganization(found.organization) });
+  };
+
   // Исключение хранилища или ядра превращается в internal_error; наружу текст не уходит.
   const guarded =
     <A extends unknown[], T>(fn: (...args: A) => Promise<Result<T>>) =>
@@ -356,10 +403,10 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     info: () => ({ service: 'identity', version: deps.version }),
     requestRegistration: guarded(requestRegistration),
     confirmRegistration: guarded(confirmRegistration),
-    login: notImplemented,
+    login: guarded(login),
     refresh: notImplemented,
     logout: notImplemented,
-    me: notImplemented,
+    me: guarded(me),
     ensureSupervisor: async () => {
       throw new Error('not implemented');
     },
