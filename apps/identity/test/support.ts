@@ -24,6 +24,8 @@ export const KID = 'test-1';
 export const ACCESS_TTL_S = 900;
 export const REFRESH_TTL_S = 2592000;
 export const CONFIRM_TTL_S = 86400;
+export const INVITE_URL = 'http://127.0.0.1:4200/auth/invite';
+export const INVITE_TTL_S = 604800;
 export const CONFIRM_URL = 'http://127.0.0.1:4200/auth/confirm';
 
 const open: Harness[] = [];
@@ -94,6 +96,8 @@ export async function makeHarness(options: HarnessOptions = {}): Promise<Harness
       accessTtlS: ACCESS_TTL_S,
       refreshTtlS: REFRESH_TTL_S,
       confirmTtlS: CONFIRM_TTL_S,
+      inviteUrl: INVITE_URL,
+      inviteTtlS: INVITE_TTL_S,
       supervisor: options.supervisor ?? null,
     },
   });

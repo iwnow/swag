@@ -18,6 +18,8 @@ import {
   type Role,
   type ServiceInfo,
   type UserList,
+  InvitationAcceptRequest,
+  InvitationRequest,
 } from '@swag/contracts';
 import type { z } from 'zod';
 
@@ -166,6 +168,8 @@ export interface IdentityCoreDeps {
     accessTtlS: number;
     refreshTtlS: number;
     confirmTtlS: number;
+    inviteUrl: string; // IDENTITY_INVITE_URL
+    inviteTtlS: number; // IDENTITY_INVITE_TTL_S
     supervisor: { email: string; password: string } | null;
   };
 }
@@ -195,6 +199,8 @@ export interface IdentityCore {
   me(accessToken: string | undefined): Promise<Result<AuthMe>>;
   listUsers(accessToken: string | undefined, query: { orgId?: string }): Promise<Result<UserList>>;
   listOrganizations(accessToken: string | undefined): Promise<Result<OrganizationList>>;
+  inviteUser(accessToken: string | undefined, body: unknown): Promise<Result<void>>;
+  acceptInvitation(body: unknown, meta: RequestMeta): Promise<Result<IssuedSession>>;
   ensureSupervisor(): Promise<void>; // бросает при занятом email (REQ-012-15); вызывает оболочка до listen
 }
 
@@ -204,6 +210,9 @@ export const ALREADY_REGISTERED_MAIL_TEXT =
   'На этот адрес уже есть аккаунт. Войдите по своему паролю. Если это были не вы, ничего не делайте.';
 export const confirmMailText = (link: string, ttlHours: number): string =>
   `Чтобы закончить регистрацию компании, откройте ссылку: ${link}\nСсылка действует ${ttlHours} ч. Если вы не регистрировались, ничего не делайте.`;
+export const INVITATION_MAIL_SUBJECT = 'Приглашение в Swag';
+export const invitationMailText = (orgName: string, link: string, ttlHours: number): string =>
+  `Вас пригласили в организацию «${orgName}» в Swag. Чтобы задать пароль и войти, откройте ссылку: ${link} Ссылка действует ${ttlHours} ч.`;
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -217,6 +226,7 @@ export const RATE_LIMITS = {
   confirmIp: { key: 'confirm:ip', limit: 20, windowMs: HOUR_MS },
   loginEmail: { key: 'login:email', limit: 10, windowMs: 15 * MINUTE_MS },
   loginIp: { key: 'login:ip', limit: 30, windowMs: 15 * MINUTE_MS },
+  inviteUser: { key: 'invite:user', limit: 20, windowMs: HOUR_MS },
 } as const;
 
 type RateRule = { readonly key: string; readonly limit: number; readonly windowMs: number };
@@ -315,6 +325,13 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     });
   };
 
+  const sendAlreadyRegistered = (email: string): Promise<boolean> =>
+    sendMail({
+      to: email,
+      subject: ALREADY_REGISTERED_MAIL_SUBJECT,
+      text: ALREADY_REGISTERED_MAIL_TEXT,
+    });
+
   const requestRegistration = async (body: unknown, meta: RequestMeta): Promise<Result<void>> => {
     const parsed = parse(RegistrationRequest, body);
     if (!parsed.ok) return parsed;
@@ -327,11 +344,7 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     }
     const existing = await store.findUserByEmail(email);
     const sent = existing
-      ? await sendMail({
-          to: email,
-          subject: ALREADY_REGISTERED_MAIL_SUBJECT,
-          text: ALREADY_REGISTERED_MAIL_TEXT,
-        })
+      ? await sendAlreadyRegistered(email)
       : await sendConfirmation(email, clock.now());
     return sent ? ok(undefined) : fail('mail_unavailable');
   };
@@ -564,6 +577,69 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     return ok({ organizations: organizations.map(organizationSummary) });
   };
 
+  // Спека 024, 4.8 и 4.10: приглашение создаёт пользователя в организации администратора.
+  const inviteUser = async (
+    accessToken: string | undefined,
+    body: unknown,
+  ): Promise<Result<void>> => {
+    const auth = await authenticate(accessToken);
+    if (!auth.ok) return auth;
+    const { actor, organization } = auth.value;
+    if (actor.role !== 'admin' || actor.orgId === null || organization === null) {
+      return fail('forbidden');
+    }
+    const parsed = parse(InvitationRequest, body);
+    if (!parsed.ok) return parsed;
+    const { email, role } = parsed.value;
+    if (await exceeded(RATE_LIMITS.inviteUser, actor.userId)) return fail('rate_limited');
+    if (await store.findUserByEmail(email)) {
+      return (await sendAlreadyRegistered(email)) ? ok(undefined) : fail('mail_unavailable');
+    }
+    const now = clock.now();
+    const { token, hash } = opaque.create();
+    await store.addInvitation({
+      tokenHash: hash,
+      email,
+      orgId: actor.orgId,
+      role,
+      invitedBy: actor.userId,
+      expiresAt: now + settings.inviteTtlS * 1000,
+      createdAt: now,
+    });
+    const link = `${settings.inviteUrl}?token=${token}`;
+    const sent = await sendMail({
+      to: email,
+      subject: INVITATION_MAIL_SUBJECT,
+      text: invitationMailText(organization.name, link, Math.ceil(settings.inviteTtlS / 3600)),
+    });
+    if (!sent) return fail('mail_unavailable');
+    log.info('user_invited', { userId: actor.userId, orgId: actor.orgId });
+    return ok(undefined);
+  };
+
+  const acceptInvitation = async (
+    body: unknown,
+    meta: RequestMeta,
+  ): Promise<Result<IssuedSession>> => {
+    const parsed = parse(InvitationAcceptRequest, body);
+    if (!parsed.ok) return parsed;
+    const { token, password } = parsed.value;
+    if (await exceeded(RATE_LIMITS.confirmIp, meta.ip)) return fail('rate_limited');
+    const now = clock.now();
+    const passwordHash = await hasher.hash(password);
+    const result = await store.acceptInvitation({
+      tokenHash: opaque.hash(token),
+      now,
+      user: { id: ids.uuid(), passwordHash, createdAt: now },
+    });
+    if (result.status === 'invalid_token') {
+      log.warn('invite_invalid_token');
+      return fail('invalid_token');
+    }
+    if (result.status === 'email_taken') return fail('email_taken');
+    return ok(await issueSession(result.user, result.organization));
+  };
+
   // Исключение хранилища или ядра превращается в internal_error. В лог пишется только имя операции:
   // текст ошибки (например, `detail` Postgres) может содержать email, поэтому `err` не передаём (4.3, D-115).
   const guarded =
@@ -587,6 +663,8 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     me: guarded('me', me),
     listUsers: guarded('listUsers', listUsers),
     listOrganizations: guarded('listOrganizations', listOrganizations),
+    inviteUser: guarded('inviteUser', inviteUser),
+    acceptInvitation: guarded('acceptInvitation', acceptInvitation),
     ensureSupervisor,
   };
 }

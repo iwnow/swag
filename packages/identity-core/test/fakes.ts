@@ -22,6 +22,7 @@ import {
 export const NOW = 1_700_000_000_000;
 export const HOUR_MS = 3_600_000;
 export const CONFIRM_URL = 'http://127.0.0.1:4200/auth/confirm';
+export const INVITE_URL = 'http://127.0.0.1:4200/auth/invite';
 
 export type LogEntry = {
   level: 'debug' | 'info' | 'warn' | 'error';
@@ -34,6 +35,8 @@ export interface TestSettings {
   accessTtlS: number;
   refreshTtlS: number;
   confirmTtlS: number;
+  inviteUrl: string;
+  inviteTtlS: number;
   supervisor: { email: string; password: string } | null;
 }
 
@@ -101,6 +104,8 @@ export function createTestEnv(overrides: Partial<TestSettings> = {}) {
     accessTtlS: 900,
     refreshTtlS: 2_592_000,
     confirmTtlS: 86_400,
+    inviteUrl: INVITE_URL,
+    inviteTtlS: 604_800,
     supervisor: null,
     ...overrides,
   };
@@ -140,6 +145,58 @@ export function sentMail(env: TestEnv, index = 0): MailMessage {
 
 export const ADMIN_EMAIL = 'admin@example.test';
 export const ADMIN_PASSWORD = 'correct horse battery';
+
+const SEED_IP = '10.0.0.7';
+
+// Организация с администратором, как после confirmRegistration (через хранилище).
+export async function seedOrganization(
+  env: TestEnv,
+  email: string,
+  orgName: string,
+): Promise<{ userId: string; orgId: string }> {
+  const userId = randomUUID();
+  const orgId = randomUUID();
+  const tokenHash = `seed-org-${randomUUID()}`;
+  await env.store.addConfirmation({ tokenHash, email, expiresAt: NOW + HOUR_MS, createdAt: NOW });
+  await env.store.confirmRegistration({
+    tokenHash,
+    now: NOW,
+    org: { id: orgId, name: orgName, createdAt: NOW },
+    user: {
+      id: userId,
+      passwordHash: `fake-hash:${ADMIN_PASSWORD}`,
+      role: 'admin',
+      orgId,
+      createdAt: NOW,
+      blockedAt: null,
+      tokensValidAfter: null,
+    },
+  });
+  return { userId, orgId };
+}
+
+// Участник организации с ролью user, пароль — ADMIN_PASSWORD.
+export async function addMember(env: TestEnv, email: string, orgId: string): Promise<string> {
+  const id = randomUUID();
+  await env.store.createUser({
+    id,
+    email,
+    passwordHash: `fake-hash:${ADMIN_PASSWORD}`,
+    role: 'user',
+    orgId,
+    createdAt: NOW,
+    blockedAt: null,
+    tokensValidAfter: null,
+  });
+  return id;
+}
+
+// Вход через ядро; возвращает сессию (токены), иначе бросает.
+export async function loginAs(env: TestEnv, email: string, password = ADMIN_PASSWORD) {
+  const result = await env.core.login({ email, password }, { ip: SEED_IP });
+  if (!result.ok) throw new Error(`вход ${email}: ${result.error.code}`);
+  return result.value;
+}
 
 // Пользователь с организацией, как после confirmRegistration (через хранилище, без HTTP).
 export async function seedAdmin(env: TestEnv): Promise<{ userId: string; orgId: string }> {
