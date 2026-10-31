@@ -26,7 +26,7 @@
 
 ## Ключевые решения
 
-- `createTransport({ url, … })` с таймаутами в том же объекте, а не `createTransport(url, options)`: на `nodemailer` 10.1.2 строка с вторым аргументом теряет таймауты (проверено: `connectionTimeout` в `transporter.options` `undefined`).
+- `createTransport({ url, … })` с таймаутами в том же объекте, а не `createTransport(url, options)`: на `nodemailer` 10.1.2 строка с вторым аргументом теряет таймауты (проверено: `connectionTimeout` в `transporter.options` `undefined`); причина — во втором аргументе `createTransport(transport, defaults)` у `nodemailer` 10.1.2 лежат дефолты письма, а не опции SMTP-транспорта.
 - Адаптер не содержит текстов писем: темы и тексты — константы `identity-core` (4.6).
 
 ## Спеки
