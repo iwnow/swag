@@ -42,8 +42,8 @@
 
 ## Связи
 
-- Оболочка: `apps/identity` (T-16).
-- Адаптеры портов: `@swag/adapter-memory` (хранилище, почта, ограничитель для тестов), `@swag/adapter-postgres` (хранилище, T-11), `@swag/adapter-crypto` (хэш и токены, T-12), `@swag/adapter-jose` (подпись, T-13), `@swag/adapter-smtp` (почта, T-15).
+- Оболочка: `apps/identity` (маршруты и проверка внутреннего токена — спека 024, 4.7, 4.8; регистрация и вход — 012).
+- Адаптеры портов: `@swag/adapter-memory` (хранилище, почта, ограничитель для тестов), `@swag/adapter-postgres` (хранилище), `@swag/adapter-crypto` (хэш и токены), `@swag/adapter-jose` (подпись), `@swag/adapter-smtp` (почта).
 - Использует: `@swag/contracts` (схемы `auth.ts`, `ServiceInfo`, `AccessTokenClaims`, `AuthSession`, `AuthMe`, `AuthRefreshed`, `AuthErrorCode`, `Role`).
 
 ## Ключевые решения
