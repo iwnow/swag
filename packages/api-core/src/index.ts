@@ -260,6 +260,12 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         );
       }
       reserving += 1;
+      let slotHeld = true;
+      const releaseSlot = (): void => {
+        if (!slotHeld) return;
+        slotHeld = false;
+        reserving -= 1;
+      };
 
       const swarmId = ids.uuid();
       const agents: AgentSpec[] = parsed.data.agents.map((draft, i) => ({
@@ -296,6 +302,7 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
           }
           throw new Error('swarm.created не записан');
         }
+        releaseSlot();
         log.info('swarm created', { swarmId, agents: agents.length });
 
         try {
@@ -328,7 +335,7 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
           });
         }
       } finally {
-        reserving -= 1;
+        releaseSlot();
       }
       return ok((await store.view(swarmId)) as SwarmView);
     },
@@ -512,9 +519,9 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
           if (view === null) {
             await billing.settle(hold.swarmId, 0);
           } else {
-            const event = (await store.events(hold.swarmId, 0))
-              .filter((e) => FINAL_EVENT_TYPES.includes(e.type))
-              .at(-1);
+            const event = (await store.events(hold.swarmId, 0)).find((e) =>
+              FINAL_EVENT_TYPES.includes(e.type),
+            );
             if (event === undefined) throw new Error('итоговое событие роя не найдено');
             await billing.settle(hold.swarmId, await finalSpent(event, store, log));
           }
