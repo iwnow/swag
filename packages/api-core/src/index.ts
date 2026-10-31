@@ -2,6 +2,8 @@ import {
   BusMessage,
   PlatformEventInput,
   SwarmCreateRequest,
+  can,
+  type Actor,
   type AgentId,
   type AgentSpec,
   type PlatformEvent,
@@ -72,18 +74,20 @@ export type Result<T> = { ok: true; value: T } | { ok: false; error: ApiError };
 
 export interface ApiCore {
   info(): ServiceInfo;
-  createSwarm(body: unknown): Promise<Result<SwarmView>>;
-  listSwarms(): Promise<SwarmSummary[]>;
-  getSwarm(id: string): Promise<Result<SwarmView>>;
-  getEvents(id: string, after: number): Promise<Result<PlatformEvent[]>>;
-  stopSwarm(id: string): Promise<Result<void>>;
-  ingestEvent(raw: unknown): Promise<void>; // из swarm.*.events
-  ingestMessage(raw: unknown): Promise<void>; // из swarm.*.agent.*.inbox → bus.message
+  createSwarm(actor: Actor, body: unknown): Promise<Result<SwarmView>>;
+  listSwarms(actor: Actor): Promise<SwarmSummary[]>;
+  getSwarm(actor: Actor, id: string): Promise<Result<SwarmView>>;
+  getEvents(actor: Actor, id: string, after: number): Promise<Result<PlatformEvent[]>>;
+  stopSwarm(actor: Actor, id: string): Promise<Result<void>>;
   subscribe(
+    actor: Actor,
     swarmId: string,
     after: number,
     listener: (e: PlatformEvent) => void,
   ): Promise<Result<() => void>>;
+  stopSwarmsOfUser(userId: string): Promise<number>; // активные рои с createdBy = userId; число остановленных
+  ingestEvent(raw: unknown): Promise<void>; // из swarm.*.events
+  ingestMessage(raw: unknown): Promise<void>; // из swarm.*.agent.*.inbox → bus.message
   closeInterrupted(): Promise<number>; // REQ-003-6; число закрытых роёв
 }
 
@@ -102,6 +106,21 @@ const fail = <T>(code: string, message: string, issues?: ApiError['issues']): Re
     ? { ok: false, error: { code, message } }
     : { ok: false, error: { code, message, issues } };
 
+// Спека 024, 4.4, правило 1. Рой до 024 (orgId и createdBy = null) виден только супервизору.
+function visible(actor: Actor, view: SwarmView): boolean {
+  if (actor.role === 'supervisor') return true;
+  const orgId = view.orgId ?? null;
+  const createdBy = view.createdBy ?? null;
+  if (actor.role === 'admin') return orgId !== null && orgId === actor.orgId;
+  return createdBy !== null && createdBy === actor.userId;
+}
+
+// Спека 024, 4.4, правило 5: стоимость провайдера — только супервизору; хранилище не меняется.
+function forActor(actor: Actor, event: PlatformEvent): PlatformEvent {
+  if (actor.role === 'supervisor' || event.type !== 'llm.call') return event;
+  return { ...event, data: { ...event.data, providerCostMicroUsd: null } };
+}
+
 export function createApiCore(deps: ApiCoreDeps): ApiCore {
   const { store, orchestrator, clock, ids, log, trace } = deps;
   const subscribers = new Map<string, Set<Subscriber>>();
@@ -109,6 +128,11 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
   const queues = new Map<string, Promise<unknown>>();
   // Лимит MAX_ACTIVE_SWARMS: рои, для которых createSwarm уже резервирует место до записи swarm.created.
   let reserving = 0;
+
+  async function visibleView(actor: Actor, id: string): Promise<SwarmView | null> {
+    const view = await store.view(id);
+    return view && visible(actor, view) ? view : null;
+  }
 
   function deliver(swarmId: string, sub: Subscriber, event: PlatformEvent): void {
     if (sub.closed || event.seq <= sub.last) return;
@@ -156,7 +180,8 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
   return {
     info: () => ({ service: 'api', version: deps.version }),
 
-    async createSwarm(body) {
+    async createSwarm(actor, body) {
+      if (!can(actor, 'swarm.create')) return fail('forbidden', 'Нет права на создание роя');
       const parsed = SwarmCreateRequest.safeParse(body);
       if (!parsed.success) {
         return fail(
@@ -211,7 +236,14 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
           agentId: null,
           traceId: trace.currentTraceId(),
           type: 'swarm.created',
-          data: { task: parsed.data.task, budgetMicroUsd, maxTokens, agents },
+          data: {
+            task: parsed.data.task,
+            budgetMicroUsd,
+            maxTokens,
+            agents,
+            orgId: actor.orgId,
+            createdBy: actor.userId,
+          },
         });
         if (created === null) throw new Error('swarm.created не записан');
       } finally {
@@ -246,8 +278,11 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
       return ok((await store.view(swarmId)) as SwarmView);
     },
 
-    async listSwarms() {
+    // У всех ролей есть swarm.read (4.1), поэтому без права список пуст, а не forbidden: сигнатура 4.4 без Result.
+    async listSwarms(actor) {
+      if (!can(actor, 'swarm.read')) return [];
       return (await store.views())
+        .filter((v) => visible(actor, v))
         .map((v) => ({
           id: v.id,
           task: v.task,
@@ -258,24 +293,48 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
     },
 
-    async getSwarm(id) {
-      const view = await store.view(id);
+    async getSwarm(actor, id) {
+      if (!can(actor, 'swarm.read')) return fail('forbidden', 'Нет права на чтение роя');
+      const view = await visibleView(actor, id);
       return view ? ok(view) : fail('not_found', `Рой ${id} не найден`);
     },
 
-    async getEvents(id, after) {
-      if (!(await store.view(id))) return fail('not_found', `Рой ${id} не найден`);
-      return ok(await store.events(id, after));
+    async getEvents(actor, id, after) {
+      if (!can(actor, 'swarm.read')) return fail('forbidden', 'Нет права на чтение роя');
+      if (!(await visibleView(actor, id))) return fail('not_found', `Рой ${id} не найден`);
+      return ok((await store.events(id, after)).map((e) => forActor(actor, e)));
     },
 
-    async stopSwarm(id) {
-      const view = await store.view(id);
+    async stopSwarm(actor, id) {
+      if (!can(actor, 'swarm.stop')) return fail('forbidden', 'Нет права на остановку роя');
+      const view = await visibleView(actor, id);
       if (!view) return fail('not_found', `Рой ${id} не найден`);
       if (FINAL_SWARM_STATUSES.includes(view.status)) {
         return fail('swarm_finished', `Рой уже ${view.status}`);
       }
       await orchestrator.stop(id);
       return ok(undefined);
+    },
+
+    // Спека 024, 4.4, правило 6: тот же путь, что stopSwarm, без проверки Actor. Сбой одного роя
+    // не мешает остальным; в конце — AggregateError, повтор безопасен (остановленные рои уже финальные).
+    async stopSwarmsOfUser(userId) {
+      let stopped = 0;
+      const errors: unknown[] = [];
+      for (const view of await store.views()) {
+        if (view.createdBy !== userId) continue;
+        if (FINAL_SWARM_STATUSES.includes(view.status)) continue;
+        try {
+          await orchestrator.stop(view.id);
+          stopped += 1;
+        } catch (error) {
+          log.warn('user_swarm_stop_failed', { userId, swarmId: view.id, err: error });
+          errors.push(error);
+        }
+      }
+      log.info('user_swarms_stopped', { userId, count: stopped });
+      if (errors.length > 0) throw new AggregateError(errors, 'user swarms stop failed');
+      return stopped;
     },
 
     async ingestEvent(raw) {
@@ -327,10 +386,19 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
       });
     },
 
-    async subscribe(swarmId, after, listener) {
-      if (!(await store.view(swarmId))) return fail('not_found', `Рой ${swarmId} не найден`);
+    async subscribe(actor, swarmId, after, listener) {
+      if (!can(actor, 'swarm.read')) return fail('forbidden', 'Нет права на чтение роя');
+      if (!(await visibleView(actor, swarmId))) {
+        return fail('not_found', `Рой ${swarmId} не найден`);
+      }
       // Регистрация до чтения истории: события, записанные во время чтения, попадут в буфер (REQ-003-4).
-      const sub: Subscriber = { listener, reading: true, buffer: [], last: after, closed: false };
+      const sub: Subscriber = {
+        listener: (e) => listener(forActor(actor, e)),
+        reading: true,
+        buffer: [],
+        last: after,
+        closed: false,
+      };
       let set = subscribers.get(swarmId);
       if (!set) {
         set = new Set();

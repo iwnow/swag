@@ -1,11 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createMemorySwarmStore } from '@swag/adapter-memory';
-import type { PlatformEventInput, SwarmLaunch } from '@swag/contracts';
+import {
+  ROLE_PERMISSIONS,
+  type Actor,
+  type PlatformEvent,
+  type PlatformEventInput,
+  type Role,
+  type SwarmLaunch,
+} from '@swag/contracts';
 import {
   createApiCore,
   type LogContext,
   type Logger,
   type OrchestratorClient,
+  type Result,
   type SwarmStore,
 } from '../src/index.ts';
 
@@ -22,6 +30,24 @@ const body = (count: number) => ({
 const T1 = '11111111111111111111111111111111';
 const T2 = '22222222222222222222222222222222';
 const T3 = '33333333333333333333333333333333';
+
+const ORG_A = '5a000000-0000-4000-8000-00000000000a';
+const ORG_B = '5b000000-0000-4000-8000-00000000000b';
+const USER_U1 = '10000000-0000-4000-8000-000000000001';
+const USER_U2 = '10000000-0000-4000-8000-000000000002';
+const USER_B = '20000000-0000-4000-8000-000000000001';
+const ADMIN_A = '30000000-0000-4000-8000-000000000001';
+const SUPERVISOR = '40000000-0000-4000-8000-000000000001';
+
+const actorOf = (role: Role, userId: string, orgId: string | null): Actor => ({
+  userId,
+  orgId,
+  role,
+  permissions: ROLE_PERMISSIONS[role],
+});
+// Пользователь организации A; по умолчанию создаёт рои в тестах ядра.
+const ACTOR = actorOf('user', USER_U1, ORG_A);
+const codeOf = (r: Result<unknown>): string => (r.ok ? 'ok' : r.error.code);
 
 interface Entry {
   level: 'debug' | 'info' | 'warn' | 'error';
@@ -124,20 +150,20 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
 
   it('AC-001-3: создание роя из трёх агентов — 201-эквивалент, agent-1..3, launch с тем же swarmId, событие swarm.created с seq 1', async () => {
     const { core, launches } = setup();
-    const result = await core.createSwarm(body(3));
+    const result = await core.createSwarm(ACTOR, body(3));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe('starting');
     expect(result.value.agents.map((a) => a.id)).toEqual(['agent-1', 'agent-2', 'agent-3']);
     expect(launches).toHaveLength(1);
     expect(launches[0]?.swarmId).toBe(result.value.id);
-    const events = await core.getEvents(result.value.id, 0);
+    const events = await core.getEvents(ACTOR, result.value.id, 0);
     expect(events.ok && events.value.map((e) => [e.type, e.seq])).toEqual([['swarm.created', 1]]);
   });
 
   it('AC-001-4: невалидное тело — validation_error с путём поля', async () => {
     const { core } = setup();
-    const result = await core.createSwarm({
+    const result = await core.createSwarm(ACTOR, {
       task: 'x',
       budgetMicroUsd: 1000000,
       agents: [{ name: 'a', role: '' }],
@@ -150,10 +176,10 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
 
   it('AC-001-5: лимит активных роёв; после swarm.completed новый рой создаётся', async () => {
     const { core } = setup({ maxActiveSwarms: 1 });
-    const first = await core.createSwarm(body(1));
+    const first = await core.createSwarm(ACTOR, body(1));
     expect(first.ok).toBe(true);
     if (!first.ok) return;
-    const second = await core.createSwarm(body(1));
+    const second = await core.createSwarm(ACTOR, body(1));
     expect(second.ok).toBe(false);
     if (second.ok) return;
     expect(second.error.code).toBe('too_many_active_swarms');
@@ -170,7 +196,7 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
         data: { result: 'R' },
       }),
     );
-    const third = await core.createSwarm(body(1));
+    const third = await core.createSwarm(ACTOR, body(1));
     expect(third.ok).toBe(true);
   });
 
@@ -180,17 +206,17 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
         throw new Error('connect ECONNREFUSED');
       },
     });
-    const result = await core.createSwarm(body(2));
+    const result = await core.createSwarm(ACTOR, body(2));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const view = await core.getSwarm(result.value.id);
+    const view = await core.getSwarm(ACTOR, result.value.id);
     expect(view.ok && view.value.status).toBe('failed');
     expect(view.ok && view.value.failure?.reason).toBe('orchestrator_unavailable');
   });
 
   it('AC-001-7: события получают seq 2, 3… без пропусков, сообщение становится bus.message, after=1 отдаёт всё кроме первого', async () => {
     const { core } = setup();
-    const created = await core.createSwarm(body(2));
+    const created = await core.createSwarm(ACTOR, body(2));
     if (!created.ok) throw new Error('не создан');
     const id = created.value.id;
     await core.ingestEvent(
@@ -207,7 +233,7 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
       text: 'T',
       ts: '2026-10-22T10:00:02.000Z',
     });
-    const events = await core.getEvents(id, 0);
+    const events = await core.getEvents(ACTOR, id, 0);
     if (!events.ok) throw new Error('нет событий');
     expect(events.value.map((e) => e.seq)).toEqual([1, 2, 3, 4]);
     const message = events.value[3];
@@ -217,13 +243,13 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
       to: 'agent-1',
       text: 'T',
     });
-    const after = await core.getEvents(id, 1);
+    const after = await core.getEvents(ACTOR, id, 1);
     expect(after.ok && after.value.map((e) => e.seq)).toEqual([2, 3, 4]);
   });
 
   it('AC-001-8: невалидные события и сообщения, а также событие неизвестного роя, не сохраняются; следующее валидное обрабатывается', async () => {
     const { core, logs } = setup();
-    const created = await core.createSwarm(body(1));
+    const created = await core.createSwarm(ACTOR, body(1));
     if (!created.ok) throw new Error('не создан');
     const id = created.value.id;
     await core.ingestEvent({ type: 'мусор' });
@@ -240,23 +266,23 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
     await core.ingestEvent(
       sys(id, 4, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
     );
-    const events = await core.getEvents(id, 0);
+    const events = await core.getEvents(ACTOR, id, 0);
     expect(events.ok && events.value.map((e) => e.seq)).toEqual([1, 2]);
   });
 
   it('AC-001-10: остановка running — stop оркестратора; completed — swarm_finished; неизвестный — not_found', async () => {
     const { core, stops } = setup();
-    const created = await core.createSwarm(body(1));
+    const created = await core.createSwarm(ACTOR, body(1));
     if (!created.ok) throw new Error('не создан');
     const id = created.value.id;
     await core.ingestEvent(
       sys(id, 5, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
     );
-    const stopped = await core.stopSwarm(id);
+    const stopped = await core.stopSwarm(ACTOR, id);
     expect(stopped.ok).toBe(true);
     expect(stops).toEqual([id]);
 
-    const other = await core.createSwarm(body(1));
+    const other = await core.createSwarm(ACTOR, body(1));
     if (!other.ok) throw new Error('не создан');
     await core.ingestEvent(
       sys(other.value.id, 6, {
@@ -266,16 +292,16 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
         data: { result: 'R' },
       }),
     );
-    const finished = await core.stopSwarm(other.value.id);
+    const finished = await core.stopSwarm(ACTOR, other.value.id);
     expect(finished.ok === false && finished.error.code).toBe('swarm_finished');
 
-    const unknown = await core.stopSwarm(uuid(12345));
+    const unknown = await core.stopSwarm(ACTOR, uuid(12345));
     expect(unknown.ok === false && unknown.error.code).toBe('not_found');
   });
 
   it('AC-016-4: swarm.created и swarm.failed несут traceId порта, bus.message — текущий, событие из шины — свой', async () => {
     const { core, traceState } = setup();
-    const created = await core.createSwarm(body(1));
+    const created = await core.createSwarm(ACTOR, body(1));
     if (!created.ok) throw new Error('не создан');
     const id = created.value.id;
 
@@ -284,9 +310,9 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
         throw new Error('connect ECONNREFUSED');
       },
     });
-    const failed = await failing.core.createSwarm(body(1));
+    const failed = await failing.core.createSwarm(ACTOR, body(1));
     if (!failed.ok) throw new Error('не создан');
-    const failedEvents = await failing.core.getEvents(failed.value.id, 0);
+    const failedEvents = await failing.core.getEvents(ACTOR, failed.value.id, 0);
     expect(failedEvents.ok && failedEvents.value.map((e) => [e.type, e.traceId])).toEqual([
       ['swarm.created', T1],
       ['swarm.failed', T1],
@@ -305,7 +331,7 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
       ...sys(id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
       traceId: T3,
     });
-    const events = await core.getEvents(id, 0);
+    const events = await core.getEvents(ACTOR, id, 0);
     expect(events.ok && events.value.map((e) => [e.type, e.traceId])).toEqual([
       ['swarm.created', T1],
       ['bus.message', T2],
@@ -315,7 +341,7 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
 
   it('AC-016-7: api-core пишет логи 4.8 — рой создан, оркестратор недоступен, отброшенные событие и сообщение', async () => {
     const ok = setup();
-    const created = await ok.core.createSwarm(body(2));
+    const created = await ok.core.createSwarm(ACTOR, body(2));
     if (!created.ok) throw new Error('не создан');
     expect(ok.entries).toContainEqual({
       level: 'info',
@@ -329,7 +355,7 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
         throw error;
       },
     });
-    const failed = await failing.core.createSwarm(body(1));
+    const failed = await failing.core.createSwarm(ACTOR, body(1));
     if (!failed.ok) throw new Error('не создан');
     expect(failing.entries).toContainEqual({
       level: 'error',
@@ -361,7 +387,7 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
 
   it('AC-002-26: llm.call от llm-gateway известного роя сохраняется с очередным seq, неизвестного роя — отбрасывается с unknown_swarm', async () => {
     const { core, entries } = setup();
-    const created = await core.createSwarm(body(1));
+    const created = await core.createSwarm(ACTOR, body(1));
     if (!created.ok) throw new Error('не создан');
     const id = created.value.id;
     const llmCall = {
@@ -381,10 +407,10 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
     };
 
     const delivered: Array<[string, number]> = [];
-    const sub = await core.subscribe(id, 1, (e) => delivered.push([e.type, e.seq]));
+    const sub = await core.subscribe(ACTOR, id, 1, (e) => delivered.push([e.type, e.seq]));
     expect(sub.ok).toBe(true);
     await core.ingestEvent(sys(id, 20, llmCall));
-    const events = await core.getEvents(id, 0);
+    const events = await core.getEvents(ACTOR, id, 0);
     expect(events.ok && events.value.map((e) => [e.type, e.source, e.seq])).toEqual([
       ['swarm.created', 'api', 1],
       ['llm.call', 'llm-gateway', 2],
@@ -402,19 +428,19 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
         reason: 'unknown_swarm',
       }),
     });
-    expect((await core.getEvents(uuid(7777), 0)).ok).toBe(false);
+    expect((await core.getEvents(ACTOR, uuid(7777), 0)).ok).toBe(false);
   });
 
   it('subscribe отдаёт хвост после after, затем новые события по возрастанию seq', async () => {
     const { core } = setup();
-    const created = await core.createSwarm(body(1));
+    const created = await core.createSwarm(ACTOR, body(1));
     if (!created.ok) throw new Error('не создан');
     const id = created.value.id;
     await core.ingestEvent(
       sys(id, 10, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
     );
     const seen: number[] = [];
-    const sub = await core.subscribe(id, 0, (e) => seen.push(e.seq));
+    const sub = await core.subscribe(ACTOR, id, 0, (e) => seen.push(e.seq));
     expect(sub.ok).toBe(true);
     await core.ingestEvent(
       sys(id, 11, {
@@ -442,8 +468,8 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
     const { core } = setup({
       store: slowStore(createMemorySwarmStore(), () => (++calls * 7) % 5),
     });
-    const first = await core.createSwarm(body(1));
-    const second = await core.createSwarm(body(1));
+    const first = await core.createSwarm(ACTOR, body(1));
+    const second = await core.createSwarm(ACTOR, body(1));
     if (!first.ok || !second.ok) throw new Error('не создан');
     const a = first.value.id;
     const b = second.value.id;
@@ -458,7 +484,7 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
     ]);
 
     const seqsOf = async (id: string) => {
-      const events = await core.getEvents(id, 0);
+      const events = await core.getEvents(ACTOR, id, 0);
       return events.ok ? events.value.map((e) => e.seq) : [];
     };
     expect(await seqsOf(a)).toEqual(Array.from({ length: 21 }, (_, i) => i + 1));
@@ -482,7 +508,7 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
       },
     };
     const { core } = setup({ store });
-    const created = await core.createSwarm(body(1));
+    const created = await core.createSwarm(ACTOR, body(1));
     if (!created.ok) throw new Error('не создан');
     const id = created.value.id;
     await core.ingestEvent(
@@ -493,7 +519,7 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
     );
 
     const seen: number[] = [];
-    const subscribing = core.subscribe(id, 1, (e) => seen.push(e.seq));
+    const subscribing = core.subscribe(ACTOR, id, 1, (e) => seen.push(e.seq));
     await readStarted;
     await core.ingestMessage({
       id: uuid(8001),
@@ -508,7 +534,7 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
     expect(sub.ok).toBe(true);
     expect(seen).toEqual([2, 3, 4]);
 
-    const unknown = await core.subscribe(uuid(4242), 0, () => undefined);
+    const unknown = await core.subscribe(ACTOR, uuid(4242), 0, () => undefined);
     expect(unknown.ok === false && unknown.error.code).toBe('not_found');
   });
 
@@ -517,7 +543,10 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
       maxActiveSwarms: 1,
       store: slowStore(createMemorySwarmStore(), () => 1),
     });
-    const results = await Promise.all([core.createSwarm(body(1)), core.createSwarm(body(1))]);
+    const results = await Promise.all([
+      core.createSwarm(ACTOR, body(1)),
+      core.createSwarm(ACTOR, body(1)),
+    ]);
     const codes = results.map((r) => (r.ok ? 'ok' : r.error.code)).sort();
     expect(codes).toEqual(['ok', 'too_many_active_swarms']);
   });
@@ -531,7 +560,7 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
       },
     });
     const created = async () => {
-      const result = await core.createSwarm(body(1));
+      const result = await core.createSwarm(ACTOR, body(1));
       if (!result.ok) throw new Error('не создан');
       return result.value.id;
     };
@@ -554,9 +583,9 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
     await started(runningId);
     brokenId = runningId;
     const startingId = await created();
-    expect((await core.createSwarm(body(1))).ok).toBe(false);
+    expect((await core.createSwarm(ACTOR, body(1))).ok).toBe(false);
 
-    const doneEventsBefore = await core.getEvents(done, 0);
+    const doneEventsBefore = await core.getEvents(ACTOR, done, 0);
     const closed = await core.closeInterrupted();
 
     expect(closed).toBe(2);
@@ -567,9 +596,9 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
     expect(entries.find((e) => e.msg === 'interrupted swarms closed')?.ctx).toEqual({ count: 2 });
 
     for (const id of [runningId, startingId]) {
-      const view = await core.getSwarm(id);
+      const view = await core.getSwarm(ACTOR, id);
       expect(view.ok && view.value.status).toBe('failed');
-      const events = await core.getEvents(id, 0);
+      const events = await core.getEvents(ACTOR, id, 0);
       expect(events.ok && events.value.at(-1)).toMatchObject({
         type: 'swarm.failed',
         source: 'api',
@@ -579,11 +608,11 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
       });
     }
 
-    const doneView = await core.getSwarm(done);
+    const doneView = await core.getSwarm(ACTOR, done);
     expect(doneView.ok && doneView.value.status).toBe('completed');
-    expect(await core.getEvents(done, 0)).toEqual(doneEventsBefore);
+    expect(await core.getEvents(ACTOR, done, 0)).toEqual(doneEventsBefore);
 
-    expect((await core.createSwarm(body(1))).ok).toBe(true);
+    expect((await core.createSwarm(ACTOR, body(1))).ok).toBe(true);
   });
 
   it('сбой записи swarm.created: createSwarm отклоняется, оркестратор не вызывается', async () => {
@@ -592,20 +621,20 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
       appendEvent: () => Promise.reject(new Error('запись отклонена')),
     };
     const { core, launches } = setup({ store });
-    await expect(core.createSwarm(body(1))).rejects.toThrow('swarm.created не записан');
+    await expect(core.createSwarm(ACTOR, body(1))).rejects.toThrow('swarm.created не записан');
     expect(launches).toHaveLength(0);
   });
 
   it('сбой слушателя не мешает остальным подписчикам роя', async () => {
     const { core, logs } = setup();
-    const created = await core.createSwarm(body(1));
+    const created = await core.createSwarm(ACTOR, body(1));
     if (!created.ok) throw new Error('не создан');
     const id = created.value.id;
     const seen: number[] = [];
-    await core.subscribe(id, 1, () => {
+    await core.subscribe(ACTOR, id, 1, () => {
       throw new Error('слушатель сломан');
     });
-    await core.subscribe(id, 1, (e) => seen.push(e.seq));
+    await core.subscribe(ACTOR, id, 1, (e) => seen.push(e.seq));
     await core.ingestEvent(
       sys(id, 1, { type: 'swarm.started', source: 'orchestrator', agentId: null, data: {} }),
     );
@@ -617,20 +646,20 @@ describe('api-core — AC-003-9: прежние сценарии на асинх
 describe('api-core — AC-004-2: бюджеты роя и агентов', () => {
   it('AC-004-2: бюджет роя больше SWARM_MAX_BUDGET_MICRO_USD — validation_error, событий нет, оркестратор не вызван', async () => {
     const { core, launches } = setup();
-    const result = await core.createSwarm({ ...body(1), budgetMicroUsd: 5000001 });
+    const result = await core.createSwarm(ACTOR, { ...body(1), budgetMicroUsd: 5000001 });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toEqual({
       code: 'validation_error',
       message: 'budget exceeds SWARM_MAX_BUDGET_MICRO_USD',
     });
-    expect(await core.listSwarms()).toEqual([]);
+    expect(await core.listSwarms(ACTOR)).toEqual([]);
     expect(launches).toHaveLength(0);
   });
 
   it('AC-004-2: бюджет агента больше бюджета роя — validation_error, событий нет, оркестратор не вызван', async () => {
     const { core, launches } = setup();
-    const result = await core.createSwarm({
+    const result = await core.createSwarm(ACTOR, {
       task: 'Задача',
       budgetMicroUsd: 500000,
       agents: [{ name: 'A', role: 'r', budgetMicroUsd: 500001 }],
@@ -641,13 +670,13 @@ describe('api-core — AC-004-2: бюджеты роя и агентов', () =>
       code: 'validation_error',
       message: 'agent budget exceeds swarm budget',
     });
-    expect(await core.listSwarms()).toEqual([]);
+    expect(await core.listSwarms(ACTOR)).toEqual([]);
     expect(launches).toHaveLength(0);
   });
 
   it('AC-004-2: бюджет 500000 — swarm.created и SwarmLaunch несут бюджеты роя и агентов', async () => {
     const { core, launches } = setup();
-    const result = await core.createSwarm({
+    const result = await core.createSwarm(ACTOR, {
       task: 'Задача',
       budgetMicroUsd: 500000,
       agents: [
@@ -660,7 +689,7 @@ describe('api-core — AC-004-2: бюджеты роя и агентов', () =>
     const [launch] = launches;
     expect(launch?.budgetMicroUsd).toBe(500000);
     expect(launch?.agents.map((a) => a.budgetMicroUsd)).toEqual([100000, null]);
-    const events = await core.getEvents(result.value.id, 0);
+    const events = await core.getEvents(ACTOR, result.value.id, 0);
     const created = events.ok ? events.value[0] : undefined;
     expect(created?.type).toBe('swarm.created');
     if (created?.type !== 'swarm.created') return;
@@ -672,20 +701,20 @@ describe('api-core — AC-004-2: бюджеты роя и агентов', () =>
 describe('api-core — AC-031: лимит ответа агента и роя', () => {
   it('AC-031-2: maxTokens роя больше AGENT_MAX_TOKENS_LIMIT — validation_error, событий нет, оркестратор не вызван', async () => {
     const { core, launches } = setup();
-    const result = await core.createSwarm({ ...body(1), maxTokens: 65537 });
+    const result = await core.createSwarm(ACTOR, { ...body(1), maxTokens: 65537 });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toEqual({
       code: 'validation_error',
       message: 'max_tokens exceeds AGENT_MAX_TOKENS_LIMIT',
     });
-    expect(await core.listSwarms()).toEqual([]);
+    expect(await core.listSwarms(ACTOR)).toEqual([]);
     expect(launches).toHaveLength(0);
   });
 
   it('AC-031-2: maxTokens агента больше AGENT_MAX_TOKENS_LIMIT — validation_error, событий нет, оркестратор не вызван', async () => {
     const { core, launches } = setup();
-    const result = await core.createSwarm({
+    const result = await core.createSwarm(ACTOR, {
       task: 'Задача',
       budgetMicroUsd: 500000,
       agents: [{ name: 'A', role: 'r', maxTokens: 65537 }],
@@ -696,19 +725,19 @@ describe('api-core — AC-031: лимит ответа агента и роя', 
       code: 'validation_error',
       message: 'max_tokens exceeds AGENT_MAX_TOKENS_LIMIT',
     });
-    expect(await core.listSwarms()).toEqual([]);
+    expect(await core.listSwarms(ACTOR)).toEqual([]);
     expect(launches).toHaveLength(0);
   });
 
   it('AC-031-2: maxTokens ровно 65536 проходит', async () => {
     const { core } = setup();
-    const result = await core.createSwarm({ ...body(1), maxTokens: 65536 });
+    const result = await core.createSwarm(ACTOR, { ...body(1), maxTokens: 65536 });
     expect(result.ok).toBe(true);
   });
 
   it('AC-031-3: maxTokens роя 4096 и агентов 16384 и без поля — swarm.created и SwarmLaunch несут их', async () => {
     const { core, launches } = setup();
-    const result = await core.createSwarm({
+    const result = await core.createSwarm(ACTOR, {
       task: 'Задача',
       budgetMicroUsd: 500000,
       maxTokens: 4096,
@@ -721,10 +750,254 @@ describe('api-core — AC-031: лимит ответа агента и роя', 
     if (!result.ok) return;
     expect(launches[0]?.maxTokens).toBe(4096);
     expect(launches[0]?.agents.map((a) => a.maxTokens)).toEqual([16384, null]);
-    const events = await core.getEvents(result.value.id, 0);
+    const events = await core.getEvents(ACTOR, result.value.id, 0);
     const created = events.ok ? events.value[0] : undefined;
     if (created?.type !== 'swarm.created') throw new Error('swarm.created не записан');
     expect(created.data.maxTokens).toBe(4096);
     expect(created.data.agents.map((a) => a.maxTokens)).toEqual([16384, null]);
+  });
+});
+
+describe('api-core — спека 024: Actor, видимость, права, стоимость, остановка по пользователю', () => {
+  it('AC-024-16 (ядро): видимость роёв по роли и организации, рой до 024 — только супервизору', async () => {
+    const store = createMemorySwarmStore();
+    const { core } = setup({ store });
+    const u1 = actorOf('user', USER_U1, ORG_A);
+    const u2 = actorOf('user', USER_U2, ORG_A);
+    const adminA = actorOf('admin', ADMIN_A, ORG_A);
+    const userB = actorOf('user', USER_B, ORG_B);
+    const adminNoOrg = actorOf('admin', ADMIN_A, null);
+    const supervisor = actorOf('supervisor', SUPERVISOR, null);
+    const own1 = await core.createSwarm(u1, body(1));
+    const own2 = await core.createSwarm(u2, body(1));
+    const foreign = await core.createSwarm(userB, body(1));
+    if (!own1.ok || !own2.ok || !foreign.ok) throw new Error('не созданы');
+    const legacy = uuid(7001);
+    await store.appendEvent({
+      id: uuid(8001),
+      swarmId: legacy,
+      ts: '2026-09-01T10:00:00.000Z',
+      source: 'api',
+      agentId: null,
+      traceId: null,
+      type: 'swarm.created',
+      seq: 1,
+      data: {
+        task: 'До 024',
+        budgetMicroUsd: 1000000,
+        maxTokens: null,
+        agents: [
+          {
+            id: 'agent-1',
+            name: 'Агент',
+            role: 'роль',
+            model: 'chat-small',
+            budgetMicroUsd: null,
+            maxTokens: null,
+          },
+        ],
+      },
+    } as PlatformEvent);
+    const ids = {
+      own1: own1.value.id,
+      own2: own2.value.id,
+      foreign: foreign.value.id,
+      legacy,
+    };
+    const cases: [string, Actor, string[]][] = [
+      ['U1', u1, [ids.own1]],
+      ['U2', u2, [ids.own2]],
+      ['администратор A', adminA, [ids.own1, ids.own2]],
+      ['пользователь B', userB, [ids.foreign]],
+      // Админ без организации и рой до 024 (orgId и createdBy не заданы) — только у супервизора.
+      ['администратор без организации', adminNoOrg, []],
+      ['супервизор', supervisor, [ids.own1, ids.own2, ids.foreign, ids.legacy]],
+    ];
+    for (const [name, actor, visibleIds] of cases) {
+      const list = await core.listSwarms(actor);
+      expect(list.map((s) => s.id).sort(), name).toEqual([...visibleIds].sort());
+      for (const id of Object.values(ids)) {
+        const expected = visibleIds.includes(id) ? 'ok' : 'not_found';
+        expect(codeOf(await core.getSwarm(actor, id)), `${name} getSwarm`).toBe(expected);
+        expect(codeOf(await core.getEvents(actor, id, 0)), `${name} getEvents`).toBe(expected);
+        const sub = await core.subscribe(actor, id, 0, () => undefined);
+        expect(codeOf(sub), `${name} subscribe`).toBe(expected);
+        if (sub.ok) sub.value();
+        expect(codeOf(await core.stopSwarm(actor, id)), `${name} stopSwarm`).toBe(expected);
+      }
+    }
+    const missing = uuid(7999);
+    const foreignGet = await core.getSwarm(u1, ids.foreign);
+    const missingGet = await core.getSwarm(u1, missing);
+    if (foreignGet.ok || missingGet.ok) throw new Error('ожидался not_found');
+    expect(foreignGet.error.message.replace(ids.foreign, '')).toBe(
+      missingGet.error.message.replace(missing, ''),
+    );
+  });
+
+  it('AC-024-17: createSwarm пишет orgId и createdBy автора; супервизор — forbidden до разбора тела', async () => {
+    const { core, launches } = setup();
+    const created = await core.createSwarm(actorOf('user', USER_U1, ORG_A), body(1));
+    if (!created.ok) throw new Error('не создан');
+    expect(created.value.orgId).toBe(ORG_A);
+    expect(created.value.createdBy).toBe(USER_U1);
+    const events = await core.getEvents(ACTOR, created.value.id, 0);
+    const swarmCreated = events.ok
+      ? events.value.find((e) => e.type === 'swarm.created')
+      : undefined;
+    expect(swarmCreated?.data).toMatchObject({ orgId: ORG_A, createdBy: USER_U1 });
+
+    const supervisor = actorOf('supervisor', SUPERVISOR, null);
+    expect(codeOf(await core.createSwarm(supervisor, 'не тело'))).toBe('forbidden');
+    expect(launches).toHaveLength(1);
+  });
+
+  it('AC-024-18 (ядро): providerCostMicroUsd = 42 — администратор и пользователь получают null, супервизор — 42, в хранилище — 42', async () => {
+    const store = createMemorySwarmStore();
+    const { core } = setup({ store });
+    const created = await core.createSwarm(ACTOR, body(1));
+    if (!created.ok) throw new Error('не создан');
+    const id = created.value.id;
+    const llmCall = {
+      type: 'llm.call' as const,
+      source: 'llm-gateway' as const,
+      agentId: null,
+      data: {
+        callId: uuid(5001),
+        model: 'chat-small',
+        stream: false,
+        status: 'ok' as const,
+        usage: { promptTokens: 1000, cachedPromptTokens: 200, completionTokens: 500 },
+        costMicroUsd: 9960,
+        providerCostMicroUsd: 42,
+        latencyMs: 812,
+      },
+    };
+    const supervisor = actorOf('supervisor', SUPERVISOR, null);
+    const liveUser: PlatformEvent[] = [];
+    const liveSupervisor: PlatformEvent[] = [];
+    const subUser = await core.subscribe(ACTOR, id, 0, (e) => liveUser.push(e));
+    const subSupervisor = await core.subscribe(supervisor, id, 0, (e) => liveSupervisor.push(e));
+    await core.ingestEvent(sys(id, 20, llmCall));
+
+    const costOf = (events: PlatformEvent[]) => {
+      const call = events.find((e) => e.type === 'llm.call');
+      return call?.type === 'llm.call' ? call.data.providerCostMicroUsd : undefined;
+    };
+    expect(subUser.ok && costOf(liveUser)).toBe(null);
+    expect(subSupervisor.ok && costOf(liveSupervisor)).toBe(42);
+    if (subUser.ok) subUser.value();
+    if (subSupervisor.ok) subSupervisor.value();
+    const adminA = actorOf('admin', ADMIN_A, ORG_A);
+    for (const actor of [ACTOR, adminA]) {
+      const events = await core.getEvents(actor, id, 0);
+      expect(events.ok && costOf(events.value)).toBe(null);
+      const seen: PlatformEvent[] = [];
+      const sub = await core.subscribe(actor, id, 0, (e) => seen.push(e));
+      expect(sub.ok).toBe(true);
+      expect(costOf(seen)).toBe(null);
+      if (sub.ok) sub.value();
+    }
+    const events = await core.getEvents(supervisor, id, 0);
+    expect(events.ok && costOf(events.value)).toBe(42);
+    const seen: PlatformEvent[] = [];
+    const sub = await core.subscribe(supervisor, id, 0, (e) => seen.push(e));
+    expect(costOf(seen)).toBe(42);
+    if (sub.ok) sub.value();
+    expect(costOf(await store.events(id, 0))).toBe(42);
+  });
+
+  it('AC-024-16 (ядро), правило 3: без права операция отвечает forbidden до разбора тела', async () => {
+    const { core, launches } = setup();
+    const created = await core.createSwarm(ACTOR, body(1));
+    if (!created.ok) throw new Error('не создан');
+    const id = created.value.id;
+    const noRights: Actor = { ...ACTOR, permissions: [] };
+    expect(codeOf(await core.getSwarm(noRights, id))).toBe('forbidden');
+    expect(codeOf(await core.getEvents(noRights, id, 0))).toBe('forbidden');
+    expect(codeOf(await core.stopSwarm(noRights, id))).toBe('forbidden');
+    expect(codeOf(await core.subscribe(noRights, id, 0, () => undefined))).toBe('forbidden');
+    expect(codeOf(await core.createSwarm(noRights, 'не тело'))).toBe('forbidden');
+    expect(await core.listSwarms(noRights)).toEqual([]);
+    expect(launches).toHaveLength(1);
+  });
+
+  it('AC-024-21 / REQ-024-10 (ядро): stopSwarmsOfUser останавливает два активных роя пользователя через оркестратор, повтор ничего не трогает', async () => {
+    const { core, stops, entries } = setup({ maxActiveSwarms: 10 });
+    const active1 = await core.createSwarm(ACTOR, body(1));
+    const active2 = await core.createSwarm(ACTOR, body(1));
+    const finished = await core.createSwarm(ACTOR, body(1));
+    const foreign = await core.createSwarm(actorOf('user', USER_B, ORG_B), body(1));
+    if (!active1.ok || !active2.ok || !finished.ok || !foreign.ok) throw new Error('не созданы');
+    await core.ingestEvent(
+      sys(finished.value.id, 1, {
+        type: 'swarm.completed',
+        source: 'orchestrator',
+        agentId: null,
+        data: { result: 'R' },
+      }),
+    );
+
+    expect(await core.stopSwarmsOfUser(USER_U1)).toBe(2);
+    expect(stops.sort()).toEqual([active1.value.id, active2.value.id].sort());
+    expect(entries.find((e) => e.msg === 'user_swarms_stopped')).toEqual({
+      level: 'info',
+      msg: 'user_swarms_stopped',
+      ctx: { userId: USER_U1, count: 2 },
+    });
+
+    for (const [n, id] of [active1.value.id, active2.value.id].entries()) {
+      await core.ingestEvent(
+        sys(id, 10 + n, {
+          type: 'swarm.stopped',
+          source: 'orchestrator',
+          agentId: null,
+          data: { reason: 'user' },
+        }),
+      );
+    }
+    expect(await core.stopSwarmsOfUser(USER_U1)).toBe(0);
+    expect(stops).toHaveLength(2);
+  });
+
+  it('AC-024-21: сбой остановки одного роя не мешает остальным, вызов бросает AggregateError, повтор после починки останавливает оставшийся', async () => {
+    let broken = true;
+    let failingId = '';
+    const { core, stops, entries } = setup({
+      maxActiveSwarms: 10,
+      stop: async (id) => {
+        if (broken && id === failingId) throw new Error('оркестратор недоступен');
+      },
+    });
+    const failing = await core.createSwarm(ACTOR, body(1));
+    const healthy = await core.createSwarm(ACTOR, body(1));
+    if (!failing.ok || !healthy.ok) throw new Error('не созданы');
+    failingId = failing.value.id;
+
+    const result = core.stopSwarmsOfUser(USER_U1);
+    await expect(result).rejects.toBeInstanceOf(AggregateError);
+    expect(stops.sort()).toEqual([failing.value.id, healthy.value.id].sort());
+    expect(entries.find((e) => e.msg === 'user_swarm_stop_failed')).toEqual({
+      level: 'warn',
+      msg: 'user_swarm_stop_failed',
+      ctx: expect.objectContaining({ userId: USER_U1, swarmId: failing.value.id }),
+    });
+    expect(entries.find((e) => e.msg === 'user_swarms_stopped')).toEqual({
+      level: 'info',
+      msg: 'user_swarms_stopped',
+      ctx: { userId: USER_U1, count: 1 },
+    });
+
+    await core.ingestEvent(
+      sys(healthy.value.id, 30, {
+        type: 'swarm.stopped',
+        source: 'orchestrator',
+        agentId: null,
+        data: { reason: 'user' },
+      }),
+    );
+    broken = false;
+    expect(await core.stopSwarmsOfUser(USER_U1)).toBe(1);
+    expect(stops.filter((id) => id === failing.value.id)).toHaveLength(2);
   });
 });
