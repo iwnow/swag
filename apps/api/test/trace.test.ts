@@ -14,7 +14,9 @@ import {
 import { LogRecord, type PlatformEventInput } from '@swag/contracts';
 import { buildApp } from '../src/app.ts';
 import { buildApp as buildOrchestratorApp } from '../../orchestrator/src/app.ts';
-import { body } from './support.ts';
+import { actorOf, body, bearer, makeStartedAuth, T, WHO } from './support.ts';
+
+const ADMIN = actorOf(WHO.adminA);
 
 // AC-016-9: настоящие api и orchestrator на случайных портах, фейковый провайдер песочниц, спаны в памяти.
 const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
@@ -97,17 +99,21 @@ async function stack() {
     trace: current.trace,
     limits: { maxActiveSwarms: 5, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
   });
-  const apiApp = await buildApp(api, {
-    loggerInstance: current.logger.pino,
-    serverFactory: tracedHttpServer(current),
-  });
+  const apiApp = await buildApp(
+    api,
+    {
+      loggerInstance: current.logger.pino,
+      serverFactory: tracedHttpServer(current),
+    },
+    (await makeStartedAuth({ core: api })).app,
+  );
   apps.push(apiApp);
   await apiApp.listen({ host: '127.0.0.1', port: 0 });
 
   const post = (traceparent: string, payload: unknown = body(2)) =>
     fetch(`http://127.0.0.1:${portOf(apiApp)}/swarms`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', traceparent },
+      headers: { 'content-type': 'application/json', traceparent, ...bearer(T.adminA) },
       body: JSON.stringify(payload),
     });
   return { memory, api, published, post, lines };
@@ -139,7 +145,7 @@ describe('трассировка HTTP api → orchestrator', () => {
     expect(orchestratorServer?.parentSpanContext?.spanId).toBe(client?.spanContext().spanId);
     expect(orchestratorServer?.attributes['http.response.status_code']).toBe(202);
 
-    const events = await api.getEvents(swarm.id, 0);
+    const events = await api.getEvents(ADMIN, swarm.id, 0);
     expect(events.ok && events.value.find((e) => e.type === 'swarm.created')?.traceId).toBe(TRACE);
     const launched = published.filter((e) => e.type === 'agent.launched');
     expect(launched).toHaveLength(2);
@@ -148,7 +154,7 @@ describe('трассировка HTTP api → orchestrator', () => {
     const invalid = await post('00-garbage-zzzz-01');
     expect(invalid.status).toBe(201);
     const other = (await invalid.json()) as { id: string };
-    const otherEvents = await api.getEvents(other.id, 0);
+    const otherEvents = await api.getEvents(ADMIN, other.id, 0);
     const created = otherEvents.ok
       ? otherEvents.value.find((e) => e.type === 'swarm.created')
       : undefined;
