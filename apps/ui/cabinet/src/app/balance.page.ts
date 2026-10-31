@@ -1,7 +1,12 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import type { BalanceEntry, BalanceView } from '@swag/contracts';
-import { formatUsd } from '@swag/ui-core';
+import {
+  ROLE_PERMISSIONS,
+  TopupRequest,
+  type BalanceEntry,
+  type BalanceView,
+} from '@swag/contracts';
+import { formatUsd, usdToMicro } from '@swag/ui-core';
 import { SESSION, currentUser } from './session.ts';
 import { BALANCE, errorText } from './ui.ts';
 
@@ -47,6 +52,30 @@ const formatDate = (ts: string): string =>
         </div>
       }
 
+      @if (canTopup) {
+        <h2>Пополнение</h2>
+        <form (submit)="$event.preventDefault(); topup()">
+          <label>
+            Сумма, $
+            <input
+              type="number"
+              min="0"
+              step="0.000001"
+              [value]="amount()"
+              (input)="setAmount($event)"
+            />
+          </label>
+          <label>
+            Комментарий
+            <input maxlength="500" [value]="comment()" (input)="setComment($event)" />
+          </label>
+          @if (formError(); as message) {
+            <p class="error">{{ message }}</p>
+          }
+          <button type="submit" [disabled]="submitting()">Пополнить</button>
+        </form>
+      }
+
       <h2>История</h2>
       @if (entries().length === 0 && loaded()) {
         <p>Записей пока нет.</p>
@@ -89,7 +118,8 @@ const formatDate = (ts: string): string =>
 })
 export class BalancePageComponent implements OnInit {
   private readonly api = inject(BALANCE);
-  readonly orgId = currentUser(inject(SESSION))?.orgId ?? null;
+  private readonly user = currentUser(inject(SESSION));
+  readonly orgId = this.user?.orgId ?? null;
 
   readonly balance = signal<BalanceView | null>(null);
   readonly entries = signal<BalanceEntry[]>([]);
@@ -97,6 +127,14 @@ export class BalancePageComponent implements OnInit {
   readonly loaded = signal(false);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+
+  // Спека 013, 4.11: форма пополнения — только при праве `balance.topup` у роли сессии.
+  readonly canTopup =
+    this.user !== null && ROLE_PERMISSIONS[this.user.role].includes('balance.topup');
+  readonly amount = signal('');
+  readonly comment = signal('');
+  readonly formError = signal<string | null>(null);
+  readonly submitting = signal(false);
 
   readonly usd = formatUsd;
   readonly signed = signedUsd;
@@ -119,6 +157,40 @@ export class BalancePageComponent implements OnInit {
       this.error.set(errorText(error));
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  setAmount(event: Event): void {
+    this.amount.set((event.target as HTMLInputElement).value);
+  }
+
+  setComment(event: Event): void {
+    this.comment.set((event.target as HTMLInputElement).value);
+  }
+
+  // Тело — по схеме TopupRequest; пустой комментарий уходит как null. После успеха перечитываются баланс и история с первой страницы.
+  async topup(): Promise<void> {
+    if (this.orgId === null) return;
+    this.formError.set(null);
+    const comment = this.comment().trim();
+    const body = TopupRequest.safeParse({
+      amountMicroUsd: usdToMicro(this.amount()),
+      comment: comment === '' ? null : comment,
+    });
+    if (!body.success) {
+      this.formError.set('Проверьте сумму: от $0.000001 до $1000, комментарий до 500 символов.');
+      return;
+    }
+    this.submitting.set(true);
+    try {
+      await this.api.topup(this.orgId, body.data);
+      this.amount.set('');
+      this.comment.set('');
+      await this.reload();
+    } catch (error) {
+      this.formError.set(errorText(error));
+    } finally {
+      this.submitting.set(false);
     }
   }
 
