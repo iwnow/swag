@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CONFIRM_MAIL_SUBJECT } from '../src/index.ts';
 import {
   ADMIN_EMAIL,
@@ -19,11 +19,17 @@ const INVALID = {
   error: { code: 'invalid_refresh_token', message: 'invalid refresh token' },
 };
 
-async function loginToken(env: TestEnv): Promise<{ refreshToken: string; accessToken: string }> {
-  await seedAdmin(env);
+async function loginToken(
+  env: TestEnv,
+): Promise<{ userId: string; refreshToken: string; accessToken: string }> {
+  const { userId } = await seedAdmin(env);
   const result = await env.core.login({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD }, meta);
   if (!result.ok) throw new Error('вход не прошёл');
-  return { refreshToken: result.value.refreshToken, accessToken: result.value.session.accessToken };
+  return {
+    userId,
+    refreshToken: result.value.refreshToken,
+    accessToken: result.value.session.accessToken,
+  };
 }
 
 describe('identity-core — refresh и logout (спека 012, T-9)', () => {
@@ -46,16 +52,25 @@ describe('identity-core — refresh и logout (спека 012, T-9)', () => {
 
   it('AC-012-15: повтор уже заменённого токена — invalid_refresh_token и warn refresh_reuse_detected; новый токен после этого тоже отказ', async () => {
     const env = createTestEnv();
-    const { refreshToken } = await loginToken(env);
+    const { userId, refreshToken } = await loginToken(env);
     const first = await env.core.refresh(refreshToken);
     if (!first.ok) throw new Error('обновление не прошло');
 
     const reused = await env.core.refresh(refreshToken);
     expect(reused).toEqual(INVALID);
-    expect(env.entries).toContainEqual(
-      expect.objectContaining({ level: 'warn', msg: 'refresh_reuse_detected' }),
-    );
+    expect(env.entries).toContainEqual({
+      level: 'warn',
+      msg: 'refresh_reuse_detected',
+      ctx: { userId },
+    });
     expect(await env.core.refresh(first.value.refreshToken)).toEqual(INVALID);
+  });
+
+  it('4.2 (D-116 а): сессия обновлена, но пользователя нет в хранилище — invalid_refresh_token', async () => {
+    const env = createTestEnv();
+    const { refreshToken } = await loginToken(env);
+    vi.spyOn(env.store, 'findUserById').mockResolvedValueOnce(null);
+    expect(await env.core.refresh(refreshToken)).toEqual(INVALID);
   });
 
   it('REQ-012-12: нет токена или неизвестный токен — invalid_refresh_token', async () => {

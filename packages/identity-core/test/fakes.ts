@@ -134,7 +134,7 @@ export function tokenFromMail(text: string): string {
 
 export function sentMail(env: TestEnv, index = 0): MailMessage {
   const mail = env.mailer.sent[index];
-  if (!mail) throw new Error();
+  if (!mail) throw new Error(`письмо ${index} не отправлено`);
   return mail;
 }
 

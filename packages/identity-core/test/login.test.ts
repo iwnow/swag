@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { RATE_LIMITS } from '../src/index.ts';
 import {
   ADMIN_EMAIL,
@@ -60,7 +60,7 @@ describe('identity-core — login и me (спека 012, T-8)', () => {
   });
 
   it('AC-012-12: неверный пароль существующего и неизвестный email — одинаковый invalid_credentials, verify ровно один раз в каждом случае, два warn login_failed без email', async () => {
-    const { env } = await seedEnv();
+    const { env, userId } = await seedEnv();
 
     const wrongPassword = await env.core.login(
       { email: EMAIL, password: 'wrong password 1' },
@@ -81,7 +81,7 @@ describe('identity-core — login и me (спека 012, T-8)', () => {
     const failures = env.entries.filter((e) => e.msg === 'login_failed');
     expect(failures).toHaveLength(2);
     expect(failures.every((e) => e.level === 'warn')).toBe(true);
-    expect(failures[0]?.ctx).toHaveProperty('userId');
+    expect(failures[0]?.ctx).toEqual({ userId });
     expect(failures[1]?.ctx).toEqual({});
     expect(JSON.stringify(env.entries)).not.toContain('nobody@example.test');
     expect(JSON.stringify(env.entries)).not.toContain(EMAIL);
@@ -96,6 +96,18 @@ describe('identity-core — login и me (спека 012, T-8)', () => {
     expect(env.hasher.hash.mock.calls.length - hashCallsBefore).toBe(1);
     expect(env.hasher.verify.mock.calls[0]?.[0]).toMatch(/^fake-hash:/);
     expect(env.hasher.verify.mock.calls[0]?.[0]).toBe(env.hasher.verify.mock.calls[1]?.[0]);
+  });
+
+  it('4.2 dummyHash: отклонённый хэш не кешируется — следующий вход с неизвестным email снова даёт invalid_credentials', async () => {
+    const env = createTestEnv();
+    env.hasher.hash.mockRejectedValueOnce(new Error('hasher down'));
+
+    expect(
+      await env.core.login({ email: 'a@example.test', password: PASSWORD }, meta),
+    ).toMatchObject({ ok: false, error: { code: 'internal_error' } });
+    expect(
+      await env.core.login({ email: 'b@example.test', password: PASSWORD }, meta),
+    ).toMatchObject({ ok: false, error: { code: 'invalid_credentials' } });
   });
 
   it('AC-012-13: 11 входов одного email за 15 мин — 11-й rate_limited без verify и письма; после окна снова разрешено', async () => {
@@ -148,33 +160,29 @@ describe('identity-core — login и me (спека 012, T-8)', () => {
     });
   });
 
-  it('REQ-012-13: me — нет токена, испорченный, чужой iss или aud, alg none и просроченный — unauthorized', async () => {
+  it('REQ-012-13: me — нет токена или verifier отверг токен (null) — unauthorized; разбор подписи, iss, aud и срока проверяется на jose в T-13 и T-16', async () => {
     const { env } = await seedEnv();
     const login = await env.core.login({ email: EMAIL, password: PASSWORD }, meta);
     if (!login.ok) throw new Error('вход не прошёл');
-    const claims = await env.verifier.verify(login.value.session.accessToken);
-    if (!claims) throw new Error('токен не разобран');
-
-    const forged = (patch: Record<string, unknown>) =>
-      `fake.${JSON.stringify({ ...claims, ...patch })}`;
-    const rejected = [
-      undefined,
-      'garbage',
-      'none.' + JSON.stringify(claims),
-      forged({ iss: 'evil' }),
-      forged({ aud: 'other' }),
-    ];
-    for (const token of rejected) {
-      expect(await env.core.me(token)).toEqual({
-        ok: false,
-        error: { code: 'unauthorized', message: 'unauthorized' },
-      });
-    }
-
-    env.clock.advance(900 * 1000 + 1000);
-    expect(await env.core.me(login.value.session.accessToken)).toMatchObject({
+    const unauthorized = {
       ok: false,
-      error: { code: 'unauthorized' },
+      error: { code: 'unauthorized', message: 'unauthorized' },
+    };
+
+    expect(await env.core.me(undefined)).toEqual(unauthorized);
+    vi.spyOn(env.verifier, 'verify').mockResolvedValueOnce(null);
+    expect(await env.core.me(login.value.session.accessToken)).toEqual(unauthorized);
+  });
+
+  it('REQ-012-13: me — токен верен, пользователя нет в хранилище — unauthorized', async () => {
+    const { env } = await seedEnv();
+    const login = await env.core.login({ email: EMAIL, password: PASSWORD }, meta);
+    if (!login.ok) throw new Error('вход не прошёл');
+    vi.spyOn(env.store, 'findUserById').mockResolvedValueOnce(null);
+
+    expect(await env.core.me(login.value.session.accessToken)).toEqual({
+      ok: false,
+      error: { code: 'unauthorized', message: 'unauthorized' },
     });
   });
 });

@@ -160,8 +160,14 @@ describe('identity-core — requestRegistration (спека 012, T-6)', () => {
       error: { code: 'internal_error', message: 'internal error' },
     });
     expect(JSON.stringify(result)).not.toContain('db down');
-    expect(env.entries).toContainEqual(
-      expect.objectContaining({ level: 'error', msg: 'identity_operation_failed' }),
-    );
+    expect(env.entries).toContainEqual({
+      level: 'error',
+      msg: 'identity_operation_failed',
+      ctx: { operation: 'requestRegistration' },
+    });
+    const failure = env.entries.find((e) => e.msg === 'identity_operation_failed');
+    expect(failure?.ctx).not.toHaveProperty('err');
+    expect(JSON.stringify(env.entries)).not.toContain('boom@example.test');
+    expect(JSON.stringify(env.entries)).not.toContain('db down');
   });
 });

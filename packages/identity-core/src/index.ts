@@ -402,8 +402,12 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
 
   // Хэш от случайной строки: на несуществующий email хэшер всё равно работает столько же, сколько на существующий.
   let dummyHash: Promise<string> | undefined;
+  // Отклонённый промис не кешируем: следующий вход снова попробует посчитать хэш.
   const getDummyHash = (): Promise<string> => {
-    dummyHash ??= hasher.hash(opaque.create().token);
+    dummyHash ??= hasher.hash(opaque.create().token).catch((err: unknown) => {
+      dummyHash = undefined;
+      throw err;
+    });
     return dummyHash;
   };
 
@@ -435,26 +439,27 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     return ok({ user: authUser(found.user), organization: authOrganization(found.organization) });
   };
 
-  // Исключение хранилища или ядра превращается в internal_error; наружу текст не уходит.
+  // Исключение хранилища или ядра превращается в internal_error. В лог пишется только имя операции:
+  // текст ошибки (например, `detail` Postgres) может содержать email, поэтому `err` не передаём (4.3, D-115).
   const guarded =
-    <A extends unknown[], T>(fn: (...args: A) => Promise<Result<T>>) =>
+    <A extends unknown[], T>(operation: string, fn: (...args: A) => Promise<Result<T>>) =>
     async (...args: A): Promise<Result<T>> => {
       try {
         return await fn(...args);
-      } catch (err) {
-        log.error('identity_operation_failed', { err });
+      } catch {
+        log.error('identity_operation_failed', { operation });
         return fail('internal_error');
       }
     };
 
   return {
     info: () => ({ service: 'identity', version: deps.version }),
-    requestRegistration: guarded(requestRegistration),
-    confirmRegistration: guarded(confirmRegistration),
-    login: guarded(login),
-    refresh: guarded(refresh),
-    logout: guarded(logout),
-    me: guarded(me),
+    requestRegistration: guarded('requestRegistration', requestRegistration),
+    confirmRegistration: guarded('confirmRegistration', confirmRegistration),
+    login: guarded('login', login),
+    refresh: guarded('refresh', refresh),
+    logout: guarded('logout', logout),
+    me: guarded('me', me),
     ensureSupervisor,
   };
 }
