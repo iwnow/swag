@@ -1,7 +1,7 @@
 // Спека 012, 4.11: выпуск ключа подписи токенов identity (npm run identity:keys).
 // Без аргументов печатает пару ключей: base64 от PEM (PKCS8 для закрытого, SPKI для открытого), D-117.
-// С --write-env [путь] пишет IDENTITY_JWT_PRIVATE_KEY в файл (по умолчанию .env в корне)
-// и в консоль закрытый ключ не выводит.
+// С --write-env [путь] пишет IDENTITY_JWT_PRIVATE_KEY и IDENTITY_JWT_PUBLIC_KEY в файл (по умолчанию .env в корне)
+// и в консоль ключи не выводит (спека 024, 4.14).
 import { generateKeyPairSync } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -38,5 +38,6 @@ if (writeIndex === -1) {
   const next = argv[writeIndex + 1];
   const path = next && !next.startsWith('--') ? resolve(next) : DEFAULT_ENV;
   writeEnvVar(path, PRIVATE_KEY, privateB64);
-  console.log(`${PRIVATE_KEY} записан в ${path}`);
+  writeEnvVar(path, PUBLIC_KEY, publicB64);
+  console.log(`${PRIVATE_KEY} и ${PUBLIC_KEY} записаны в ${path}`);
 }

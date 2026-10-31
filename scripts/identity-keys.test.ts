@@ -73,8 +73,23 @@ describe('identity:keys', () => {
     expect(code).toBe(0);
     expect(stdout).not.toContain(privateValue(readFileSync(path, 'utf8')));
     const lines = readFileSync(path, 'utf8').trimEnd().split('\n');
-    expect(lines).toHaveLength(1);
+    expect(lines).toHaveLength(2);
     expect(lines[0]).toMatch(PRIVATE_LINE);
+    expect(lines[1]).toMatch(/^IDENTITY_JWT_PUBLIC_KEY=[A-Za-z0-9+/]+={0,2}$/);
+  });
+
+  it('AC-024-2: --write-env пишет обе переменные ключа в файл, в выводе ни одного ключа', () => {
+    const fixture = createFixture({});
+    remove = fixture.remove;
+    const path = join(fixture.root, '.env');
+
+    const { code, stdout } = run(['--write-env', path]);
+    const text = readFileSync(path, 'utf8');
+    expect(code).toBe(0);
+    expect(publicKeyFromPrivate(pemOf(privateValue(text)))).toBe(pemOf(publicValue(text)));
+    expect(stdout).not.toContain(privateValue(text));
+    expect(stdout).not.toContain(publicValue(text));
+    expect(stdout).not.toContain('BEGIN');
   });
 
   it('4.11: --write-env заменяет пустую строку ключа на месте, остальные переменные сохраняет, повтор не дублирует строку', () => {
@@ -93,6 +108,7 @@ describe('identity:keys', () => {
       'IDENTITY_PORT=3003',
       expect.stringMatching(PRIVATE_LINE),
       'IDENTITY_JWT_KID=dev-1',
+      expect.stringMatching(/^IDENTITY_JWT_PUBLIC_KEY=/),
       '',
     ]);
     expect(second.match(/^IDENTITY_JWT_PRIVATE_KEY=/gm)).toHaveLength(1);
