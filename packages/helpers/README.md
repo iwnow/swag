@@ -11,14 +11,17 @@
 - `HttpError` — ошибка ответа с `status` и `retryAfterMs`.
 - `httpRetryable(err)` — повторяемы сетевые ошибки (`TypeError` из `fetch`), таймаут (`AbortError`, `TimeoutError`), `HttpError` 408, 429 и 5xx. Для `HttpError` с `Retry-After` возвращает `{ afterMs }`.
 - `parseRetryAfter(value, now)` — заголовок `Retry-After` в миллисекундах: целые секунды или HTTP-дата; иначе `null`.
+- `tokenMatches(presented, expected)` — сравнение секрета через `timingSafeEqual`; разная длина — `false` без сравнения (024, 4.13).
+- `bearerMatches(authorization, expected)` — проверка заголовка `Authorization: Bearer <token>` тем же сравнением; без заголовка или другой схемы — `false`.
 
 ## Что внутри сейчас
 
 - `src/index.ts` — `retry`, `RetryOptions`.
-- `src/server/index.ts` — `HttpError`, `httpRetryable`, `parseRetryAfter`.
+- `src/server/index.ts` — `HttpError`, `httpRetryable`, `parseRetryAfter`, `tokenMatches`, `bearerMatches`.
 - `src/env.d.ts` — минимальные описания `AbortSignal`, `setTimeout`, `clearTimeout` для типов без DOM и `@types/node`.
 - `test/retry.test.ts` — AC-004-31: паузы, неповторяемая ошибка, все попытки неудачны, прерывание `signal` во время паузы.
 - `test/server.test.ts` — AC-004-31: классификация `httpRetryable` и разбор `parseRetryAfter`.
+- `test/token.test.ts` — AC-024-22: `bearerMatches` и `tokenMatches` (верный и неверный токен, схема, длина).
 
 ## Ключевые решения
 
@@ -26,7 +29,9 @@
 - Ядрам пакет не разрешён: белый список `arch:check` (`CORE_ALLOWED_PACKAGES`) не расширен, как требует 4.10. Ядро, которому нужен повтор, получает его через порт оболочки.
 - Вызовы моделей через LiteLLM хелпер не используют: там повторяют LiteLLM и OpenAI SDK (022, Q-4).
 - `sleep`, `random` и `signal` — опции, а не глобалы: тесты подменяют их фейками.
-- Один `tsconfig` без `types` и без DOM на оба каталога: серверной части не нужны типы `fetch` или `@types/node`, поэтому отдельный проект не понадобился. `AbortSignal`, `setTimeout` и `clearTimeout` в `ES2023` нет, их описания — в `src/env.d.ts`, минимальные и только для используемого.
+- Один `tsconfig` без `types` и без DOM на оба каталога: серверной части не нужны типы `fetch`, поэтому отдельный проект не понадобился. `AbortSignal`, `setTimeout` и `clearTimeout` в `ES2023` нет, их описания — в `src/env.d.ts`, минимальные и только для используемого.
+- `src/server/index.ts` подключает `@types/node` директивой `/// <reference types="node" />` только для `node:crypto`; глобальный `types: ["node"]` в `tsconfig` не добавлен, универсальная точка входа по-прежнему собирается без Node-типов.
+- Сравнение токенов вынесено сюда из трёх оболочек (`identity`, `llm-gateway`, `orchestrator`), где было по одной копии (024, 4.13). Проверка `bearerMatches` — только заголовок, без логирования значения.
 - `HttpError.name = 'HttpError'` — читаемый `err.name` в логах и стеке (иначе `Error`).
 - `src/env.d.ts` — минимальные глобальные объявления `AbortSignal`, `setTimeout`, `clearTimeout`: универсальная точка входа собирается без DOM и `@types/node`. Файл только с объявлениями, в JS не эмитится; пакет отдаёт исходники через `exports`, `dist` нет, потребителей эти объявления не получают.
 - `httpRetryable` считает повторяемой любую `TypeError`: отличить ошибку `fetch` от ошибки кода по типу нельзя. Цена — лишние повторы при багах, которые бросают `TypeError`.
@@ -38,7 +43,7 @@
 
 ## Связи
 
-- Используют: адаптеры и оболочки, которые ходят по сети (`@swag/helpers` и `@swag/helpers/server`).
+- Используют: адаптеры и оболочки, которые ходят по сети (`@swag/helpers` и `@swag/helpers/server`); `bearerMatches` — оболочки `identity`, `llm-gateway`, `orchestrator`.
 - Не используют ничего из воркспейса: зависимостей нет.
 - Ядра (`*-core`, `contracts`, `api-integration`) пакет не импортируют (4.10, `arch:check` не менялся).
 
@@ -46,3 +51,4 @@
 
 - 004 — `retry` и хелперы `fetch` ([4.10](../../docs/spec/004-money.md#410-swaghelpers-повтор-из-n-10), REQ-004-21, AC-004-31).
 - 022 — вызовы через LiteLLM без хелпера (Q-4).
+- 024 — `tokenMatches`, `bearerMatches` ([4.13](../../docs/spec/024-organizations-access.md#413-внутренний-токен-оркестратора), AC-024-22).

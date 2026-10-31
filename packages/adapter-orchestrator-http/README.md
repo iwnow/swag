@@ -8,10 +8,12 @@
 - `stop(swarmId)` → `POST /swarms/:id/stop`, ожидается `202`.
 - Любой другой ответ или сетевая ошибка — исключение; ядро `api` превращает его в `swarm.failed` (`orchestrator_unavailable`).
 - Каждый вызов — клиентский спан, `traceparent` текущего контекста уходит в заголовке (016, 4.5).
+- Каждый запрос несёт `authorization: Bearer <token>` с `ORCHESTRATOR_TOKEN` (024, 4.13); оркестратор без него отвечает `401`, и клиент это считает ошибкой вызова.
 
 ## Что внутри сейчас
 
-- `createOrchestratorHttpClient({ baseUrl, fetch? })`.
+- `createOrchestratorHttpClient({ baseUrl, token, fetch? })`.
+- `test/client.test.ts` — AC-024-22: заголовок `Authorization` на `launch` и `stop` (фейковый оркестратор на локальном порту).
 - Тест HTTP-цепочки с настоящими `api` и `orchestrator` — `apps/api/test/trace.test.ts` (AC-016-9).
 
 ## Ограничения
@@ -23,7 +25,7 @@
 
 - Порт: `OrchestratorClient` из `@swag/api-core` (только типы).
 - Использует: `@swag/contracts`, `@opentelemetry/api`.
-- Оболочка: `apps/api` (адрес — `ORCHESTRATOR_URL`).
+- Оболочка: `apps/api` (адрес — `ORCHESTRATOR_URL`, токен — `ORCHESTRATOR_TOKEN`).
 
 ## Ключевые решения
 
@@ -36,3 +38,4 @@
 
 - 001 — 4.5.4, Q-6.
 - 016 — 4.5, AC-016-9.
+- 024 — 4.13, AC-024-22.

@@ -21,6 +21,7 @@ const ADMIN = actorOf(WHO.adminA);
 // AC-016-9: настоящие api и orchestrator на случайных портах, фейковый провайдер песочниц, спаны в памяти.
 const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
 const REMOTE_SPAN = '00f067aa0ba902b7';
+const ORCHESTRATOR_TOKEN = 'fake-orchestrator-token-for-tests-000000';
 
 const apps: FastifyInstance[] = [];
 let telemetry: Telemetry | null = null;
@@ -80,10 +81,14 @@ async function stack() {
     },
     timeouts: { agentStartMs: 30000, swarmMs: 300000 },
   });
-  const orchestratorApp = buildOrchestratorApp(orchestrator, {
-    loggerInstance: current.logger.pino,
-    serverFactory: tracedHttpServer(current),
-  });
+  const orchestratorApp = buildOrchestratorApp(
+    orchestrator,
+    {
+      loggerInstance: current.logger.pino,
+      serverFactory: tracedHttpServer(current),
+    },
+    { token: ORCHESTRATOR_TOKEN },
+  );
   apps.push(orchestratorApp);
   await orchestratorApp.listen({ host: '127.0.0.1', port: 0 });
 
@@ -92,6 +97,7 @@ async function stack() {
     store: createMemorySwarmStore(),
     orchestrator: createOrchestratorHttpClient({
       baseUrl: `http://127.0.0.1:${portOf(orchestratorApp)}`,
+      token: ORCHESTRATOR_TOKEN,
     }),
     clock,
     ids,

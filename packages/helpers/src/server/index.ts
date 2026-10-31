@@ -1,3 +1,6 @@
+/// <reference types="node" />
+import { timingSafeEqual } from 'node:crypto';
+
 export class HttpError extends Error {
   readonly status: number;
   readonly retryAfterMs: number | null;
@@ -29,4 +32,17 @@ export function parseRetryAfter(value: string | null, now: Date): number | null 
   const date = Date.parse(text);
   if (Number.isNaN(date)) return null;
   return Math.max(0, date - now.getTime());
+}
+
+// Спека 024, 4.13 (как 002, 4.2 и 024, 4.7): сравнение через timingSafeEqual; разная длина — отказ сразу, без сравнения.
+export function tokenMatches(presented: string, expected: string): boolean {
+  const given = Buffer.from(presented);
+  const wanted = Buffer.from(expected);
+  return given.length === wanted.length && timingSafeEqual(given, wanted);
+}
+
+// Заголовок Authorization: Bearer <token>. Нет заголовка или другая схема — false.
+export function bearerMatches(authorization: string | undefined, expected: string): boolean {
+  const header = authorization ?? '';
+  return header.startsWith('Bearer ') && tokenMatches(header.slice('Bearer '.length), expected);
 }

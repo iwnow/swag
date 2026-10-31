@@ -104,10 +104,14 @@ bus.subscribeJson(ALL_EVENTS, (raw) => {
 });
 
 // Fastify пишет тем же логгером; каждый запрос, кроме /health, — серверный спан с родителем из traceparent.
-const app = buildApp(core, {
-  loggerInstance: telemetry.logger.pino,
-  serverFactory: tracedHttpServer(telemetry, { ignorePaths: ['/health'] }),
-});
+const app = buildApp(
+  core,
+  {
+    loggerInstance: telemetry.logger.pino,
+    serverFactory: tracedHttpServer(telemetry, { ignorePaths: ['/health'] }),
+  },
+  { token: config.ORCHESTRATOR_TOKEN },
+);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(

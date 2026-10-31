@@ -1,6 +1,6 @@
-import { timingSafeEqual } from 'node:crypto';
 import cookie from '@fastify/cookie';
 import type { AuthErrorCode } from '@swag/contracts';
+import { bearerMatches } from '@swag/helpers/server';
 import type { IdentityCore, IdentityError, IssuedSession } from '@swag/identity-core';
 import Fastify, {
   type FastifyError,
@@ -39,13 +39,6 @@ const STATUS: Record<AuthErrorCode, number> = {
 
 const bearer = (header: string | undefined): string | undefined =>
   header?.startsWith('Bearer ') ? header.slice('Bearer '.length) : undefined;
-
-// Спека 024, 4.7 и как LLM_GATEWAY_TOKEN: сравнение через timingSafeEqual; разная длина — отказ сразу, без сравнения.
-function tokenMatches(presented: string, expected: string): boolean {
-  const given = Buffer.from(presented);
-  const wanted = Buffer.from(expected);
-  return given.length === wanted.length && timingSafeEqual(given, wanted);
-}
 
 export async function buildApp(
   core: IdentityCore,
@@ -155,8 +148,7 @@ export async function buildApp(
 
   // Спека 024, 4.7: только для identity-клиентов с IDENTITY_INTERNAL_TOKEN; ошибка в общем формате { error: { code, message } }.
   app.get('/internal/token-revocations', async (request, reply) => {
-    const presented = bearer(request.headers.authorization) ?? '';
-    if (!tokenMatches(presented, settings.internalToken)) {
+    if (!bearerMatches(request.headers.authorization, settings.internalToken)) {
       return fail(reply, { code: 'unauthorized', message: 'unauthorized' });
     }
     return reply.code(200).send(await core.tokenRevocations());
