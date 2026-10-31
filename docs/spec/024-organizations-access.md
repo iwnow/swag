@@ -1,7 +1,7 @@
 ---
 id: "024"
 title: Организации и доступ
-status: ready
+status: in-progress
 roadmap_stage: 5
 depends_on: ["003", "004", "012", "016"]
 superseded_by: null
@@ -581,3 +581,4 @@ export function createAuthSessionKeeper(api: AuthApi): AuthSessionKeeper;
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+| 2026-10-31 | `spec/024-t1` | Взята в работу. Этапы: T-1+T-2; T-3; T-4; T-5+T-6; T-7; T-8; T-9; T-10; T-12; группа T-11+T-13 через фича-ветку `spec/024-api` (T-11 меняет сигнатуры `ApiCore`, оболочка `apps/api` компилируется только после T-13); T-14; T-15; T-16; T-17; T-18 и завершение. | — |
