@@ -6,6 +6,11 @@
     "changeOrigin": true,
     "pathRewrite": { "^/api": "" }
   },
+  "/auth": {
+    "target": "http://identity:3003",
+    "secure": false,
+    "changeOrigin": true
+  },
   "/grafana": {
     "target": "http://lgtm:3000",
     "secure": false,
