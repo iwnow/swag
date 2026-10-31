@@ -30,7 +30,7 @@ async function fakeOrchestrator(): Promise<{ baseUrl: string; received: Incoming
 describe('createOrchestratorHttpClient', () => {
   it('AC-024-22: launch и stop шлют Authorization: Bearer <token> на каждом запросе', async () => {
     const { baseUrl, received } = await fakeOrchestrator();
-    const client = createOrchestratorHttpClient({ baseUrl, token: TOKEN });
+    const client = createOrchestratorHttpClient({ baseUrl, token: TOKEN, timeoutMs: 5000 });
 
     await client.launch({
       swarmId: SWARM_ID,
@@ -53,6 +53,33 @@ describe('createOrchestratorHttpClient', () => {
     expect(received).toHaveLength(2);
     for (const headers of received) {
       expect(headers.authorization).toBe(`Bearer ${TOKEN}`);
+    }
+  });
+
+  it('AC-013-21: оркестратор не отвечает — launch падает по timeoutMs, не позже чем через 1 с', async () => {
+    const hanging = createServer();
+    await new Promise<void>((resolve) => hanging.listen(0, '127.0.0.1', () => resolve()));
+    try {
+      const { port } = hanging.address() as AddressInfo;
+      const client = createOrchestratorHttpClient({
+        baseUrl: `http://127.0.0.1:${port}`,
+        token: TOKEN,
+        timeoutMs: 100,
+      });
+      const started = Date.now();
+      await expect(
+        client.launch({
+          swarmId: SWARM_ID,
+          task: 'T',
+          budgetMicroUsd: 1000000,
+          maxTokens: null,
+          agents: [],
+        }),
+      ).rejects.toThrow();
+      expect(Date.now() - started).toBeLessThan(1000);
+    } finally {
+      hanging.closeAllConnections();
+      await new Promise<void>((resolve) => hanging.close(() => resolve()));
     }
   });
 });

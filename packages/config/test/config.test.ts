@@ -116,6 +116,20 @@ describe('loadConfig', () => {
     );
   });
 
+  it('спека 013, 4.10: BALANCE_MAX_TOPUP_MICRO_USD — целое 1…1 000 000 000, по умолчанию 100000000', () => {
+    expect(loadConfig(ApiConfig, apiEnv).BALANCE_MAX_TOPUP_MICRO_USD).toBe(100000000);
+    expect(
+      loadConfig(ApiConfig, { ...apiEnv, BALANCE_MAX_TOPUP_MICRO_USD: '1000000000' })
+        .BALANCE_MAX_TOPUP_MICRO_USD,
+    ).toBe(1000000000);
+    expect(() =>
+      loadConfig(ApiConfig, { ...apiEnv, BALANCE_MAX_TOPUP_MICRO_USD: '1000000001' }),
+    ).toThrow(/BALANCE_MAX_TOPUP_MICRO_USD/);
+    expect(() => loadConfig(ApiConfig, { ...apiEnv, BALANCE_MAX_TOPUP_MICRO_USD: '0' })).toThrow(
+      /BALANCE_MAX_TOPUP_MICRO_USD/,
+    );
+  });
+
   it('спека 022, 4.8: AgentConfig разбирает AGENT_PEERS, умолчания и не знает AGENT_NEXT', () => {
     const config = loadConfig(AgentConfig, agentEnv);
     expect(config).toMatchObject({

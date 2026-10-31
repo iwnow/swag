@@ -5,9 +5,11 @@ import type { SwarmLaunch } from '@swag/contracts';
 // Спека 001, 4.6.1 и Q-6: api → orchestrator по HTTP.
 // Спека 016, 4.5: вызов в клиентском спане, traceparent текущего контекста — в заголовке запроса.
 // Спека 024, 4.13: каждый запрос несёт Authorization: Bearer <ORCHESTRATOR_TOKEN>.
+// Спека 013, 4.9 (из N-25): таймаут launch и stop; срабатывание — та же ошибка, что недоступность.
 export interface OrchestratorHttpOptions {
   baseUrl: string; // ORCHESTRATOR_URL, например http://orchestrator:3001
   token: string; // ORCHESTRATOR_TOKEN
+  timeoutMs: number;
   fetch?: typeof fetch;
 }
 
@@ -41,6 +43,7 @@ export function createOrchestratorHttpClient(options: OrchestratorHttpOptions): 
             method: 'POST',
             headers,
             ...(body === undefined ? {} : { body }),
+            signal: AbortSignal.timeout(options.timeoutMs),
           });
           span.setAttribute('http.response.status_code', response.status);
           if (response.status >= 400) span.setStatus({ code: SpanStatusCode.ERROR });

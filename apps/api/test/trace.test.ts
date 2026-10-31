@@ -98,6 +98,7 @@ async function stack() {
     orchestrator: createOrchestratorHttpClient({
       baseUrl: `http://127.0.0.1:${portOf(orchestratorApp)}`,
       token: ORCHESTRATOR_TOKEN,
+      timeoutMs: 5000,
     }),
     clock,
     ids,

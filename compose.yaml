@@ -49,6 +49,8 @@ services:
       MAX_ACTIVE_SWARMS: ${MAX_ACTIVE_SWARMS}
       SWARM_MAX_BUDGET_MICRO_USD: ${SWARM_MAX_BUDGET_MICRO_USD}
       AGENT_MAX_TOKENS_LIMIT: ${AGENT_MAX_TOKENS_LIMIT}
+      # Спека 013, 4.10: предел одного пополнения баланса организации.
+      BALANCE_MAX_TOPUP_MICRO_USD: ${BALANCE_MAX_TOPUP_MICRO_USD:-100000000}
       # Спека 024, 4.14: проверка токенов и отзывов (identity), токен для вызова оркестратора.
       IDENTITY_URL: ${IDENTITY_URL}
       IDENTITY_INTERNAL_TOKEN: ${IDENTITY_INTERNAL_TOKEN}
