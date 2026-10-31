@@ -99,9 +99,9 @@
 | Хэшер паролей | `PasswordHasher`, `createArgon2Hasher`, `@swag/adapter-crypto` | argon2id `m=19456, t=2, p=1` на `@node-rs/argon2` (012, 4.7). |
 | Непрозрачный токен | `OpaqueTokens`, `createNodeOpaqueTokens` | 32 случайных байта base64url и их SHA-256 для хранения: токены подтверждения и обновления (012, 4.3). |
 | Подпись и проверка токена | `TokenSigner`, `TokenVerifier`, `createJoseSigner`, `createJoseVerifier`, `publicKeyFromPrivate`, `@swag/adapter-jose`, `IDENTITY_JWT_PRIVATE_KEY`, `IDENTITY_JWT_PUBLIC_KEY`, `npm run identity:keys` | JWT EdDSA на `jose`; verifier подключают сервисы в 024 (012, 4.7, 4.11). |
-| Порт отправки почты | `Mailer`, `MailMessage`, `createSmtpMailer`, `@swag/adapter-smtp`, `createMemoryMailer`, `mail_unavailable` | Отправка писем identity; SMTP на `nodemailer` (012, 4.3, 4.7). |
+| Порт отправки почты | `Mailer`, `MailMessage`, `createSmtpMailer`, `@swag/adapter-smtp`, `createMemoryMailer`, `mail_unavailable`, `CONFIRM_MAIL_SUBJECT`, `ALREADY_REGISTERED_MAIL_SUBJECT`, `ALREADY_REGISTERED_MAIL_TEXT`, `confirmMailText` | Отправка писем identity; SMTP на `nodemailer` (012, 4.3, 4.7). Темы и тексты писем — константы `identity-core` (012, 4.6). |
 | Перехватчик почты | `mailpit` (сервис compose), `MAILPIT_UI_PORT` | Mailpit в разработке: принимает SMTP, письма видны в UI и API на `127.0.0.1` (012, 4.11). |
-| Ограничитель частоты | `RateLimiter`, `createMemoryRateLimiter`, `rate_limited` | Фиксированное окно по ключу `register:*`, `confirm:*`, `login:*`; сверх лимита — `429` (012, 4.8). |
+| Ограничитель частоты | `RateLimiter`, `createMemoryRateLimiter`, `RATE_LIMITS`, `rate_limited` | Фиксированное окно по ключу `register:*`, `confirm:*`, `login:*`; сверх лимита — `429`. Лимиты — константа `RATE_LIMITS` в `identity-core` (012, 4.8). |
 | Первый супервизор | `ensureSupervisor`, `IDENTITY_SUPERVISOR_EMAIL`, `IDENTITY_SUPERVISOR_PASSWORD`, `supervisor_created` | Создаётся при старте identity из `.env`, если супервизора нет (012, Q-3). |
 | Баланс | `Balance`, `balanceMicroUsd` | Остаток денег пользователя по предоплате: сумма его записей ledger. |
 | Пополнение | `TopUp` | Запись ledger, увеличивающая баланс. В MVP делает супервизор. |

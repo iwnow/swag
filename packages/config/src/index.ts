@@ -148,7 +148,7 @@ export const IdentityConfig = z
     IDENTITY_CONFIRM_TTL_S: z.coerce.number().int().min(600).default(86400),
     IDENTITY_COOKIE_SECURE: z.enum(['true', 'false']).transform((value) => value === 'true'),
     IDENTITY_BODY_LIMIT_BYTES: z.coerce.number().int().min(1024).default(16384),
-    IDENTITY_SUPERVISOR_EMAIL: OptionalSupervisor(Email), // вместе с паролем или обе пустые (refine)
+    IDENTITY_SUPERVISOR_EMAIL: OptionalSupervisor(Email), // задаются вместе с паролем или оба пусты (superRefine ниже)
     IDENTITY_SUPERVISOR_PASSWORD: OptionalSupervisor(Password),
     SMTP_URL: z.string().url(), // dev: smtp://mailpit:1025
     SMTP_TIMEOUT_MS: z.coerce.number().int().min(1).default(10000),

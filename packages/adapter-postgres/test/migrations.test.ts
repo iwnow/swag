@@ -149,6 +149,9 @@ describe.skipIf(!url)('adapter-postgres миграции', () => {
     await runMigrations(url ?? '', { schema });
     const tablesBefore = await tables();
     const rowsBefore = await migrationRows();
+    expect(tablesBefore).toEqual(
+      expect.arrayContaining(['organizations', 'users', 'email_confirmations', 'sessions']),
+    );
     const orgId = randomUUID();
     await client.query(
       `insert into ${schema}.organizations (id, name, created_at) values ($1, 'Магазин', now())`,
