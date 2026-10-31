@@ -26,9 +26,23 @@ const claims = (role: Role): AccessTokenClaims => ({
 });
 
 const EXPECTED: Record<Role, Permission[]> = {
-  user: ['swarm.create', 'swarm.read', 'swarm.stop'],
-  admin: ['swarm.create', 'swarm.read', 'swarm.stop', 'user.manage'],
-  supervisor: ['swarm.read', 'swarm.stop', 'user.manage', 'organization.read'],
+  user: ['swarm.create', 'swarm.read', 'swarm.stop', 'balance.read'],
+  admin: [
+    'swarm.create',
+    'swarm.read',
+    'swarm.stop',
+    'user.manage',
+    'balance.read',
+    'balance.topup',
+  ],
+  supervisor: [
+    'swarm.read',
+    'swarm.stop',
+    'user.manage',
+    'organization.read',
+    'balance.read',
+    'balance.topup',
+  ],
 };
 
 const ALL_PERMISSIONS = Permission.options;
@@ -58,6 +72,17 @@ describe('права и вызывающий', () => {
 
   it('AC-024-1: у supervisor нет swarm.create', () => {
     expect(can(actorFromClaims(claims('supervisor')), 'swarm.create')).toBe(false);
+  });
+
+  it('AC-013-22: user видит баланс без пополнения; admin и supervisor — оба права', () => {
+    const user = actorFromClaims(claims('user'));
+    expect(can(user, 'balance.read')).toBe(true);
+    expect(can(user, 'balance.topup')).toBe(false);
+    for (const role of ['admin', 'supervisor'] as const) {
+      const actor = actorFromClaims(claims(role));
+      expect(can(actor, 'balance.read')).toBe(true);
+      expect(can(actor, 'balance.topup')).toBe(true);
+    }
   });
 });
 

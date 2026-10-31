@@ -605,7 +605,7 @@ settlePending(): Promise<number>; // число закрытых резерво�
 
 **Группа** `spec/013-billing` (T-8…T-14): T-8 добавляет обязательную зависимость `billing` в `ApiCoreDeps`, сборка `apps/api` ломается до T-14.
 
-- [ ] **T-1.** `@swag/contracts`:
+- [x] **T-1.** `@swag/contracts`:
   - `billing.ts`, экспорт из `index.ts`;
   - права и `ROLE_PERMISSIONS` в `access.ts`;
   - `spentMicroUsd` в итоговых событиях (`events.ts`);
@@ -773,3 +773,4 @@ settlePending(): Promise<number>; // число закрытых резерво�
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
 | 2026-11-01 | `spec/013-t1` | Взята в работу. Этапы: T-1; T-2; T-3+T-4; T-5; T-6; T-7; группа `spec/013-billing` (T-8; T-9; T-10; T-11+T-12; T-13; T-14) — T-8 делает `billing` обязательной зависимостью `ApiCoreDeps`, сборка `apps/api` красная до T-14; T-15+T-16; T-17; T-18. | — |
+| 2026-11-01 | `spec/013-t1` | T-1: `billing.ts` и экспорт из `index.ts`; `balance.read` и `balance.topup` в `Permission` и `ROLE_PERMISSIONS`; `spentMicroUsd` в `swarm.completed`, `swarm.stopped`, `swarm.failed`; `heldMicroUsd` в `LlmSwarmClosed`; `closeSwarm` в `llm-gateway-core` отдаёт `heldMicroUsd: 0` (временно, `// 013, T-5`); тесты AC-013-22 в `access.test.ts`, схемы в `billing.test.ts` и `swarm.test.ts`; `llm-gateway-core` и `apps/llm-gateway` тесты закрытия обновлены. | `adapter-postgres` не менялся: его `close` отдаёт `{ spentMicroUsd }` ядру, и ответ собирает ядро, поэтому временный `heldMicroUsd: 0` стоит в ядре, а не в адаптере. |

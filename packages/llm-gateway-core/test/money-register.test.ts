@@ -87,7 +87,7 @@ describe('registerSwarm и closeSwarm', () => {
     const core = createLlmGatewayCore(deps);
     await core.registerSwarm(TWO_AGENTS);
     const first = await core.closeSwarm(TEST_SWARM_ID);
-    expect(first).toEqual({ ok: true, value: { spentMicroUsd: 0 } });
+    expect(first).toEqual({ ok: true, value: { spentMicroUsd: 0, heldMicroUsd: 0 } });
     expect(
       await core.complete({ swarmId: TEST_SWARM_ID, agentId: 'agent-1' }, body, signal),
     ).toMatchObject({

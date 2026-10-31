@@ -79,5 +79,8 @@ export const LlmSwarmRegistration = z.strictObject({
 export type LlmSwarmRegistration = z.infer<typeof LlmSwarmRegistration>;
 
 // Спека 004, 4.1: ответ закрытия роя в gateway. Лежит рядом с LlmSwarmRegistration по той же причине.
-export const LlmSwarmClosed = z.strictObject({ spentMicroUsd: MicroUsd });
+export const LlmSwarmClosed = z.strictObject({
+  spentMicroUsd: MicroUsd,
+  heldMicroUsd: MicroUsd, // резервы, не списанные к концу ожидания (013, 4.7); 0 — сумма окончательная
+});
 export type LlmSwarmClosed = z.infer<typeof LlmSwarmClosed>;
