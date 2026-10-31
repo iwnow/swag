@@ -6,18 +6,18 @@
 
 - `createGatewaySwarms({ baseUrl, token, timeoutMs })` — объект `LlmSwarms` из `@swag/orchestrator-core`.
 - `register(reg)` — `POST {baseUrl}/internal/swarms` с телом `LlmSwarmRegistration` (`@swag/contracts`) и заголовком `Authorization: Bearer <token>`. Успех — только `204`. Иначе — исключение `GatewayError`.
-- `close(swarmId)` — `POST {baseUrl}/internal/swarms/:id/close`. Успех — `2xx` и `404` (рой уже не зарегистрирован). Иначе — исключение `GatewayError`.
+- `close(swarmId)` — `POST {baseUrl}/internal/swarms/:id/close`. `200` — тело разбирается схемой `LlmSwarmClosed` (`@swag/contracts`), возвращается `spentMicroUsd`. `404` (рой уже не зарегистрирован) — `null`. Тело не по схеме — исключение. Иначе — исключение `GatewayError`. `heldMicroUsd` не проверяется: о висящих резервах пишет лог сам gateway (013, 4.7).
 
 ## Что внутри сейчас
 
 - `src/index.ts` — `GatewaySwarmsOptions`, `GatewayError` (`status`, `code`), `createGatewaySwarms`. Код ошибки берётся из `{ error: { message, code } }` тела ответа (4.2); если тела нет или оно не разобрано, код — `http_<статус>`.
 - Таймаут каждого запроса — `AbortSignal.timeout(timeoutMs)`; при срабатывании `fetch` бросает `TimeoutError`.
-- `test/gateway-swarms.test.ts` — фейковый HTTP-сервер на `127.0.0.1`: регистрация `204` с проверкой тела и заголовка; ошибки регистрации с кодом из тела; `close` `200`/`204`/`404` — успех, `500` — исключение; таймаут.
+- `test/gateway-swarms.test.ts` — фейковый HTTP-сервер на `127.0.0.1`: регистрация `204` с проверкой тела и заголовка; ошибки регистрации с кодом из тела; `close` `200` возвращает `spentMicroUsd` из тела, `404` — `null`, тело не по схеме и `500` — исключение; таймаут.
 
 ## Ключевые решения
 
 - Повторов нет (4.6): рой с недоступным gateway падает сразу, оболочка переводит исключение в `swarm.failed` `gateway_unavailable`.
-- `close` — успех при `2xx` и `404`; тело не читается.
+- `close` читает тело `200` (013, T-6): без `spentMicroUsd` итог роя не выводит траты, поэтому схема проверяется здесь, а не в ядре.
 - `content-type: application/json` — только у `register` (запрос с телом). Общий заголовок для `close` ломал его: gateway отвечает 400 на пустое JSON-тело (дефект, найден стек-тестом AC-004-34, исправлен в T-17; тест в `test/gateway-swarms.test.ts` проверяет отсутствие заголовка у `close`).
 - Адаптер зависит от `@swag/orchestrator-core` только ради типа порта `LlmSwarms`, как `adapter-orchestrator-http` зависит от `@swag/api-core`.
 
@@ -35,3 +35,4 @@
 ## Спеки
 
 - 004, 4.6 (адаптер и поведение оркестратора), 4.2 (маршруты и коды), 4.11 (`LLM_GATEWAY_URL`, `LLM_GATEWAY_TOKEN`), REQ-004-3.
+- 013, 4.6 (`close` возвращает `spentMicroUsd`), AC-013-19.

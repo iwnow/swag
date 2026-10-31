@@ -55,9 +55,10 @@ export interface SandboxProvider {
 }
 
 // Спека 004, 4.6: регистрация роя в gateway. register — исключение при отказе; close — после уборки песочниц.
+// Спека 013, 4.6: close отдаёт spentMicroUsd из ответа gateway; null — gateway ответил 404 (рой не зарегистрирован).
 export interface LlmSwarms {
   register(reg: LlmSwarmRegistration): Promise<void>;
-  close(swarmId: string): Promise<void>;
+  close(swarmId: string): Promise<number | null>;
 }
 
 export interface OrchestratorBus {
@@ -163,12 +164,13 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
   // stop меняет фазу во время await; TS после проверки выше сузил бы run.phase и счёл бы сравнение с 'finished' ошибкой.
   const isFinished = (run: Run): boolean => run.phase === 'finished';
 
-  // Закрытие роя в gateway (4.6): сбой логируется и не мешает завершению роя.
-  async function closeInGateway(swarmId: string): Promise<void> {
+  // Закрытие роя в gateway (4.6): сбой логируется и не мешает завершению роя; возвращает траты или null.
+  async function closeInGateway(swarmId: string): Promise<number | null> {
     try {
-      await llmSwarms.close(swarmId);
+      return await llmSwarms.close(swarmId);
     } catch (error) {
       log.warn('gateway_close_failed', { swarmId, err: error });
+      return null;
     }
   }
 
@@ -189,13 +191,26 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
     for (const agent of run.launch.agents) {
       await publish({ ...envelope(swarmId, agent.id), type: 'agent.stopped', data: {} });
     }
-    await closeInGateway(swarmId);
+    const spentMicroUsd = await closeInGateway(swarmId);
+    const spent: { spentMicroUsd?: number } = spentMicroUsd === null ? {} : { spentMicroUsd };
     if (outcome.type === 'swarm.completed') {
-      await publish({ ...envelope(swarmId, null), type: 'swarm.completed', data: outcome.data });
+      await publish({
+        ...envelope(swarmId, null),
+        type: 'swarm.completed',
+        data: { ...outcome.data, ...spent },
+      });
     } else if (outcome.type === 'swarm.stopped') {
-      await publish({ ...envelope(swarmId, null), type: 'swarm.stopped', data: outcome.data });
+      await publish({
+        ...envelope(swarmId, null),
+        type: 'swarm.stopped',
+        data: { ...outcome.data, ...spent },
+      });
     } else {
-      await publish({ ...envelope(swarmId, null), type: 'swarm.failed', data: outcome.data });
+      await publish({
+        ...envelope(swarmId, null),
+        type: 'swarm.failed',
+        data: { ...outcome.data, ...spent },
+      });
     }
     log.info('swarm finished', { swarmId, status: FINISHED_STATUS[outcome.type] });
   }

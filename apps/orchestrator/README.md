@@ -12,7 +12,7 @@
 ## Что внутри сейчас
 
 - `src/app.ts` — маршруты и хук `onRequest` с проверкой `ORCHESTRATOR_TOKEN` (`buildApp(core, options, { token })`).
-- `src/main.ts` — телеметрия (`adapter-telemetry`), `OrchestratorConfig`, адаптер Docker (`@swag/adapter-docker`, с адресом Collector для песочниц и адресом llm-gateway), адаптер регистрации роёв в gateway (`@swag/adapter-gateway-http`, `LLM_GATEWAY_URL`, `LLM_GATEWAY_TOKEN`, таймаут 10 с — константа `GATEWAY_TIMEOUT_MS`, D-99), шина NATS, часы и таймеры, `deps.agent` ядра (лимиты агента, токен gateway, таймаут flush из конфигурации), запуск, остановка со сбросом телеметрии.
+- `src/main.ts` — телеметрия (`adapter-telemetry`), `OrchestratorConfig`, адаптер Docker (`@swag/adapter-docker`, с адресом Collector для песочниц и адресом llm-gateway), адаптер регистрации роёв в gateway (`@swag/adapter-gateway-http`, `LLM_GATEWAY_URL`, `LLM_GATEWAY_TOKEN`, таймаут 10 с — константа `GATEWAY_TIMEOUT_MS`, D-99; `close` отдаёт траты роя, см. 013 T-6), шина NATS, часы и таймеры, `deps.agent` ядра (лимиты агента, токен gateway, таймаут flush из конфигурации), запуск, остановка со сбросом телеметрии.
 - Тесты: `test/health.test.ts` (AC-000-5, AC-001-12; фейк `llmSwarms`), `test/auth.test.ts` (AC-024-22: без токена и с неверным — `401`, ядро не вызвано; с верным — как раньше; `/health` без токена — `200`), общая фабрика ядра и токен — `test/support.ts`.
 
 ## Ограничения
