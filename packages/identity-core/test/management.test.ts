@@ -155,6 +155,34 @@ describe('identity-core — управление пользователями (�
     );
   });
 
+  it('AC-024-11: без изменений отзыва нет — та же роль, повторная блокировка, разблокировка', async () => {
+    const env = createTestEnv();
+    const org = await seedOrganization(env, 'a-admin@example.test', 'Компания A');
+    const member = await addMember(env, 'a-member@example.test', org.orgId);
+    const admin = await loginAs(env, 'a-admin@example.test');
+    const memberToken = (await loginAs(env, 'a-member@example.test')).session.accessToken;
+    const validAfterOf = async (): Promise<number | undefined> =>
+      (await env.core.tokenRevocations()).revocations.find((r) => r.userId === member)?.validAfter;
+
+    env.clock.advance(1000);
+    await env.core.updateUser(admin.session.accessToken, member, { role: 'user' });
+    expect(await validAfterOf()).toBeUndefined();
+    expect(await env.core.me(memberToken)).toMatchObject({ ok: true });
+
+    env.clock.advance(1000);
+    await env.core.updateUser(admin.session.accessToken, member, { blocked: true });
+    const blockedValidAfter = await validAfterOf();
+    expect(blockedValidAfter).toBe(NOW + 2000);
+
+    env.clock.advance(5000);
+    await env.core.updateUser(admin.session.accessToken, member, { blocked: true });
+    expect(await validAfterOf()).toBe(blockedValidAfter);
+
+    env.clock.advance(5000);
+    await env.core.updateUser(admin.session.accessToken, member, { blocked: false });
+    expect(await validAfterOf()).toBe(blockedValidAfter);
+  });
+
   it('AC-024-13: tokenRevocations — записи старше accessTtl не попадают в список', async () => {
     const env = createTestEnv();
     const org = await seedOrganization(env, 'a-admin@example.test', 'Компания A');

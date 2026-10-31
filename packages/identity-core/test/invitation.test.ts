@@ -169,4 +169,17 @@ describe('identity-core — приглашение (спека 024, T-8)', () =>
     const result = await env.core.acceptInvitation({ token, password: NEW_PASSWORD }, meta);
     expect(result).toMatchObject({ ok: false, error: { code: 'email_taken' } });
   });
+
+  it('AC-024-10: лимит confirm:ip у принятия приглашения — rate_limited', async () => {
+    const env = createTestEnv();
+    const body = { token: 'unknown-token', password: NEW_PASSWORD };
+    const { limit } = RATE_LIMITS.confirmIp;
+
+    for (let i = 0; i < limit; i++) {
+      const result = await env.core.acceptInvitation(body, meta);
+      expect(result).toMatchObject({ ok: false, error: { code: 'invalid_token' } });
+    }
+    const exceeded = await env.core.acceptInvitation(body, meta);
+    expect(exceeded).toMatchObject({ ok: false, error: { code: 'rate_limited' } });
+  });
 });
