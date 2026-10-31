@@ -1,7 +1,7 @@
 ---
 id: "013"
 title: Баланс организации
-status: ready
+status: in-progress
 roadmap_stage: 5
 depends_on: ["003", "004", "024"]
 superseded_by: null
@@ -772,3 +772,4 @@ settlePending(): Promise<number>; // число закрытых резерво�
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+| 2026-11-01 | `spec/013-t1` | Взята в работу. Этапы: T-1; T-2; T-3+T-4; T-5; T-6; T-7; группа `spec/013-billing` (T-8; T-9; T-10; T-11+T-12; T-13; T-14) — T-8 делает `billing` обязательной зависимостью `ApiCoreDeps`, сборка `apps/api` красная до T-14; T-15+T-16; T-17; T-18. | — |
