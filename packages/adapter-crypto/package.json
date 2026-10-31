@@ -1,0 +1,14 @@
+{
+  "name": "@swag/adapter-crypto",
+  "version": "0.0.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "2.2.2",
+    "@swag/identity-core": "0.0.0"
+  }
+}
