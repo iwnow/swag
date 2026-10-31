@@ -102,6 +102,7 @@
 | Порт отправки почты | `Mailer`, `MailMessage`, `createSmtpMailer`, `@swag/adapter-smtp`, `createMemoryMailer`, `MemoryMailer`, `mail_unavailable`, `CONFIRM_MAIL_SUBJECT`, `ALREADY_REGISTERED_MAIL_SUBJECT`, `ALREADY_REGISTERED_MAIL_TEXT`, `confirmMailText` | Отправка писем identity; SMTP на `nodemailer` (012, 4.3, 4.7). Темы и тексты писем — константы `identity-core` (012, 4.6). |
 | Перехватчик почты | `mailpit` (сервис compose), `MAILPIT_UI_PORT` | Mailpit в разработке: принимает SMTP, письма видны в UI и API на `127.0.0.1` (012, 4.11). |
 | Ограничитель частоты | `RateLimiter`, `createMemoryRateLimiter`, `MemoryRateLimiter`, `RATE_LIMITS`, `rate_limited` | Фиксированное окно по ключу `register:*`, `confirm:*`, `login:*`; сверх лимита — `429`. Лимиты — константа `RATE_LIMITS` в `identity-core` (012, 4.8). |
+| Ошибки ядра identity | `identity_operation_failed`, `mail_send_failed` | Лог ядра identity: неожиданное исключение операции (`internal_error`) и отказ почты (`mail_unavailable`); адрес и `err` с адресом в лог почты не пишутся (012, 4.2, 4.6, D-115). |
 | Первый супервизор | `ensureSupervisor`, `IDENTITY_SUPERVISOR_EMAIL`, `IDENTITY_SUPERVISOR_PASSWORD`, `supervisor_created` | Создаётся при старте identity из `.env`, если супервизора нет (012, Q-3). |
 | Баланс | `Balance`, `balanceMicroUsd` | Остаток денег пользователя по предоплате: сумма его записей ledger. |
 | Пополнение | `TopUp` | Запись ledger, увеличивающая баланс. В MVP делает супервизор. |

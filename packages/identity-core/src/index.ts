@@ -1,12 +1,14 @@
-import type {
-  AccessTokenClaims,
-  AuthErrorCode,
-  AuthMe,
-  AuthRefreshed,
-  AuthSession,
-  Role,
-  ServiceInfo,
+import {
+  RegistrationRequest,
+  type AccessTokenClaims,
+  type AuthErrorCode,
+  type AuthMe,
+  type AuthRefreshed,
+  type AuthSession,
+  type Role,
+  type ServiceInfo,
 } from '@swag/contracts';
+import type { z } from 'zod';
 
 // Спека 012, 4.2–4.3, 4.6, 4.8. Порты объявляет ядро; адаптеры передаёт оболочка.
 
@@ -168,15 +170,121 @@ export const RATE_LIMITS = {
   loginIp: { key: 'login:ip', limit: 30, windowMs: 15 * MINUTE_MS },
 } as const;
 
+type RateRule = { readonly key: string; readonly limit: number; readonly windowMs: number };
+
+const MESSAGES: Record<AuthErrorCode, string> = {
+  validation_error: 'invalid request',
+  invalid_token: 'invalid or expired token',
+  email_taken: 'email already registered',
+  invalid_credentials: 'invalid email or password',
+  invalid_refresh_token: 'invalid refresh token',
+  unauthorized: 'unauthorized',
+  rate_limited: 'too many requests',
+  mail_unavailable: 'mail unavailable',
+  internal_error: 'internal error',
+};
+
+const ok = <T>(value: T): Result<T> => ({ ok: true, value });
+const fail = <T>(code: AuthErrorCode, issues?: IdentityError['issues']): Result<T> => ({
+  ok: false,
+  error:
+    issues === undefined
+      ? { code, message: MESSAGES[code] }
+      : { code, message: MESSAGES[code], issues },
+});
+
 const notImplemented = async <T>(): Promise<Result<T>> => ({
   ok: false,
   error: { code: 'internal_error', message: 'not implemented' },
 });
 
 export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
+  const { store, clock, log, limiter, mailer, opaque, settings } = deps;
+
+  const parse = <S extends z.ZodType>(schema: S, body: unknown): Result<z.output<S>> => {
+    const parsed = schema.safeParse(body);
+    if (parsed.success) return ok(parsed.data);
+    return fail(
+      'validation_error',
+      parsed.error.issues.map((issue) => ({
+        path: issue.path.map(String).join('.'),
+        message: issue.message,
+      })),
+    );
+  };
+
+  // Засчитывает попытку; true — лимит исчерпан. Ключ с email в лог не попадает.
+  const exceeded = async (rule: RateRule, id: string): Promise<boolean> => {
+    if (await limiter.hit(`${rule.key}:${id}`, rule.limit, rule.windowMs)) return false;
+    log.warn('rate_limited', { limit: rule.key });
+    return true;
+  };
+
+  // Адрес и текст ошибки почты в лог не пишем: текст ошибки может содержать адрес.
+  const sendMail = async (message: MailMessage): Promise<boolean> => {
+    try {
+      await mailer.send(message);
+      return true;
+    } catch {
+      log.error('mail_send_failed');
+      return false;
+    }
+  };
+
+  // Токен подтверждения: в хранилище только хэш, в письме — сырой токен.
+  // D-113 (вариант б): срок в часах округляется вверх.
+  const sendConfirmation = async (email: string, now: number): Promise<boolean> => {
+    const { token, hash } = opaque.create();
+    await store.addConfirmation({
+      tokenHash: hash,
+      email,
+      expiresAt: now + settings.confirmTtlS * 1000,
+      createdAt: now,
+    });
+    const link = `${settings.confirmUrl}?token=${token}`;
+    return sendMail({
+      to: email,
+      subject: CONFIRM_MAIL_SUBJECT,
+      text: confirmMailText(link, Math.ceil(settings.confirmTtlS / 3600)),
+    });
+  };
+
+  const requestRegistration = async (body: unknown, meta: RequestMeta): Promise<Result<void>> => {
+    const parsed = parse(RegistrationRequest, body);
+    if (!parsed.ok) return parsed;
+    const { email } = parsed.value;
+    if (
+      (await exceeded(RATE_LIMITS.registerIp, meta.ip)) ||
+      (await exceeded(RATE_LIMITS.registerEmail, email))
+    ) {
+      return fail('rate_limited');
+    }
+    const existing = await store.findUserByEmail(email);
+    const sent = existing
+      ? await sendMail({
+          to: email,
+          subject: ALREADY_REGISTERED_MAIL_SUBJECT,
+          text: ALREADY_REGISTERED_MAIL_TEXT,
+        })
+      : await sendConfirmation(email, clock.now());
+    return sent ? ok(undefined) : fail('mail_unavailable');
+  };
+
+  // Исключение хранилища или ядра превращается в internal_error; наружу текст не уходит.
+  const guarded =
+    <A extends unknown[], T>(fn: (...args: A) => Promise<Result<T>>) =>
+    async (...args: A): Promise<Result<T>> => {
+      try {
+        return await fn(...args);
+      } catch (err) {
+        log.error('identity_operation_failed', { err });
+        return fail('internal_error');
+      }
+    };
+
   return {
     info: () => ({ service: 'identity', version: deps.version }),
-    requestRegistration: notImplemented,
+    requestRegistration: guarded(requestRegistration),
     confirmRegistration: notImplemented,
     login: notImplemented,
     refresh: notImplemented,

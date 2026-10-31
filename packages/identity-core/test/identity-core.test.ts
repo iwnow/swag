@@ -11,10 +11,9 @@ describe('identity-core — каркас (спека 012, T-4)', () => {
     expect(ServiceInfo.parse(info)).toEqual({ service: 'identity', version: 'test' });
   });
 
-  it('REQ-012-1: операции до T-6..T-10 отвечают internal_error, ensureSupervisor бросает', async () => {
+  it('REQ-012-1: операции до T-7..T-10 отвечают internal_error, ensureSupervisor бросает', async () => {
     const core = createIdentityCore(deps);
     const stubs = [
-      core.requestRegistration({}, meta),
       core.confirmRegistration({}, meta),
       core.login({}, meta),
       core.refresh(undefined),
