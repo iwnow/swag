@@ -43,7 +43,7 @@ export function createMemorySwarmStore(): SwarmStore {
 
 // Спека 012, 4.3 и 4.7: хранилище identity в памяти. Каждая операция синхронна внутри
 // async-функции, поэтому атомарна на одном потоке JS (правила транзакций из 4.3).
-export type MemoryConfirmation = {
+type MemoryConfirmation = {
   tokenHash: string;
   email: string;
   expiresAt: number;
@@ -61,10 +61,7 @@ type MemorySession = {
   revokedAt: number | null;
 };
 
-export interface MemoryIdentityStore extends IdentityStore {
-  // Только для тестов ядра (T-6): записи подтверждений как есть. Не часть порта.
-  readonly confirmations: readonly MemoryConfirmation[];
-}
+export type MemoryIdentityStore = IdentityStore;
 
 export function createMemoryIdentityStore(): MemoryIdentityStore {
   const users = new Map<string, StoredUser>();
@@ -81,10 +78,6 @@ export function createMemoryIdentityStore(): MemoryIdentityStore {
     [...sessions.values()].find((s) => s.revokedAt === null && s.expiresAt > now && match(s));
 
   return {
-    get confirmations() {
-      return [...confirmations.values()];
-    },
-
     async findUserByEmail(email: string): Promise<StoredUser | null> {
       const user = userByEmail(email);
       return user ? { ...user } : null;
@@ -107,6 +100,7 @@ export function createMemoryIdentityStore(): MemoryIdentityStore {
     },
 
     async addConfirmation(c): Promise<void> {
+      if (confirmations.has(c.tokenHash)) throw new Error('token hash already exists');
       confirmations.set(c.tokenHash, { ...c, usedAt: null });
     },
 
