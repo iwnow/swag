@@ -103,7 +103,7 @@
 | Перехватчик почты | `mailpit` (сервис compose), `MAILPIT_UI_PORT` | Mailpit в разработке: принимает SMTP, письма видны в UI и API на `127.0.0.1` (012, 4.11). |
 | Ограничитель частоты | `RateLimiter`, `createMemoryRateLimiter`, `MemoryRateLimiter`, `RATE_LIMITS`, `rate_limited` | Фиксированное окно по ключу `register:*`, `confirm:*`, `login:*`; сверх лимита — `429`. Лимиты — константа `RATE_LIMITS` в `identity-core` (012, 4.8). |
 | Ошибки ядра identity | `identity_operation_failed`, `mail_send_failed`, `confirm_invalid_token`, `login_failed` | Лог ядра identity: неожиданное исключение операции (`internal_error`) и отказ почты (`mail_unavailable`); адрес и `err` с адресом в лог почты не пишутся (012, 4.2, 4.6, D-115). |
-| Вход и защита от перебора | `dummyHash` | Хэш от случайной строки для проверки пароля на неизвестный email: вход на неизвестный email тратит столько же времени, сколько на существующий (012, 4.2). |
+| Вход и защита от перебора | `dummyHash`, `issueSession` | Хэш от случайной строки для проверки пароля на неизвестный email: вход на неизвестный email тратит столько же времени, сколько на существующий (012, 4.2). |
 | Первый супервизор | `ensureSupervisor`, `IDENTITY_SUPERVISOR_EMAIL`, `IDENTITY_SUPERVISOR_PASSWORD`, `supervisor_created` | Создаётся при старте identity из `.env`, если супервизора нет (012, Q-3). |
 | Баланс | `Balance`, `balanceMicroUsd` | Остаток денег пользователя по предоплате: сумма его записей ledger. |
 | Пополнение | `TopUp` | Запись ledger, увеличивающая баланс. В MVP делает супервизор. |

@@ -381,6 +381,25 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     return ok(undefined);
   };
 
+  // Первый супервизор из настроек. Занятый email другой ролью — ошибка старта, роль молча не меняется.
+  const ensureSupervisor = async (): Promise<void> => {
+    const supervisor = settings.supervisor;
+    if (supervisor === null || (await store.hasSupervisor())) return;
+    if (await store.findUserByEmail(supervisor.email)) {
+      throw new Error('supervisor email taken');
+    }
+    const userId = ids.uuid();
+    await store.createUser({
+      id: userId,
+      email: supervisor.email,
+      passwordHash: await hasher.hash(supervisor.password),
+      role: 'supervisor',
+      orgId: null,
+      createdAt: clock.now(),
+    });
+    log.info('supervisor_created', { userId });
+  };
+
   // Хэш от случайной строки: на несуществующий email хэшер всё равно работает столько же, сколько на существующий.
   let dummyHash: Promise<string> | undefined;
   const getDummyHash = (): Promise<string> => {
@@ -436,8 +455,6 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     refresh: guarded(refresh),
     logout: guarded(logout),
     me: guarded(me),
-    ensureSupervisor: async () => {
-      throw new Error('not implemented');
-    },
+    ensureSupervisor,
   };
 }
