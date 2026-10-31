@@ -1,4 +1,4 @@
-import type { LlmSwarmRegistration } from '@swag/contracts';
+import { LlmSwarmClosed, type LlmSwarmRegistration } from '@swag/contracts';
 import type { LlmSwarms } from '@swag/orchestrator-core';
 
 // Спека 004, 4.6: адаптер порта LlmSwarms оркестратора к внутреннему API gateway (4.2) на fetch.
@@ -53,14 +53,17 @@ export function createGatewaySwarms(options: GatewaySwarmsOptions): LlmSwarms {
       if (response.status !== 204) throw await readError(response);
     },
 
-    // 2xx — успех (4.2 отвечает 200 с LlmSwarmClosed, 4.6 — 204); 404 — рой уже не зарегистрирован, тоже успех.
-    async close(swarmId: string): Promise<void> {
+    // 200 — тело LlmSwarmClosed (013, 4.6), возвращаем spentMicroUsd; 404 — рой уже не зарегистрирован, null.
+    async close(swarmId: string): Promise<number | null> {
       const response = await send(`/internal/swarms/${encodeURIComponent(swarmId)}/close`, null);
-      if (response.ok || response.status === 404) {
+      if (response.status === 404) {
         await response.body?.cancel();
-        return;
+        return null;
       }
-      throw await readError(response);
+      if (!response.ok) throw await readError(response);
+      const parsed = LlmSwarmClosed.safeParse(await response.json());
+      if (!parsed.success) throw new Error('gateway close: ответ не по схеме LlmSwarmClosed');
+      return parsed.data.spentMicroUsd;
     },
   };
 }

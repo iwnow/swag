@@ -206,7 +206,7 @@ function world(log: Logger, trace: TraceContext, script: Script = team) {
     version: 'test',
     sandboxes: sandboxProvider,
     bus: orchestratorBus,
-    llmSwarms: { register: async () => undefined, close: async () => undefined },
+    llmSwarms: { register: async () => undefined, close: async () => null },
     clock,
     timers: {
       setTimeout: (fn, ms) => setTimeout(fn, ms),

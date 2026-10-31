@@ -45,6 +45,7 @@ function setup(
     registerError?: Error;
     registerHold?: Promise<void>;
     closeError?: Error;
+    closeSpent?: number | null;
     agentMaxTokens?: number;
   } = {},
 ): Fake {
@@ -106,6 +107,7 @@ function setup(
       log.push('gateway:close');
       if (options.closeError) throw options.closeError;
       closed.push(swarmId);
+      return options.closeSpent ?? null;
     },
   };
   const core = createOrchestratorCore({
@@ -691,5 +693,56 @@ describe('orchestrator-core: AC-031-4 — AGENT_MAX_TOKENS агента, роя 
     const fake = setup({ agentMaxTokens: 8192 });
     expect((await fake.core.launch(launchBody(1))).ok).toBe(true);
     expect([...fake.sandboxes.values()].map((s) => s.env['AGENT_MAX_TOKENS'])).toEqual(['8192']);
+  });
+});
+
+describe('orchestrator-core: траты роя из gateway (013, 4.6)', () => {
+  const runTo = async (
+    options: Parameters<typeof setup>[0],
+    ending: (fake: Fake) => Promise<unknown>,
+  ): Promise<Fake> => {
+    const fake = setup(options);
+    await fake.core.launch(launchBody(2));
+    for (const id of ['agent-1', 'agent-2'])
+      await fake.core.handleEvent(agentEvent('agent.started', id, {}));
+    await ending(fake);
+    return fake;
+  };
+  const completed = (fake: Fake) =>
+    fake.core.handleEvent(agentEvent('agent.result', 'agent-1', { text: 'R' }));
+  const stopped = (fake: Fake) => fake.core.stop(SWARM);
+  const failed = (fake: Fake) =>
+    fake.core.handleEvent(agentEvent('agent.failed', 'agent-2', { reason: 'max_steps' }));
+
+  it('AC-013-19: close вернул 4200 — spentMicroUsd в data swarm.completed, swarm.stopped и swarm.failed', async () => {
+    const done = await runTo({ closeSpent: 4200 }, completed);
+    expect(done.events.at(-1)).toMatchObject({
+      type: 'swarm.completed',
+      data: { result: 'R', spentMicroUsd: 4200 },
+    });
+    const halted = await runTo({ closeSpent: 4200 }, stopped);
+    expect(halted.events.at(-1)).toMatchObject({
+      type: 'swarm.stopped',
+      data: { reason: 'user', spentMicroUsd: 4200 },
+    });
+    const broken = await runTo({ closeSpent: 4200 }, failed);
+    expect(broken.events.at(-1)).toMatchObject({
+      type: 'swarm.failed',
+      data: { reason: 'agent_failed', spentMicroUsd: 4200 },
+    });
+  });
+
+  it('AC-013-19: close бросил исключение — поля нет, рой завершён swarm.stopped', async () => {
+    const fake = await runTo({ closeError: new Error('gateway 500') }, stopped);
+    const final = fake.events.at(-1);
+    expect(final).toMatchObject({ type: 'swarm.stopped', data: { reason: 'user' } });
+    expect(final?.data).not.toHaveProperty('spentMicroUsd');
+  });
+
+  it('AC-013-19: close вернул null (404) — поля нет, рой завершён', async () => {
+    const fake = await runTo({ closeSpent: null }, completed);
+    const final = fake.events.at(-1);
+    expect(final).toMatchObject({ type: 'swarm.completed', data: { result: 'R' } });
+    expect(final?.data).not.toHaveProperty('spentMicroUsd');
   });
 });

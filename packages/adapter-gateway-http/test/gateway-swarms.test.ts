@@ -118,25 +118,28 @@ describe('adapter-gateway-http (спека 004, 4.6, REQ-004-3)', () => {
     expect(error).toMatchObject({ status: 502, code: 'http_502' });
   });
 
-  it.each([200, 204])(
-    'close %i — ok; POST на /internal/swarms/:id/close с токеном',
-    async (status) => {
-      const fake = await startFake({ status, body: { spentMicroUsd: 0 } });
-      const swarms = createGatewaySwarms({ baseUrl: fake.url, token: TOKEN, timeoutMs: 1000 });
-      await expect(swarms.close(SWARM_ID)).resolves.toBeUndefined();
-      expect(fake.seen[0]).toMatchObject({
-        method: 'POST',
-        url: `/internal/swarms/${SWARM_ID}/close`,
-        authorization: `Bearer ${TOKEN}`,
-        contentType: undefined,
-      });
-    },
-  );
+  it('AC-013-19: close 200 — возвращает spentMicroUsd из тела; POST на /internal/swarms/:id/close с токеном', async () => {
+    const fake = await startFake({ status: 200, body: { spentMicroUsd: 7, heldMicroUsd: 0 } });
+    const swarms = createGatewaySwarms({ baseUrl: fake.url, token: TOKEN, timeoutMs: 1000 });
+    await expect(swarms.close(SWARM_ID)).resolves.toBe(7);
+    expect(fake.seen[0]).toMatchObject({
+      method: 'POST',
+      url: `/internal/swarms/${SWARM_ID}/close`,
+      authorization: `Bearer ${TOKEN}`,
+      contentType: undefined,
+    });
+  });
 
-  it('close 404 — ok, рой уже не зарегистрирован', async () => {
+  it('AC-013-19: close 200 с телом не по схеме LlmSwarmClosed — исключение', async () => {
+    const fake = await startFake({ status: 200, body: { spentMicroUsd: 7 } });
+    const swarms = createGatewaySwarms({ baseUrl: fake.url, token: TOKEN, timeoutMs: 1000 });
+    await expect(swarms.close(SWARM_ID)).rejects.toThrow('LlmSwarmClosed');
+  });
+
+  it('AC-013-19: close 404 — null, рой уже не зарегистрирован', async () => {
     const fake = await startFake({ status: 404, body: errorBody('not_found') });
     const swarms = createGatewaySwarms({ baseUrl: fake.url, token: TOKEN, timeoutMs: 1000 });
-    await expect(swarms.close(SWARM_ID)).resolves.toBeUndefined();
+    await expect(swarms.close(SWARM_ID)).resolves.toBeNull();
   });
 
   it('close 500 — исключение GatewayError с кодом из тела', async () => {

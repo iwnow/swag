@@ -10,17 +10,17 @@
   - `agent.result` агента-входа (`ENTRY_AGENT_ID`) в `running` → `swarm.completed`; `agent.result` других агентов игнорируется;
   - `agent.failed` любого агента в `running` → `swarm.failed` с `reason: agent_failed`, `detail: "<agentId>: <reason>"`; причина `model_error:swarm_budget_exceeded` или `model_error:agent_budget_exceeded` → `swarm.failed` с `reason: budget_exceeded`, `detail: "<agentId>: <код>"` (004, 4.6);
   - `stop` → `swarm.stopped`; таймаут роя → `swarm.failed` (`swarm_timeout`).
-    Везде: удалить песочницы, `agent.stopped` по каждому агенту, `llmSwarms.close` (сбой — лог `warn gateway_close_failed`, рой завершается), затем событие роя.
+    Везде: удалить песочницы, `agent.stopped` по каждому агенту, `llmSwarms.close` (сбой — лог `warn gateway_close_failed`, рой завершается), затем событие роя. Число из `close` (`spentMicroUsd`, 013, 4.6) попадает в `data` события роя; `null` (404) или сбой — поля нет.
 - `cleanupOrphans`: удалить песочницы платформы прошлого запуска.
 
 ## Что внутри сейчас
 
 - `createOrchestratorCore(deps)` с портами `SandboxProvider`, `OrchestratorBus`, `Timers`, `Clock`, `IdGenerator`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`.
 - `deps.agent` — `{ template, maxSteps, maxTokens, llmGatewayToken, flushTimeoutMs }`: значения env агента, которые ставит ядро. `maxTokens` — умолчание `AGENT_MAX_TOKENS` оркестратора, используется, когда у агента и роя лимита нет (031, 4.4).
-- Порт `LlmSwarms` (`register`, `close`) — `deps.llmSwarms`; реализация — `@swag/adapter-gateway-http`.
+- Порт `LlmSwarms` (`register`, `close: Promise<number | null>`) — `deps.llmSwarms`; реализация — `@swag/adapter-gateway-http`.
 - Env песочницы агента (4.8): `SWARM_ID`, `AGENT_ID`, `AGENT_NAME`, `AGENT_ROLE`, `AGENT_MODEL`, `AGENT_PEERS` (JSON `{id,name,role}` остальных агентов роя), `AGENT_ENTRY`, `AGENT_MAX_STEPS`, `AGENT_MAX_TOKENS` (031, 4.4: `maxTokens` агента, иначе роя, иначе `deps.agent.maxTokens`), `LLM_GATEWAY_TOKEN`, `TELEMETRY_FLUSH_TIMEOUT_MS`. Адресов NATS, OTLP и gateway ядро не знает — их добавляет адаптер.
 - Логи по таблице 4.8 спеки 016: `info swarm launch`, `error sandbox create failed`, `error agent start timeout` (с `missing`), `error swarm timeout`, `info swarm finished` (со `status`), `warn sandbox remove failed`, `warn gateway_close_failed`; невалидное событие шины — `warn event dropped`.
-- Тесты: `test/orchestrator-core.test.ts` — AC-000-16, AC-001-11…18 (AC-001-11 и AC-001-15 переписаны под 4.9; AC-001-12 — также в `apps/orchestrator/test`), AC-022-17, AC-022-18, AC-002-22, AC-016-5, AC-016-7, AC-004-21…24, AC-004-33 (токен шлюза не попадает в логи, события и сообщения шины при `launch` и `stop`; токен в env песочниц проверяется отдельно), AC-031-4 (`AGENT_MAX_TOKENS`: агент → рой → умолчание). Фейк `LlmSwarms` по умолчанию успешен; `registerError` и `closeError` — для сбоев.
+- Тесты: `test/orchestrator-core.test.ts` — AC-000-16, AC-001-11…18 (AC-001-11 и AC-001-15 переписаны под 4.9; AC-001-12 — также в `apps/orchestrator/test`), AC-022-17, AC-022-18, AC-002-22, AC-016-5, AC-016-7, AC-004-21…24, AC-013-19 (`spentMicroUsd` в итоговых событиях; сбой и `null` — без поля), AC-004-33 (токен шлюза не попадает в логи, события и сообщения шины при `launch` и `stop`; токен в env песочниц проверяется отдельно), AC-031-4 (`AGENT_MAX_TOKENS`: агент → рой → умолчание). Фейк `LlmSwarms` по умолчанию успешен, `close` отдаёт `null`; `closeSpent` — число для `spentMicroUsd`; `registerError` и `closeError` — для сбоев.
 
 ## Ограничения
 
