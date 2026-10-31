@@ -481,7 +481,7 @@ export function createAuthSessionKeeper(api: AuthApi): AuthSessionKeeper;
 - [x] **T-12.** `apps/api/src/revocations.ts` (4.12) и тесты. Закрывает: REQ-024-9, AC-024-19.
 - [x] **T-13.** `apps/api`: хук проверки токена, `Actor` в вызовах ядра, WebSocket с подпротоколом 4.6, статусы 4.5, запуск синхронизации до `listen`, `onBlocked` с закрытием потоков, тесты доступа на каждый маршрут. Закрывает: REQ-024-2, REQ-024-9, REQ-024-10, AC-024-15, AC-024-16, AC-024-18, AC-024-20, AC-024-21, AC-024-25 (api), NFR-024-2.
 - [x] **T-14.** Оркестратор: хук `ORCHESTRATOR_TOKEN` в `apps/orchestrator`, токен в `@swag/adapter-orchestrator-http`, передача из `apps/api`. Закрывает: REQ-024-11, AC-024-22.
-- [ ] **T-15.** `packages/ui-core`: `AuthApi`, `createAuthSessionKeeper` (4.15) и тесты. Закрывает: REQ-024-13 (ядро), AC-024-23.
+- [x] **T-15.** `packages/ui-core`: `AuthApi`, `createAuthSessionKeeper` (4.15) и тесты. Закрывает: REQ-024-13 (ядро), AC-024-23.
 - [ ] **T-16.** `apps/ui/cabinet`: прокси `/auth`, адаптер `AuthApi`, Bearer и `renew` в `api.ts`, подпротоколы потока, страница `/login`, guard, кнопка «Выйти». Закрывает: REQ-024-13. Готово, когда: сборка кабинета зелёная.
 - [ ] **T-17.** compose (4.14), `apps/api/test/stack.test.ts` по AC-024-24 с замером NFR-024-1, `STACK_TEST_API_URL` в `.env.example` и `.env`, отметка у S-1 в `docs/spec/scenarios.md`, ручная проверка AC-024-26 с выводом в журнал. Закрывает: AC-024-24, AC-024-26, NFR-024-1.
 - [ ] **T-18.** `docs/architecture.md` (раздел «Доступ» — по факту кода), сверка глоссария, README затронутых пакетов, корневой README. Готово, когда: README сверены с кодом.

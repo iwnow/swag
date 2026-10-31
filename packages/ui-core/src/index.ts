@@ -8,6 +8,8 @@ import {
 } from '@swag/contracts';
 import { applyEvent, type SwarmView } from '@swag/api-integration';
 
+export * from './auth-session.ts';
+
 // Спека 001, 4.8. Логика UI: валидация формы, состояние роя из событий, переподключение потока.
 // Angular-компоненты только рисуют и передают действия сюда.
 
