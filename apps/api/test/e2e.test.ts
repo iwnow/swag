@@ -19,6 +19,7 @@ import {
   type SandboxSpec,
 } from '@swag/orchestrator-core';
 import { unreadMessageIds } from '@swag/ui-core';
+import { actorOf, WHO } from './support.ts';
 import { createMemorySwarmStore } from '@swag/adapter-memory';
 import { createMemoryExporters, startTelemetry, type Telemetry } from '@swag/adapter-telemetry';
 import { AgentConfig, loadConfig } from '@swag/config';
@@ -250,6 +251,8 @@ function world(log: Logger, trace: TraceContext, script: Script = team) {
   return { api, sandboxes };
 }
 
+const ADMIN = actorOf(WHO.adminA);
+
 describe('сквозной скелет без Docker', () => {
   it('AC-022-21, AC-001-20: createSwarm с тремя агентами — completed по сообщениям, result из finish, песочниц нет, seq без пропусков', async () => {
     const logs: string[] = [];
@@ -262,7 +265,7 @@ describe('сквозной скелет без Docker', () => {
     };
     const { api, sandboxes } = world(log, { currentTraceId: () => null });
 
-    const created = await api.createSwarm({
+    const created = await api.createSwarm(ADMIN, {
       task: 'T',
       budgetMicroUsd: 1000000,
       agents: threeAgents((n) => `r${n}`),
@@ -273,13 +276,16 @@ describe('сквозной скелет без Docker', () => {
 
     await vi.waitFor(
       async () =>
-        expect(await api.getSwarm(id)).toMatchObject({ ok: true, value: { status: 'completed' } }),
+        expect(await api.getSwarm(ADMIN, id)).toMatchObject({
+          ok: true,
+          value: { status: 'completed' },
+        }),
       {
         timeout: 5000,
       },
     );
 
-    const view = await api.getSwarm(id);
+    const view = await api.getSwarm(ADMIN, id);
     if (!view.ok) throw new Error('рой не найден');
     expect(view.value.result).toBe('Итог: задача решена');
     expect(view.value.agents.every((a) => a.status === 'stopped' || a.status === 'done')).toBe(
@@ -291,7 +297,7 @@ describe('сквозной скелет без Docker', () => {
       { from: 'agent-3', to: 'agent-1', messages: 1 },
     ]);
     expect(sandboxes.size).toBe(0);
-    const events = await api.getEvents(id, 0);
+    const events = await api.getEvents(ADMIN, id, 0);
     if (!events.ok) throw new Error('нет событий');
     expect(events.value.map((e) => e.seq)).toEqual(events.value.map((_, i) => i + 1));
     expect(logs).toEqual([]);
@@ -310,7 +316,7 @@ describe('сквозной скелет без Docker', () => {
       dialog,
     );
 
-    const created = await api.createSwarm({
+    const created = await api.createSwarm(ADMIN, {
       task: 'T',
       budgetMicroUsd: 1000000,
       agents: [
@@ -324,11 +330,14 @@ describe('сквозной скелет без Docker', () => {
 
     await vi.waitFor(
       async () =>
-        expect(await api.getSwarm(id)).toMatchObject({ ok: true, value: { status: 'completed' } }),
+        expect(await api.getSwarm(ADMIN, id)).toMatchObject({
+          ok: true,
+          value: { status: 'completed' },
+        }),
       { timeout: 5000 },
     );
 
-    const events = await api.getEvents(id, 0);
+    const events = await api.getEvents(ADMIN, id, 0);
     if (!events.ok) throw new Error('нет событий');
     const feed = events.value;
     const message = feed.findIndex(
@@ -379,33 +388,43 @@ describe('сквозной скелет с трассировкой', () => {
     const { telemetry: tel, api } = traced();
 
     const first = await tel.inSpan('POST /swarms', { parent: parent(T) }, () =>
-      api.createSwarm({ task: 'T', budgetMicroUsd: 1000000, agents: threeAgents((n) => `r${n}`) }),
+      api.createSwarm(ADMIN, {
+        task: 'T',
+        budgetMicroUsd: 1000000,
+        agents: threeAgents((n) => `r${n}`),
+      }),
     );
     if (!first.ok) throw new Error('не создан');
     await vi.waitFor(
       async () =>
-        expect(await api.getSwarm(first.value.id)).toMatchObject({
+        expect(await api.getSwarm(ADMIN, first.value.id)).toMatchObject({
           value: { status: 'completed' },
         }),
       { timeout: 5000 },
     );
-    const events = await api.getEvents(first.value.id, 0);
+    const events = await api.getEvents(ADMIN, first.value.id, 0);
     if (!events.ok) throw new Error('нет событий');
     expect(events.value.length).toBeGreaterThan(10);
     expect(events.value.filter((e) => e.traceId !== T)).toEqual([]);
 
     const second = await tel.inSpan('POST /swarms', { parent: null }, () =>
-      api.createSwarm({ task: 'T2', budgetMicroUsd: 1000000, agents: [{ name: 'A', role: 'r1' }] }),
+      api.createSwarm(ADMIN, {
+        task: 'T2',
+        budgetMicroUsd: 1000000,
+        agents: [{ name: 'A', role: 'r1' }],
+      }),
     );
     if (!second.ok) throw new Error('не создан');
     const stopped = await tel.inSpan('POST /swarms/:id/stop', { parent: parent(S) }, () =>
-      api.stopSwarm(second.value.id),
+      api.stopSwarm(ADMIN, second.value.id),
     );
     expect(stopped.ok).toBe(true);
     await vi.waitFor(async () =>
-      expect(await api.getSwarm(second.value.id)).toMatchObject({ value: { status: 'stopped' } }),
+      expect(await api.getSwarm(ADMIN, second.value.id)).toMatchObject({
+        value: { status: 'stopped' },
+      }),
     );
-    const secondEvents = await api.getEvents(second.value.id, 0);
+    const secondEvents = await api.getEvents(ADMIN, second.value.id, 0);
     if (!secondEvents.ok) throw new Error('нет событий');
     const stopEvents = secondEvents.value.filter(
       (e) => e.type === 'agent.stopped' || e.type === 'swarm.stopped',
@@ -417,7 +436,7 @@ describe('сквозной скелет с трассировкой', () => {
   it('AC-016-13: задача и роли с маркером — маркера нет ни в одной строке лога и ни в одном атрибуте спана', async () => {
     const { telemetry: tel, api, lines, memory } = traced();
     const created = await tel.inSpan('POST /swarms', { parent: parent(T) }, () =>
-      api.createSwarm({
+      api.createSwarm(ADMIN, {
         task: `Задача ${MARKER}`,
         budgetMicroUsd: 1000000,
         agents: threeAgents((n) => `роль ${MARKER} ${n}`),
@@ -426,13 +445,13 @@ describe('сквозной скелет с трассировкой', () => {
     if (!created.ok) throw new Error('не создан');
     await vi.waitFor(
       async () =>
-        expect(await api.getSwarm(created.value.id)).toMatchObject({
+        expect(await api.getSwarm(ADMIN, created.value.id)).toMatchObject({
           value: { status: 'completed' },
         }),
       { timeout: 5000 },
     );
     // Маркер есть в событиях (их видит владелец роя), но не в телеметрии.
-    expect(JSON.stringify(await api.getEvents(created.value.id, 0))).toContain(MARKER);
+    expect(JSON.stringify(await api.getEvents(ADMIN, created.value.id, 0))).toContain(MARKER);
     expect(lines.length).toBeGreaterThan(0);
     for (const line of lines) expect(line).not.toContain(MARKER);
     expect(memory.finishedSpans.length).toBeGreaterThan(0);
