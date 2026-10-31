@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { LlmSwarmRegistration, PlatformEventInput, SwarmCreateRequest } from '../src/index.ts';
+import {
+  LlmSwarmClosed,
+  LlmSwarmRegistration,
+  PlatformEventInput,
+  SwarmCreateRequest,
+} from '../src/index.ts';
 
 const agent = (i: number, role = 'роль') => ({ name: `Агент ${i}`, role });
 const request = (agents: unknown[], task = 'Задача') => ({ task, budgetMicroUsd: 500000, agents });
@@ -226,5 +231,52 @@ describe('AC-031-6: событие swarm.created без maxTokens', () => {
       agents: [{ ...agents[0], maxTokens: null }],
     };
     expect(PlatformEventInput.safeParse({ ...envelope, data }).success).toBe(true);
+  });
+});
+
+describe('итоговые события и закрытие роя (013)', () => {
+  const finalEnvelope = {
+    id: '0b6f6d2e-6a4c-4c3e-9f5e-444444444444',
+    swarmId: SWARM,
+    ts: '2026-11-01T10:00:00.000Z',
+    agentId: null,
+    traceId: null,
+    source: 'api',
+  };
+
+  it('итоговые события роя разбираются и без spentMicroUsd, и с ним', () => {
+    const completed = { ...finalEnvelope, type: 'swarm.completed', data: { result: 'итог' } };
+    const stopped = { ...finalEnvelope, type: 'swarm.stopped', data: { reason: 'user' } };
+    const failed = {
+      ...finalEnvelope,
+      type: 'swarm.failed',
+      data: { reason: 'agent_failed' },
+    };
+    for (const event of [completed, stopped, failed]) {
+      expect(PlatformEventInput.safeParse(event).success).toBe(true);
+      const withSpent = {
+        ...event,
+        data: { ...event.data, spentMicroUsd: 123_456 },
+      };
+      expect(PlatformEventInput.safeParse(withSpent).success).toBe(true);
+    }
+  });
+
+  it('spentMicroUsd итогового события отрицательный или дробный отвергается', () => {
+    const event = {
+      ...finalEnvelope,
+      type: 'swarm.completed',
+      data: { result: 'итог', spentMicroUsd: -1 },
+    };
+    expect(PlatformEventInput.safeParse(event).success).toBe(false);
+    expect(
+      PlatformEventInput.safeParse({ ...event, data: { result: 'итог', spentMicroUsd: 1.5 } })
+        .success,
+    ).toBe(false);
+  });
+
+  it('LlmSwarmClosed требует spentMicroUsd и heldMicroUsd', () => {
+    expect(LlmSwarmClosed.safeParse({ spentMicroUsd: 4200, heldMicroUsd: 0 }).success).toBe(true);
+    expect(LlmSwarmClosed.safeParse({ spentMicroUsd: 4200 }).success).toBe(false);
   });
 });

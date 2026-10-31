@@ -8,13 +8,29 @@ export const Permission = z.enum([
   'swarm.stop',
   'user.manage',
   'organization.read',
+  'balance.read',
+  'balance.topup',
 ]);
 export type Permission = z.infer<typeof Permission>;
 
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
-  user: ['swarm.create', 'swarm.read', 'swarm.stop'],
-  admin: ['swarm.create', 'swarm.read', 'swarm.stop', 'user.manage'],
-  supervisor: ['swarm.read', 'swarm.stop', 'user.manage', 'organization.read'], // Q-4: роёв не создаёт
+  user: ['swarm.create', 'swarm.read', 'swarm.stop', 'balance.read'],
+  admin: [
+    'swarm.create',
+    'swarm.read',
+    'swarm.stop',
+    'user.manage',
+    'balance.read',
+    'balance.topup',
+  ],
+  supervisor: [
+    'swarm.read',
+    'swarm.stop',
+    'user.manage',
+    'organization.read',
+    'balance.read',
+    'balance.topup',
+  ], // Q-4: роёв не создаёт
 };
 
 export type Actor = {

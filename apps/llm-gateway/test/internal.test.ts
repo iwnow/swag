@@ -121,9 +121,9 @@ describe('внутренний API llm-gateway (спека 004, 4.2)', () => {
     const first = await close(gateway, swarmId);
     const again = await close(gateway, swarmId);
     expect(first.statusCode).toBe(200);
-    expect(first.json()).toEqual({ spentMicroUsd: 0 });
+    expect(first.json()).toEqual({ spentMicroUsd: 0, heldMicroUsd: 0 });
     expect(again.statusCode).toBe(200);
-    expect(again.json()).toEqual({ spentMicroUsd: 0 });
+    expect(again.json()).toEqual({ spentMicroUsd: 0, heldMicroUsd: 0 });
 
     for (const unknown of [randomUUID(), 'not-a-uuid']) {
       const response = await close(gateway, unknown);

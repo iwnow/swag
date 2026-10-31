@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { AgentId, AgentSpec, SwarmId } from './swarm.ts';
-import { BudgetMicroUsd, LlmCallData, MaxTokens } from './llm.ts';
+import { BudgetMicroUsd, LlmCallData, MaxTokens, MicroUsd } from './llm.ts';
 import { OrgId, UserId } from './auth.ts';
 
 // Спека 016, 4.1. W3C trace-id: 32 hex в нижнем регистре, не нули.
@@ -38,12 +38,12 @@ export const PlatformEventInput = z.discriminatedUnion('type', [
   z.strictObject({
     ...Envelope,
     type: z.literal('swarm.completed'),
-    data: z.strictObject({ result: z.string() }),
+    data: z.strictObject({ result: z.string(), spentMicroUsd: MicroUsd.optional() }), // 013, 4.1
   }),
   z.strictObject({
     ...Envelope,
     type: z.literal('swarm.stopped'),
-    data: z.strictObject({ reason: z.literal('user') }),
+    data: z.strictObject({ reason: z.literal('user'), spentMicroUsd: MicroUsd.optional() }), // 013, 4.1
   }),
   z.strictObject({
     ...Envelope,
@@ -60,6 +60,7 @@ export const PlatformEventInput = z.discriminatedUnion('type', [
         'gateway_unavailable',
       ]),
       detail: z.string().optional(),
+      spentMicroUsd: MicroUsd.optional(), // 013, 4.1
     }),
   }),
   z.strictObject({

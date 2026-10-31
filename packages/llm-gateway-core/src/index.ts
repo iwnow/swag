@@ -865,7 +865,7 @@ export function createLlmGatewayCore(deps: LlmGatewayDeps): LlmGatewayCore {
       }
       const closed = await budgets.close(swarmId, clock.now());
       return closed
-        ? { ok: true, value: closed }
+        ? { ok: true, value: { ...closed, heldMicroUsd: 0 } } // 013, T-5
         : internalError(404, 'not_found', 'Swarm not found');
     },
 
