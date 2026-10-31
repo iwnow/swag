@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import type { z } from 'zod';
 import {
   AgentConfig,
   ApiConfig,
@@ -21,6 +22,7 @@ const validEnv = {
 };
 
 const gatewayToken = 'swag-local-gateway-token-not-secret-000';
+const serviceToken = 'swag-local-service-token-not-secret-0000';
 
 // Спека 002, 4.8 и 4.9: примеры окружения шлюза; `.env.example` и `.env.llm.example` вместе проходят разбор.
 const gatewayExamples = (): Record<string, string> => ({
@@ -60,6 +62,22 @@ const orchestratorEnv = {
   LLM_GATEWAY_TOKEN: gatewayToken,
   DOCKER_AGENT_LLM_GATEWAY_URL: 'http://llm-gateway:3002/v1',
   LLM_GATEWAY_URL: 'http://llm-gateway:3002',
+  ORCHESTRATOR_TOKEN: serviceToken,
+};
+
+// Спека 024, 4.14: env api с новыми переменными доступа; ключ проверки — фейк, в .env.example он пустой.
+const apiEnv = {
+  ...validEnv,
+  API_PORT: '3000',
+  ORCHESTRATOR_URL: 'http://orchestrator:3001',
+  MAX_ACTIVE_SWARMS: '3',
+  SWARM_MAX_BUDGET_MICRO_USD: '5000000',
+  AGENT_MAX_TOKENS_LIMIT: '65536',
+  IDENTITY_URL: 'http://identity:3003',
+  IDENTITY_INTERNAL_TOKEN: serviceToken,
+  IDENTITY_JWT_PUBLIC_KEY: 'fake-ed25519-public-key-for-tests',
+  IDENTITY_JWT_KID: 'dev-1',
+  ORCHESTRATOR_TOKEN: serviceToken,
 };
 
 describe('loadConfig', () => {
@@ -81,25 +99,11 @@ describe('loadConfig', () => {
   });
 
   it('порт сервиса приводится к числу и проверяется', () => {
-    const apiEnv = {
-      ...validEnv,
-      ORCHESTRATOR_URL: 'http://orchestrator:3001',
-      MAX_ACTIVE_SWARMS: '3',
-      SWARM_MAX_BUDGET_MICRO_USD: '5000000',
-      AGENT_MAX_TOKENS_LIMIT: '65536',
-    };
     expect(loadConfig(ApiConfig, { ...apiEnv, API_PORT: '3000' }).API_PORT).toBe(3000);
     expect(() => loadConfig(ApiConfig, { ...apiEnv, API_PORT: 'abc' })).toThrow(/API_PORT/);
   });
 
   it('спека 004, 4.11: SWARM_MAX_BUDGET_MICRO_USD — целое не меньше 1', () => {
-    const apiEnv = {
-      ...validEnv,
-      ORCHESTRATOR_URL: 'http://orchestrator:3001',
-      MAX_ACTIVE_SWARMS: '3',
-      API_PORT: '3000',
-      AGENT_MAX_TOKENS_LIMIT: '65536',
-    };
     expect(
       loadConfig(ApiConfig, { ...apiEnv, SWARM_MAX_BUDGET_MICRO_USD: '5000000' })
         .SWARM_MAX_BUDGET_MICRO_USD,
@@ -320,5 +324,94 @@ describe('IdentityConfig', () => {
       loadConfig(IdentityConfig, { ...identityExample(), IDENTITY_JWT_PRIVATE_KEY: key })
         .IDENTITY_JWT_KID,
     ).toBe('dev-1');
+  });
+});
+
+// Спека 024, 4.14: токены сервисов, ключ проверки и приглашения.
+describe('AC-024-2: конфиг доступа', () => {
+  const withoutKey = (env: Record<string, string | undefined>, name: string) =>
+    Object.fromEntries(Object.entries(env).filter(([key]) => key !== name));
+  const missingOf = (schema: z.ZodType, env: Record<string, string | undefined>, name: string) =>
+    expect(() => loadConfig(schema, env)).toThrow(`  ${name}: `);
+
+  it('AC-024-2: без каждой новой обязательной переменной ApiConfig, OrchestratorConfig, IdentityConfig падает с её именем', () => {
+    const apiRequired = [
+      'IDENTITY_URL',
+      'IDENTITY_INTERNAL_TOKEN',
+      'IDENTITY_JWT_PUBLIC_KEY',
+      'IDENTITY_JWT_KID',
+      'ORCHESTRATOR_TOKEN',
+    ];
+    for (const name of apiRequired) {
+      const env = withoutKey(apiEnv, name);
+      missingOf(ApiConfig, env, name);
+    }
+    const { ORCHESTRATOR_TOKEN: _orchestrator, ...withoutOrchestratorToken } = orchestratorEnv;
+    missingOf(OrchestratorConfig, withoutOrchestratorToken, 'ORCHESTRATOR_TOKEN');
+
+    const identityEnv: Record<string, string | undefined> = {
+      ...parseEnv(readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8')),
+      IDENTITY_JWT_PRIVATE_KEY: 'fake-ed25519-key-for-tests',
+    };
+    for (const name of ['IDENTITY_INTERNAL_TOKEN', 'IDENTITY_INVITE_URL']) {
+      const env = withoutKey(identityEnv, name);
+      missingOf(IdentityConfig, env, name);
+    }
+  });
+
+  it('AC-024-2: токен сервиса короче 32 символов падает с именем переменной', () => {
+    const short = 'x'.repeat(31);
+    expect(() => loadConfig(ApiConfig, { ...apiEnv, IDENTITY_INTERNAL_TOKEN: short })).toThrow(
+      '  IDENTITY_INTERNAL_TOKEN: ',
+    );
+    expect(() => loadConfig(ApiConfig, { ...apiEnv, ORCHESTRATOR_TOKEN: short })).toThrow(
+      '  ORCHESTRATOR_TOKEN: ',
+    );
+    expect(() =>
+      loadConfig(OrchestratorConfig, { ...orchestratorEnv, ORCHESTRATOR_TOKEN: short }),
+    ).toThrow('  ORCHESTRATOR_TOKEN: ');
+  });
+
+  it('AC-024-2: умолчания и границы API_REVOCATION_*, IDENTITY_INVITE_TTL_S, URL', () => {
+    const config = loadConfig(ApiConfig, apiEnv);
+    expect(config).toMatchObject({
+      IDENTITY_URL: 'http://identity:3003',
+      API_REVOCATION_POLL_MS: 5000,
+      API_REVOCATION_MAX_STALE_MS: 30000,
+    });
+    expect(() => loadConfig(ApiConfig, { ...apiEnv, API_REVOCATION_POLL_MS: '999' })).toThrow(
+      '  API_REVOCATION_POLL_MS: ',
+    );
+    expect(() => loadConfig(ApiConfig, { ...apiEnv, API_REVOCATION_MAX_STALE_MS: '999' })).toThrow(
+      '  API_REVOCATION_MAX_STALE_MS: ',
+    );
+    expect(() => loadConfig(ApiConfig, { ...apiEnv, IDENTITY_URL: 'нет' })).toThrow(
+      '  IDENTITY_URL: ',
+    );
+    expect(() => loadConfig(ApiConfig, { ...apiEnv, IDENTITY_JWT_PUBLIC_KEY: '' })).toThrow(
+      '  IDENTITY_JWT_PUBLIC_KEY: ',
+    );
+
+    const identityEnv = {
+      ...parseEnv(readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8')),
+      IDENTITY_JWT_PRIVATE_KEY: 'fake-ed25519-key-for-tests',
+    };
+    expect(loadConfig(IdentityConfig, identityEnv).IDENTITY_INVITE_TTL_S).toBe(604800);
+    expect(() =>
+      loadConfig(IdentityConfig, { ...identityEnv, IDENTITY_INVITE_TTL_S: '599' }),
+    ).toThrow('  IDENTITY_INVITE_TTL_S: ');
+    expect(() =>
+      loadConfig(IdentityConfig, { ...identityEnv, IDENTITY_INVITE_URL: 'нет' }),
+    ).toThrow('  IDENTITY_INVITE_URL: ');
+  });
+
+  it('AC-024-2: .env.example проходит ApiConfig с ключом проверки; пустой IDENTITY_JWT_PUBLIC_KEY в примере — ошибка', () => {
+    const example = parseEnv(
+      readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8'),
+    );
+    expect(() =>
+      loadConfig(ApiConfig, { ...example, IDENTITY_JWT_PUBLIC_KEY: 'fake-key' }),
+    ).not.toThrow();
+    expect(() => loadConfig(ApiConfig, example)).toThrow('  IDENTITY_JWT_PUBLIC_KEY: ');
   });
 });

@@ -10,7 +10,8 @@ const OptionalUrl = z
   .transform((value) => (value ? value : null));
 const FlushTimeoutMs = PositiveInt.default(2000); // TELEMETRY_FLUSH_TIMEOUT_MS
 // Спека 022, 4.8: общий токен gateway; оркестратор и агент получают одно значение.
-const GatewayToken = z.string().min(32);
+// Спека 024, 4.14: тот же формат для внутренних токенов сервисов (identity, оркестратор).
+const ServiceToken = z.string().min(32);
 const AgentPeerEnv = z.object({ id: AgentId, name: z.string().min(1), role: z.string().min(1) });
 
 export const BaseConfig = z.object({
@@ -32,6 +33,14 @@ export const ApiConfig = BaseConfig.extend({
   SWARM_MAX_BUDGET_MICRO_USD: z.coerce.number().int().min(1),
   // Спека 031, 4.2: предел maxTokens роя и агента.
   AGENT_MAX_TOKENS_LIMIT: z.coerce.number().int().min(1),
+  // Спека 024, 4.14: проверка токенов и отзывов (identity), вызов оркестратора.
+  IDENTITY_URL: z.string().url(),
+  IDENTITY_INTERNAL_TOKEN: ServiceToken,
+  IDENTITY_JWT_PUBLIC_KEY: z.string().min(1), // base64 от SPKI PEM (D-117)
+  IDENTITY_JWT_KID: z.string().min(1),
+  ORCHESTRATOR_TOKEN: ServiceToken,
+  API_REVOCATION_POLL_MS: z.coerce.number().int().min(1000).default(5000),
+  API_REVOCATION_MAX_STALE_MS: z.coerce.number().int().min(1000).default(30000),
 });
 export type ApiConfig = z.infer<typeof ApiConfig>;
 
@@ -44,12 +53,14 @@ export const OrchestratorConfig = BaseConfig.extend({
   // Спека 022, 4.8: лимиты агента и адрес gateway изнутри песочницы.
   AGENT_MAX_STEPS: PositiveInt.min(1),
   AGENT_MAX_TOKENS: PositiveInt.min(1),
-  LLM_GATEWAY_TOKEN: GatewayToken,
+  LLM_GATEWAY_TOKEN: ServiceToken,
   DOCKER_AGENT_LLM_GATEWAY_URL: z.string().url(),
   // Спека 004, 4.11: внутренний API gateway (регистрация роёв) — без /v1, как база для /internal/*.
   LLM_GATEWAY_URL: z.string().url(),
   AGENT_START_TIMEOUT_MS: PositiveInt,
   SWARM_TIMEOUT_MS: PositiveInt,
+  // Спека 024, 4.13–4.14: Bearer-токен, которым api вызывает оркестратор.
+  ORCHESTRATOR_TOKEN: ServiceToken,
 });
 export type OrchestratorConfig = z.infer<typeof OrchestratorConfig>;
 
@@ -96,7 +107,7 @@ export const AgentConfig = z.object({
   AGENT_MAX_STEPS: PositiveInt.min(1),
   AGENT_MAX_TOKENS: PositiveInt.min(1),
   LLM_GATEWAY_URL: z.string().url(),
-  LLM_GATEWAY_TOKEN: GatewayToken,
+  LLM_GATEWAY_TOKEN: ServiceToken,
   AGENT_LLM_TIMEOUT_MS: z.coerce.number().int().min(1).default(120000),
   AGENT_LLM_MAX_RETRIES: PositiveInt.default(2),
   TRACEPARENT: z
@@ -116,7 +127,7 @@ export const LlmGatewayConfig = z.object({
   LOG_LEVEL: LogLevel.default('info'),
   TELEMETRY_FLUSH_TIMEOUT_MS: FlushTimeoutMs,
   LLM_GATEWAY_PORT: Port,
-  LLM_GATEWAY_TOKEN: GatewayToken,
+  LLM_GATEWAY_TOKEN: ServiceToken,
   LLM_CATALOG_PATH: z.string().min(1),
   LITELLM_URL: z.string().url(),
   LITELLM_MASTER_KEY: z.string().startsWith('sk-').min(16),
@@ -153,6 +164,10 @@ export const IdentityConfig = z
     SMTP_URL: z.string().url(), // dev: smtp://mailpit:1025
     SMTP_TIMEOUT_MS: z.coerce.number().int().min(1).default(10000),
     MAIL_FROM: z.string().min(3), // dev: Swag <no-reply@swag.local>
+    // Спека 024, 4.14: внутренний токен отзывов, страница приглашения в UI (014) и срок приглашения.
+    IDENTITY_INTERNAL_TOKEN: ServiceToken,
+    IDENTITY_INVITE_URL: z.string().url(), // dev: http://127.0.0.1:4200/auth/invite
+    IDENTITY_INVITE_TTL_S: z.coerce.number().int().min(600).default(604800),
   })
   .superRefine((config, ctx) => {
     const emailMissing = config.IDENTITY_SUPERVISOR_EMAIL === undefined;
