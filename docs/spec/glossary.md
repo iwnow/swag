@@ -82,14 +82,26 @@
 | Маркер сценария фейка | `__no_usage__`, `__no_cost__`, `__fail_500__`, `__fail_429__`, `__fail_400__`, `__slow_chunks__`, `__cut__`, `__hang__` | Текст в последнем сообщении `messages` выбирает ответ фейка (4.12). |
 | Ledger | `LedgerEntry`, `ledger_entries`, `LedgerReport` | Журнал денежных операций: в 004 — одна запись на вызов модели (`callId`, `kind: llm`, `amountMicroUsd` ≥ 0, основание списания, фактическая стоимость провайдера); пополнения и compute — 013. Деньги — целые micro-USD. |
 | Пользователь | `User`, `userId` | Тот, кто работает с платформой через личный кабинет: свой баланс, свои рои. |
-| Организация | `Organization`, `orgId` | Команда клиента на платформе: пользователи, их рои и расходы. Модель (баланс, вхождение пользователя) — D-10. |
+| Организация | `Organization`, `orgId`, `organizations`, `AuthOrganization` | Команда клиента на платформе: пользователи, их рои и расходы. Пользователь — ровно в одной организации, у супервизора её нет (012, Q-8); баланс и видимость — D-10. |
 | Администратор организации | роль `admin` | Управляет своей организацией: её пользователи и роли, рои и расходы. Чужие организации не видит. |
 | Супервизор | роль `supervisor`, фронтенд `apps/ui/supervisor` | Владелец платформы: вся платформа — организации, пользователи, пополнение балансов, цены, лимиты, все рои. |
 | Роль | `Role` | Именованный набор прав. В MVP — `user`, `admin`, `supervisor`. |
 | Право | `Permission` | Разрешение на действие, строка `<область>.<действие>`: `swarm.run`, `user.manage`, `balance.topup`. |
 | Вызывающий | `Actor` | Кто вызывает операцию ядра: `userId`, роли, права; оболочка собирает его из токена. Бывает служебным (оркестратор, callback LiteLLM). |
-| Identity | `Identity`, `apps/identity` | Сервис пользователей, входа, сессий, токенов, ролей и прав. |
-| Токен доступа | `AccessToken` | Короткоживущий подписанный токен; сервисы проверяют его сами, без запроса в identity. |
+| Identity | `apps/identity`, `@swag/identity-core`, `createIdentityCore`, `IdentityConfig` | Сервис пользователей, регистрации, входа, сессий и токенов (012); права и проверка доступа — 024. |
+| Токен доступа | `accessToken`, `AccessTokenClaims` | Короткоживущий JWT на EdDSA (Ed25519) с `kid`; утверждения `sub`, `org`, `role`, `iss: swag-identity`, `aud: swag`; сервисы проверяют его сами, без запроса в identity (012, 4.1). |
+| Регистрация компании | `requestRegistration`, `RegistrationRequest`, `POST /auth/registrations` | Ввод email: письмо со ссылкой подтверждения или «аккаунт уже есть», ответ одинаковый `202` (012, 4.2). |
+| Подтверждение регистрации | `confirmRegistration`, `RegistrationConfirmRequest`, `email_confirmations`, `invalid_token`, `email_taken` | Одноразовый токен из письма + пароль + название компании → организация и её `admin` одной транзакцией (012, 4.2, 4.3). |
+| Сессия, токен обновления | `sessions`, `refreshToken`, cookie `swag_refresh`, `rotateSession`, `AuthRefreshed`, `invalid_refresh_token` | Сессия входа; непрозрачный токен в httpOnly cookie, меняется при каждом `POST /auth/refresh`, повтор старого отзывает сессию (`refresh_reuse_detected`) (012, 4.3, 4.5). |
+| Ответ входа | `AuthSession`, `IssuedSession`, `AuthUser`, `AuthMe`, `invalid_credentials` | Токен доступа, срок, пользователь и организация; `refreshToken` — только в cookie (012, 4.1, 4.2). |
+| Хранилище identity | `IdentityStore`, `StoredUser`, `StoredOrganization`, `createPostgresIdentityStore`, `createMemoryIdentityStore` | Порт `identity-core`: пользователи, организации, подтверждения, сессии (012, 4.3). |
+| Хэшер паролей | `PasswordHasher`, `createArgon2Hasher`, `@swag/adapter-crypto` | argon2id `m=19456, t=2, p=1` на `@node-rs/argon2` (012, 4.7). |
+| Непрозрачный токен | `OpaqueTokens`, `createNodeOpaqueTokens` | 32 случайных байта base64url и их SHA-256 для хранения: токены подтверждения и обновления (012, 4.3). |
+| Подпись и проверка токена | `TokenSigner`, `TokenVerifier`, `createJoseSigner`, `createJoseVerifier`, `publicKeyFromPrivate`, `@swag/adapter-jose`, `IDENTITY_JWT_PRIVATE_KEY`, `IDENTITY_JWT_PUBLIC_KEY`, `npm run identity:keys` | JWT EdDSA на `jose`; verifier подключают сервисы в 024 (012, 4.7, 4.11). |
+| Порт отправки почты | `Mailer`, `MailMessage`, `createSmtpMailer`, `@swag/adapter-smtp`, `createMemoryMailer`, `mail_unavailable` | Отправка писем identity; SMTP на `nodemailer` (012, 4.3, 4.7). |
+| Перехватчик почты | `mailpit` (сервис compose), `MAILPIT_UI_PORT` | Mailpit в разработке: принимает SMTP, письма видны в UI и API на `127.0.0.1` (012, 4.11). |
+| Ограничитель частоты | `RateLimiter`, `createMemoryRateLimiter`, `rate_limited` | Фиксированное окно по ключу `register:*`, `confirm:*`, `login:*`; сверх лимита — `429` (012, 4.8). |
+| Первый супервизор | `ensureSupervisor`, `IDENTITY_SUPERVISOR_EMAIL`, `IDENTITY_SUPERVISOR_PASSWORD`, `supervisor_created` | Создаётся при старте identity из `.env`, если супервизора нет (012, Q-3). |
 | Баланс | `Balance`, `balanceMicroUsd` | Остаток денег пользователя по предоплате: сумма его записей ledger. |
 | Пополнение | `TopUp` | Запись ledger, увеличивающая баланс. В MVP делает супервизор. |
 | Резерв бюджета | `budget_holds`, `holdMicroUsd` | В 004 — верхняя оценка стоимости вызова модели, зарезервированная из бюджета роя и агента до обращения к LiteLLM и закрытая списанием (004, 4.3); резерв бюджета роя из баланса — 013. |
