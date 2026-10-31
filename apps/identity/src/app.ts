@@ -153,11 +153,11 @@ export async function buildApp(
     return reply.code(200).send(result.value);
   });
 
-  // Спека 024, 4.7: только для identity-клиентов с IDENTITY_INTERNAL_TOKEN; ответ без тела ошибки кроме кода.
+  // Спека 024, 4.7: только для identity-клиентов с IDENTITY_INTERNAL_TOKEN; ошибка в общем формате { error: { code, message } }.
   app.get('/internal/token-revocations', async (request, reply) => {
     const presented = bearer(request.headers.authorization) ?? '';
     if (!tokenMatches(presented, settings.internalToken)) {
-      return reply.code(401).send({ error: { code: 'unauthorized' } });
+      return fail(reply, { code: 'unauthorized', message: 'unauthorized' });
     }
     return reply.code(200).send(await core.tokenRevocations());
   });

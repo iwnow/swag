@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  INTERNAL_TOKEN,
   PASSWORD,
   addMember,
   bearerOf,
@@ -71,6 +72,7 @@ describe('отзыв токенов при блокировке и смене р
     const { admin, member, memberLogin } = await setup(h);
     const memberToken = memberLogin.json<Session>().accessToken;
     const cookie = refreshValueOf(memberLogin);
+    const memberId = member.user.id;
 
     expect((await patch(h, admin.accessToken, member.user.id, { blocked: true })).statusCode).toBe(
       200,
@@ -98,6 +100,21 @@ describe('отзыв токенов при блокировке и смене р
     const stale = await refresh(h, cookie);
     expect(stale.statusCode).toBe(401);
     expect(stale.json()).toMatchObject({ error: { code: 'invalid_refresh_token' } });
+
+    const update = await h.app.inject({
+      method: 'PATCH',
+      url: `/auth/users/${memberId}`,
+      headers: bearerOf(memberToken),
+      payload: { blocked: false },
+    });
+    expect(update.statusCode).toBe(401);
+    const invite = await h.app.inject({
+      method: 'POST',
+      url: '/auth/invitations',
+      headers: bearerOf(memberToken),
+      payload: { email: 'guest@example.com', role: 'user' },
+    });
+    expect(invite.statusCode).toBe(401);
   });
 
   it('AC-024-7: смена роли — старый токен и refresh не работают; новый вход даёт токен с новой ролью, и он принимается', async () => {
@@ -108,6 +125,14 @@ describe('отзыв токенов при блокировке и смене р
 
     expect((await patch(h, admin.accessToken, member.user.id, { role: 'admin' })).statusCode).toBe(
       200,
+    );
+    const revoked = await h.app.inject({
+      method: 'GET',
+      url: '/internal/token-revocations',
+      headers: { authorization: `Bearer ${INTERNAL_TOKEN}` },
+    });
+    expect(revoked.json<{ revocations: object[] }>().revocations).toContainEqual(
+      expect.objectContaining({ userId: member.user.id, blocked: false }),
     );
 
     const stale = await h.app.inject({

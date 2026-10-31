@@ -35,7 +35,9 @@ describe('GET /internal/token-revocations', () => {
 
     const none = await revocations(h);
     expect(none.statusCode).toBe(401);
-    expect(none.json()).toEqual({ error: { code: 'unauthorized' } });
+    expect(none.json()).toEqual({
+      error: { code: 'unauthorized', message: expect.any(String) },
+    });
 
     const wrongSameLength = INTERNAL_TOKEN.replace(/.$/, 'X');
     expect((await revocations(h, `Bearer ${wrongSameLength}`)).statusCode).toBe(401);
@@ -48,7 +50,13 @@ describe('GET /internal/token-revocations', () => {
       revocations: [{ userId: member.user.id, validAfter: expect.any(Number), blocked: true }],
     });
 
-    h.clock.shift(ACCESS_TTL_S * 1000 + 1000);
+    h.clock.shift(ACCESS_TTL_S * 1000 - 1000);
+    const edge = await revocations(h, `Bearer ${INTERNAL_TOKEN}`);
+    expect(edge.json()).toEqual({
+      revocations: [{ userId: member.user.id, validAfter: expect.any(Number), blocked: true }],
+    });
+
+    h.clock.shift(2000);
     const later = await revocations(h, `Bearer ${INTERNAL_TOKEN}`);
     expect(later.json()).toEqual({ revocations: [] });
   });

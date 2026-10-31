@@ -8,7 +8,7 @@
 - Cookie токена обновления `swag_refresh` по 4.5: `HttpOnly; SameSite=Strict; Path=/auth; Max-Age=<IDENTITY_REFRESH_TTL_S>`, `Secure` только при `IDENTITY_COOKIE_SECURE=true`. Стирание — та же cookie с `Max-Age=0`.
 - Старт по порядку: конфиг → миграции → пул → ядро → `ensureSupervisor` → `listen`. Занятый email супервизора или ошибка миграций — процесс не стартует с кодом 1.
 - Управление доступом по спеке 024, 4.7: `GET /auth/users?orgId=` (200 `UserList`), `POST /auth/invitations` (202, пустое тело), `POST /auth/invitations/accept` (201 `AuthSession` + cookie и `no-store`), `PATCH /auth/users/:id` (200 `ManagedUser`), `GET /auth/organizations` (200 `OrganizationList`). Все, кроме принятия приглашения, требуют `Authorization: Bearer <jwt>`.
-- `GET /internal/token-revocations` (024, 4.7): `Authorization: Bearer <IDENTITY_INTERNAL_TOKEN>`, `200 TokenRevocationList`; без токена или с неверным — `401 { error: { code: 'unauthorized' } }`. Маршрут не проксируется UI.
+- `GET /internal/token-revocations` (024, 4.7): `Authorization: Bearer <IDENTITY_INTERNAL_TOKEN>`, `200 TokenRevocationList`; без токена или с неверным — `401 { error: { code: 'unauthorized', message: 'unauthorized' } }` (тот же формат, что у остальных ошибок). Маршрут не проксируется UI.
 - Уборка просроченных и закрытых записей (024, 4.8): при старте (`onReady`) и раз в час; таймер снимается при закрытии приложения.
 - Телеметрия: спаны на запросы (кроме `/health`), логи Fastify тем же логгером, `service: identity`.
 

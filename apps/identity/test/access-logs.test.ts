@@ -30,7 +30,8 @@ describe('логи и спаны управления доступом', () => {
     secrets.push(admin.accessToken, confirmTokenFrom(h.mailer));
 
     const member = await addMember(h, admin.accessToken, MEMBER);
-    secrets.push(confirmTokenFrom(h.mailer), refreshValueOf(member));
+    const inviteToken = confirmTokenFrom(h.mailer);
+    secrets.push(inviteToken, refreshValueOf(member));
     const memberId = member.json<{ user: { id: string } }>().user.id;
 
     const login = await loginAs(h, MEMBER);
@@ -59,6 +60,46 @@ describe('логи и спаны управления доступом', () => {
       url: '/internal/token-revocations',
       headers: { authorization: `Bearer ${INTERNAL_TOKEN}` },
     });
+
+    const wrongInternal = 'wrong-internal-token-0123456789-abcdefgh';
+    secrets.push(wrongInternal);
+    await h.app.inject({
+      method: 'GET',
+      url: '/internal/token-revocations',
+      headers: { authorization: `Bearer ${wrongInternal}` },
+    });
+    await h.app.inject({
+      method: 'PATCH',
+      url: `/auth/users/${memberId}`,
+      headers: bearerOf(admin.accessToken),
+      payload: { role: 'admin' },
+    });
+    const reused = await h.app.inject({
+      method: 'POST',
+      url: '/auth/invitations/accept',
+      payload: { token: inviteToken, password: PASSWORD },
+    });
+    expect(reused.json()).toMatchObject({ error: { code: 'invalid_token' } });
+
+    for (let i = 0; i < 20; i += 1) {
+      const guest = `guest${i}@example.com`;
+      secrets.push(guest);
+      await h.app.inject({
+        method: 'POST',
+        url: '/auth/invitations',
+        headers: bearerOf(admin.accessToken),
+        payload: { email: guest, role: 'user' },
+      });
+      secrets.push(confirmTokenFrom(h.mailer));
+    }
+    const limited = await h.app.inject({
+      method: 'POST',
+      url: '/auth/invitations',
+      headers: bearerOf(admin.accessToken),
+      payload: { email: 'guest-last@example.com', role: 'user' },
+    });
+    expect(limited.statusCode).toBe(429);
+    secrets.push('guest-last@example.com');
 
     const text = telemetryText(h);
     expect(text).toContain('login_blocked');
