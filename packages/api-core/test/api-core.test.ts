@@ -766,6 +766,7 @@ describe('api-core — спека 024: Actor, видимость, права, с
     const u2 = actorOf('user', USER_U2, ORG_A);
     const adminA = actorOf('admin', ADMIN_A, ORG_A);
     const userB = actorOf('user', USER_B, ORG_B);
+    const adminNoOrg = actorOf('admin', ADMIN_A, null);
     const supervisor = actorOf('supervisor', SUPERVISOR, null);
     const own1 = await core.createSwarm(u1, body(1));
     const own2 = await core.createSwarm(u2, body(1));
@@ -808,6 +809,8 @@ describe('api-core — спека 024: Actor, видимость, права, с
       ['U2', u2, [ids.own2]],
       ['администратор A', adminA, [ids.own1, ids.own2]],
       ['пользователь B', userB, [ids.foreign]],
+      // Админ без организации и рой до 024 (orgId и createdBy не заданы) — только у супервизора.
+      ['администратор без организации', adminNoOrg, []],
       ['супервизор', supervisor, [ids.own1, ids.own2, ids.foreign, ids.legacy]],
     ];
     for (const [name, actor, visibleIds] of cases) {
@@ -870,14 +873,22 @@ describe('api-core — спека 024: Actor, видимость, права, с
         latencyMs: 812,
       },
     };
+    const supervisor = actorOf('supervisor', SUPERVISOR, null);
+    const liveUser: PlatformEvent[] = [];
+    const liveSupervisor: PlatformEvent[] = [];
+    const subUser = await core.subscribe(ACTOR, id, 0, (e) => liveUser.push(e));
+    const subSupervisor = await core.subscribe(supervisor, id, 0, (e) => liveSupervisor.push(e));
     await core.ingestEvent(sys(id, 20, llmCall));
 
     const costOf = (events: PlatformEvent[]) => {
       const call = events.find((e) => e.type === 'llm.call');
       return call?.type === 'llm.call' ? call.data.providerCostMicroUsd : undefined;
     };
+    expect(subUser.ok && costOf(liveUser)).toBe(null);
+    expect(subSupervisor.ok && costOf(liveSupervisor)).toBe(42);
+    if (subUser.ok) subUser.value();
+    if (subSupervisor.ok) subSupervisor.value();
     const adminA = actorOf('admin', ADMIN_A, ORG_A);
-    const supervisor = actorOf('supervisor', SUPERVISOR, null);
     for (const actor of [ACTOR, adminA]) {
       const events = await core.getEvents(actor, id, 0);
       expect(events.ok && costOf(events.value)).toBe(null);
@@ -947,5 +958,46 @@ describe('api-core — спека 024: Actor, видимость, права, с
     }
     expect(await core.stopSwarmsOfUser(USER_U1)).toBe(0);
     expect(stops).toHaveLength(2);
+  });
+
+  it('AC-024-21: сбой остановки одного роя не мешает остальным, вызов бросает AggregateError, повтор после починки останавливает оставшийся', async () => {
+    let broken = true;
+    let failingId = '';
+    const { core, stops, entries } = setup({
+      maxActiveSwarms: 10,
+      stop: async (id) => {
+        if (broken && id === failingId) throw new Error('оркестратор недоступен');
+      },
+    });
+    const failing = await core.createSwarm(ACTOR, body(1));
+    const healthy = await core.createSwarm(ACTOR, body(1));
+    if (!failing.ok || !healthy.ok) throw new Error('не созданы');
+    failingId = failing.value.id;
+
+    const result = core.stopSwarmsOfUser(USER_U1);
+    await expect(result).rejects.toBeInstanceOf(AggregateError);
+    expect(stops.sort()).toEqual([failing.value.id, healthy.value.id].sort());
+    expect(entries.find((e) => e.msg === 'user_swarm_stop_failed')).toEqual({
+      level: 'warn',
+      msg: 'user_swarm_stop_failed',
+      ctx: expect.objectContaining({ userId: USER_U1, swarmId: failing.value.id }),
+    });
+    expect(entries.find((e) => e.msg === 'user_swarms_stopped')).toEqual({
+      level: 'info',
+      msg: 'user_swarms_stopped',
+      ctx: { userId: USER_U1, count: 1 },
+    });
+
+    await core.ingestEvent(
+      sys(healthy.value.id, 30, {
+        type: 'swarm.stopped',
+        source: 'orchestrator',
+        agentId: null,
+        data: { reason: 'user' },
+      }),
+    );
+    broken = false;
+    expect(await core.stopSwarmsOfUser(USER_U1)).toBe(1);
+    expect(stops.filter((id) => id === failing.value.id)).toHaveLength(2);
   });
 });

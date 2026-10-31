@@ -316,17 +316,24 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
       return ok(undefined);
     },
 
-    // Спека 024, 4.4, правило 6: тот же путь, что stopSwarm, без проверки Actor; ошибка оркестратора
-    // прерывает вызов (повтор безопасен: остановленные рои уже не в starting/running).
+    // Спека 024, 4.4, правило 6: тот же путь, что stopSwarm, без проверки Actor. Сбой одного роя
+    // не мешает остальным; в конце — AggregateError, повтор безопасен (остановленные рои уже финальные).
     async stopSwarmsOfUser(userId) {
       let stopped = 0;
+      const errors: unknown[] = [];
       for (const view of await store.views()) {
         if (view.createdBy !== userId) continue;
-        if (view.status !== 'starting' && view.status !== 'running') continue;
-        await orchestrator.stop(view.id);
-        stopped += 1;
+        if (FINAL_SWARM_STATUSES.includes(view.status)) continue;
+        try {
+          await orchestrator.stop(view.id);
+          stopped += 1;
+        } catch (error) {
+          log.warn('user_swarm_stop_failed', { userId, swarmId: view.id, err: error });
+          errors.push(error);
+        }
       }
       log.info('user_swarms_stopped', { userId, count: stopped });
+      if (errors.length > 0) throw new AggregateError(errors, 'user swarms stop failed');
       return stopped;
     },
 
