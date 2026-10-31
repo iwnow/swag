@@ -3,12 +3,14 @@ import type { SwarmStore } from '@swag/api-core';
 import { applyEvent, type SwarmView } from '@swag/api-integration';
 import {
   SwarmId,
+  type BalanceEntry,
   type ChargeBasis,
   type LlmCaller,
   type LlmSwarmRegistration,
   type ModelId,
   type PlatformEvent,
 } from '@swag/contracts';
+import type { BalanceStore } from '@swag/billing-core';
 import type { IdentityStore, StoredOrganization, StoredUser } from '@swag/identity-core';
 import type {
   BudgetStore,
@@ -747,6 +749,138 @@ export function createPostgresIdentityStore(pool: Pool): IdentityStore {
         invitations: invitations.rowCount ?? 0,
         sessions: sessions.rowCount ?? 0,
       };
+    },
+  };
+}
+
+// Спека 013, 4.2 и T-4: хранилище баланса. Каждая операция — одна транзакция (topup, reserve, settle).
+type BalanceEntryRow = {
+  id: string;
+  org_id: string;
+  ts: Date;
+  kind: 'topup' | 'swarm';
+  amount_micro_usd: string;
+  swarm_id: string | null;
+  actor_id: string | null;
+  comment: string | null;
+};
+
+const BALANCE_ENTRY_COLUMNS = 'id, org_id, ts, kind, amount_micro_usd, swarm_id, actor_id, comment';
+
+const toBalanceEntry = (row: BalanceEntryRow): BalanceEntry => ({
+  id: Number(row.id),
+  orgId: row.org_id,
+  ts: row.ts.toISOString(),
+  kind: row.kind,
+  amountMicroUsd: Number(row.amount_micro_usd),
+  swarmId: row.swarm_id,
+  actorId: row.actor_id,
+  comment: row.comment,
+});
+
+// Спека 013, 4.2: баланс организации и журнал баланса; резерв роя — balance_holds.
+export function createPostgresBalanceStore(pool: Pool): BalanceStore {
+  return {
+    async balance(orgId: string) {
+      const result = await pool.query<{ balance: string; held: string }>(
+        'select balance_micro_usd as balance, held_micro_usd as held from org_balances where org_id = $1',
+        [orgId],
+      );
+      const row = result.rows[0];
+      return row
+        ? { balanceMicroUsd: Number(row.balance), heldMicroUsd: Number(row.held) }
+        : { balanceMicroUsd: 0, heldMicroUsd: 0 };
+    },
+
+    async entries(orgId: string, before: number | null, limit: number) {
+      const result = await pool.query<BalanceEntryRow>(
+        `select ${BALANCE_ENTRY_COLUMNS} from balance_entries
+          where org_id = $1 and ($2::bigint is null or id < $2)
+          order by id desc limit $3`,
+        [orgId, before, limit + 1],
+      );
+      return {
+        entries: result.rows.slice(0, limit).map(toBalanceEntry),
+        hasMore: result.rows.length > limit,
+      };
+    },
+
+    async topup(input) {
+      return transact(pool, async (client) => {
+        await client.query(
+          `insert into org_balances (org_id, balance_micro_usd) values ($1, $2)
+             on conflict (org_id) do update set balance_micro_usd = org_balances.balance_micro_usd + $2`,
+          [input.orgId, input.amountMicroUsd],
+        );
+        const inserted = await client.query<BalanceEntryRow>(
+          `insert into balance_entries (org_id, ts, kind, amount_micro_usd, actor_id, comment)
+             values ($1, $2, 'topup', $3, $4, $5) returning ${BALANCE_ENTRY_COLUMNS}`,
+          [input.orgId, input.ts, input.amountMicroUsd, input.actorId, input.comment],
+        );
+        const row = inserted.rows[0];
+        if (!row) throw new Error('balance entry not inserted');
+        return { commit: true, value: toBalanceEntry(row) };
+      });
+    },
+
+    // Отказ — 'insufficient' без записи; повтор swarmId — конфликт первичного ключа, откат и исключение.
+    async reserve(input) {
+      return transact(
+        pool,
+        async (client): Promise<{ commit: boolean; value: 'ok' | 'insufficient' }> => {
+          const held = await client.query(
+            `update org_balances set held_micro_usd = held_micro_usd + $2
+            where org_id = $1 and balance_micro_usd - held_micro_usd >= $2
+          returning 1`,
+            [input.orgId, input.amountMicroUsd],
+          );
+          if (held.rowCount === 0) return { commit: false, value: 'insufficient' };
+          await client.query(
+            'insert into balance_holds (swarm_id, org_id, amount_micro_usd, created_at) values ($1, $2, $3, $4)',
+            [input.swarmId, input.orgId, input.amountMicroUsd, input.ts],
+          );
+          return { commit: true, value: 'ok' };
+        },
+      );
+    },
+
+    async settle(swarmId: string, spentMicroUsd: number, ts: string) {
+      return transact(pool, async (client) => {
+        const released = await client.query<{ org_id: string; amount: string }>(
+          'delete from balance_holds where swarm_id = $1 returning org_id, amount_micro_usd as amount',
+          [swarmId],
+        );
+        const hold = released.rows[0];
+        if (!hold) return { commit: false, value: null };
+        const heldMicroUsd = Number(hold.amount);
+        const chargedMicroUsd = Math.min(spentMicroUsd, heldMicroUsd);
+        await client.query(
+          `insert into balance_entries (org_id, ts, kind, amount_micro_usd, swarm_id)
+             values ($1, $2, 'swarm', $3, $4)`,
+          [hold.org_id, ts, 0 - chargedMicroUsd, swarmId],
+        );
+        await client.query(
+          `update org_balances set balance_micro_usd = balance_micro_usd - $2,
+                                   held_micro_usd = held_micro_usd - $3
+            where org_id = $1`,
+          [hold.org_id, chargedMicroUsd, heldMicroUsd],
+        );
+        return {
+          commit: true,
+          value: { orgId: hold.org_id, heldMicroUsd, chargedMicroUsd },
+        };
+      });
+    },
+
+    async holds() {
+      const result = await pool.query<{ swarm_id: string; org_id: string; amount: string }>(
+        'select swarm_id, org_id, amount_micro_usd as amount from balance_holds',
+      );
+      return result.rows.map((row) => ({
+        swarmId: row.swarm_id,
+        orgId: row.org_id,
+        amountMicroUsd: Number(row.amount),
+      }));
     },
   };
 }

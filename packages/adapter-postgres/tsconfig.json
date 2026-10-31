@@ -7,5 +7,5 @@
     "types": ["node"]
   },
   "include": ["src"],
-  "references": [{ "path": "../llm-gateway-core" }]
+  "references": [{ "path": "../llm-gateway-core" }, { "path": "../billing-core" }]
 }

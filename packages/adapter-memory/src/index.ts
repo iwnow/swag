@@ -1,6 +1,7 @@
 import type { SwarmStore } from '@swag/api-core';
 import { applyEvent, type SwarmView } from '@swag/api-integration';
-import type { PlatformEvent } from '@swag/contracts';
+import type { BalanceStore } from '@swag/billing-core';
+import type { BalanceEntry, PlatformEvent } from '@swag/contracts';
 import type {
   IdentityStore,
   MailMessage,
@@ -297,6 +298,97 @@ export function createMemoryRateLimiter(deps: { now: () => number }): MemoryRate
       if (window.count >= limit) return false;
       window.count++;
       return true;
+    },
+  };
+}
+
+// Спека 013, 4.2 и T-3: хранилище баланса в памяти с той же семантикой, что у Postgres.
+// Каждая операция синхронна внутри async-функции: проверка и запись не разделены await.
+type MemoryBalance = { balance: number; held: number };
+type MemoryHold = { swarmId: string; orgId: string; amountMicroUsd: number };
+
+export function createMemoryBalanceStore(): BalanceStore {
+  const balances = new Map<string, MemoryBalance>();
+  const entries: BalanceEntry[] = [];
+  const holds = new Map<string, MemoryHold>();
+  let nextId = 1;
+
+  const balanceOf = (orgId: string): MemoryBalance => {
+    const current = balances.get(orgId);
+    if (current) return current;
+    const created = { balance: 0, held: 0 };
+    balances.set(orgId, created);
+    return created;
+  };
+
+  return {
+    async balance(orgId: string) {
+      const current = balances.get(orgId);
+      return { balanceMicroUsd: current?.balance ?? 0, heldMicroUsd: current?.held ?? 0 };
+    },
+
+    async entries(orgId: string, before: number | null, limit: number) {
+      const matching = entries
+        .filter((entry) => entry.orgId === orgId && (before === null || entry.id < before))
+        .reverse();
+      return {
+        entries: matching.slice(0, limit).map((entry) => ({ ...entry })),
+        hasMore: matching.length > limit,
+      };
+    },
+
+    async topup(input) {
+      balanceOf(input.orgId).balance += input.amountMicroUsd;
+      const entry: BalanceEntry = {
+        id: nextId++,
+        orgId: input.orgId,
+        ts: input.ts,
+        kind: 'topup',
+        amountMicroUsd: input.amountMicroUsd,
+        swarmId: null,
+        actorId: input.actorId,
+        comment: input.comment,
+      };
+      entries.push(entry);
+      return { ...entry };
+    },
+
+    async reserve(input) {
+      const current = balances.get(input.orgId);
+      if (!current || current.balance - current.held < input.amountMicroUsd) return 'insufficient';
+      if (holds.has(input.swarmId)) throw new Error('swarm hold already exists');
+      current.held += input.amountMicroUsd;
+      holds.set(input.swarmId, {
+        swarmId: input.swarmId,
+        orgId: input.orgId,
+        amountMicroUsd: input.amountMicroUsd,
+      });
+      return 'ok';
+    },
+
+    async settle(swarmId, spentMicroUsd, ts) {
+      const hold = holds.get(swarmId);
+      if (!hold) return null;
+      holds.delete(swarmId);
+      const charge = Math.min(spentMicroUsd, hold.amountMicroUsd);
+      const current = balanceOf(hold.orgId);
+      entries.push({
+        id: nextId++,
+        orgId: hold.orgId,
+        ts,
+        kind: 'swarm',
+        amountMicroUsd: 0 - charge,
+        swarmId,
+        actorId: null,
+        comment: null,
+      });
+      current.balance -= charge;
+      current.held -= hold.amountMicroUsd;
+      return { orgId: hold.orgId, heldMicroUsd: hold.amountMicroUsd, chargedMicroUsd: charge };
+    },
+
+    async holds() {
+      return [...holds.values()].map((hold) => ({ ...hold }));
     },
   };
 }

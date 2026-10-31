@@ -11,6 +11,7 @@
     { "path": "../api-core" },
     { "path": "../api-integration" },
     { "path": "../contracts" },
-    { "path": "../identity-core" }
+    { "path": "../identity-core" },
+    { "path": "../billing-core" }
   ]
 }

@@ -47,7 +47,7 @@ describe.skipIf(!url)('adapter-postgres миграции', () => {
     const rowsAfterFirst = await migrationRows();
 
     expect(afterFirst).toEqual(expect.arrayContaining(['swarm_events', 'swarms']));
-    expect(rowsAfterFirst).toBe(4); // 0001_swarms, 0002_money, 0003_identity и 0004_identity_access
+    expect(rowsAfterFirst).toBe(5); // 0001_swarms, 0002_money, 0003_identity, 0004_identity_access и 0005_billing
 
     await expect(runMigrations(url ?? '', { schema })).resolves.toBeUndefined();
 
@@ -142,6 +142,18 @@ describe.skipIf(!url)('adapter-postgres миграции', () => {
           'used_at',
           'created_at',
         ],
+        org_balances: ['org_id', 'balance_micro_usd', 'held_micro_usd'],
+        balance_entries: [
+          'id',
+          'org_id',
+          'ts',
+          'kind',
+          'amount_micro_usd',
+          'swarm_id',
+          'actor_id',
+          'comment',
+        ],
+        balance_holds: ['swarm_id', 'org_id', 'amount_micro_usd', 'created_at'],
         swarm_events: expect.any(Array),
         swarms: expect.any(Array),
       });
@@ -252,7 +264,7 @@ describe.skipIf(!url)('adapter-postgres миграции', () => {
         [userId, orgId],
       );
 
-      await migrate('up');
+      await migrate('up', 1); // только 0004: 0005 здесь не нужна
       expect(await userColumns()).toEqual(['blocked_at', 'tokens_valid_after']);
       expect(await indexExists()).toBe(true);
       expect(await invitationsExist()).toBe(true);
