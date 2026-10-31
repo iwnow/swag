@@ -91,7 +91,7 @@
 
 ## Identity (спека 012)
 
-- Одна транзакция на операцию через `transact`. У памяти и Postgres общий набор сценариев (`identityStoreContract`), семантика совпадает.
+- Транзакция через `transact` только у `confirmRegistration` и `rotateSession`; остальные операции — один запрос. У памяти и Postgres общий набор сценариев (`identityStoreContract`), семантика совпадает.
 - `confirmRegistration`: `update email_confirmations set used_at = $now where token_hash = $1 and used_at is null and expires_at > $now returning email`. Блокировка строки — в самом `update`, без `for update`. Параллельные подтверждения одним токеном: проигравший после `commit` победителя не находит строку с `used_at is null` → `invalid_token`. Ровно один `ok` (AC-012-9).
 - `email_taken` — `rollback`: токен не гасится, организация и пользователь не создаются. Занятый email проверяется запросом; гонку двух регистраций одного email закрывает уникальный индекс `users_email_key` (код `23505`), нарушение — тот же `rollback` и `email_taken`. Другие ошибки пробрасываются.
 - `rotateSession`: найденная живая сессия по `refresh_hash` — `for update`; `previous_hash = refresh_hash` и новый хэш в одном `update`. Не найдена — поиск по `previous_hash` с `for update`; найдена — `revoked_at = now` и `commit`, чтобы отзыв сохранился (`reused`). Иначе `invalid`, без записи. Параллельный повтор одного токена после победителя попадает в ветку `reused`.

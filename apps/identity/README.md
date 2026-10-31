@@ -14,7 +14,7 @@
 - `src/app.ts` — `buildApp(core, settings, options)`: маршруты 4.4, cookie 4.5, `STATUS` (коды ошибок → статусы), обработчик ошибок формата запроса.
 - `src/start.ts` — `startIdentityCore` (миграции → пул → `createPostgresIdentityStore` → `createIdentityCore` → `ensureSupervisor`; при ошибке после создания пула пул закрывается), `startOrExit` (ошибка старта: одна запись `error` `startup failed`, затем `exit(1)`; `main.ts` передаёт сброс телеметрии и `process.exit`) и `jwtKeys` (декодирование ключа подписи, подпись и проверка).
 - `src/main.ts` — телеметрия, `IdentityConfig`, ключи, адаптеры (argon2, opaque-токены, SMTP, ограничитель в памяти), старт, `listen` на `0.0.0.0` внутри контейнера (порт публикуется только на `127.0.0.1`), остановка по сигналу: закрыть Fastify → `pool.end()` → сброс телеметрии → `exit(0)`.
-- Тесты: `test/health.test.ts` (`/health` по 4.4), `test/registration.test.ts` (AC-012-5, 6, 25), `test/session.test.ts` (AC-012-11, 21), `test/cookie.test.ts` (AC-012-16, 17), `test/me.test.ts` (AC-012-18), `test/errors.test.ts` (AC-012-26), `test/logs.test.ts` (AC-012-22), `test/start.test.ts` (REQ-012-23; AC-012-20: `startOrExit` вызывает `exit(1)` и пишет одну запись `error` — нужен `POSTGRES_TEST_URL`, без него пропускается). Общая обвязка — `test/support.ts`: ядро на адаптерах в памяти, настоящие argon2 и jose, телеметрия в памяти.
+- Тесты: `test/stack.test.ts` (AC-012-27, NFR-012-2, только на поднятом контуре); `test/health.test.ts` (`/health` по 4.4), `test/registration.test.ts` (AC-012-5, 6, 25), `test/session.test.ts` (AC-012-11, 21), `test/cookie.test.ts` (AC-012-16, 17), `test/me.test.ts` (AC-012-18), `test/errors.test.ts` (AC-012-26), `test/logs.test.ts` (AC-012-22), `test/start.test.ts` (REQ-012-23; AC-012-20: `startOrExit` вызывает `exit(1)` и пишет одну запись `error` — нужен `POSTGRES_TEST_URL`, без него пропускается). Общая обвязка — `test/support.ts`: ядро на адаптерах в памяти, настоящие argon2 и jose, телеметрия в памяти.
 
 ## Ключевые решения
 
@@ -34,14 +34,16 @@
 - HTTP-спаны в тестах не создаются: `app.inject` идёт мимо `serverFactory` (проверено), поэтому тесты `logs.test.ts` проверяют логи и отсутствие секретов в спанах, но не сами серверные спаны запросов.
 - Логика не здесь: решения принимает `identity-core`.
 - Миграции применяются при каждом старте до `listen`; параллельные запуски ждут друг друга (блокировка `node-pg-migrate`).
-- `[stack]`-тест и Dockerfile — в T-17 и T-18.
+- Тест `[stack]` (`test/stack.test.ts`) идёт по поднятому контуру и не запускается без `STACK_TEST_IDENTITY_URL` и `STACK_TEST_MAILPIT_URL`. Бенч входа NFR-012-2 — под `IDENTITY_BENCH=1`, на тех же переменных: 10 серий по 10 входов супервизора, перед каждой серией и после последней identity перезапускается (`docker compose restart identity`), потому что лимиты 4.8 (`login:email` 10 за 15 мин) не дают 100 последовательных входов одного супервизора (трактовка D-120, см. журнал T-18).
+- Образ — `apps/identity/Dockerfile` (как `apps/api`, пакеты identity); в `compose.yaml` — сервисы `identity` и `mailpit` (порт `127.0.0.1:${IDENTITY_PORT}`, UI Mailpit на `127.0.0.1:${MAILPIT_UI_PORT}`).
 
 ## Связи
 
+- Контейнер: `apps/identity/Dockerfile`, compose — `identity` и `mailpit` (`axllent/mailpit:v1.31.6`).
 - Ядро: `@swag/identity-core`. Адаптеры: `@swag/adapter-crypto`, `@swag/adapter-jose`, `@swag/adapter-memory` (ограничитель), `@swag/adapter-postgres`, `@swag/adapter-smtp`, `@swag/adapter-telemetry`.
 - Конфигурация: `@swag/config` (`IdentityConfig`). Контракты: `@swag/contracts`.
 - Зависимости: `fastify` 5.12.7, `@fastify/cookie` 11.1.3, `pg` 8.23.1.
 
 ## Спеки
 
-- 000 — `/health`, 016 — телеметрия и спаны. 012 — 4.4, 4.5, 4.9–4.11, REQ-012-12, 13, 20, 22, 23; AC-012-5, 6, 11, 16, 17, 18, 20, 21, 22, 25, 26.
+- 000 — `/health`, 016 — телеметрия и спаны. 012 — 4.4, 4.5, 4.9–4.11, REQ-012-12, 13, 20, 22, 23; AC-012-5, 6, 11, 16, 17, 18, 20, 21, 22, 25, 26, 27 (`[stack]`); NFR-012-2; REQ-012-21 (compose).

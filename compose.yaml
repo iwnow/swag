@@ -69,6 +69,53 @@ services:
       timeout: 3s
       retries: 30
 
+  # Спека 012, 4.11: регистрация, вход и токены. Почта — mailpit (dev), порт наружу только на 127.0.0.1.
+  # Переменные — только те, что читает конфиг identity (`IdentityConfig`).
+  identity:
+    build:
+      context: .
+      dockerfile: apps/identity/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TELEMETRY_FLUSH_TIMEOUT_MS: ${TELEMETRY_FLUSH_TIMEOUT_MS:-2000}
+      IDENTITY_PORT: ${IDENTITY_PORT}
+      IDENTITY_CONFIRM_URL: ${IDENTITY_CONFIRM_URL}
+      IDENTITY_JWT_PRIVATE_KEY: ${IDENTITY_JWT_PRIVATE_KEY}
+      IDENTITY_JWT_KID: ${IDENTITY_JWT_KID}
+      IDENTITY_ACCESS_TTL_S: ${IDENTITY_ACCESS_TTL_S:-900}
+      IDENTITY_REFRESH_TTL_S: ${IDENTITY_REFRESH_TTL_S:-2592000}
+      IDENTITY_CONFIRM_TTL_S: ${IDENTITY_CONFIRM_TTL_S:-86400}
+      IDENTITY_COOKIE_SECURE: ${IDENTITY_COOKIE_SECURE}
+      IDENTITY_BODY_LIMIT_BYTES: ${IDENTITY_BODY_LIMIT_BYTES:-16384}
+      IDENTITY_SUPERVISOR_EMAIL: ${IDENTITY_SUPERVISOR_EMAIL:-}
+      IDENTITY_SUPERVISOR_PASSWORD: ${IDENTITY_SUPERVISOR_PASSWORD:-}
+      SMTP_URL: ${SMTP_URL}
+      SMTP_TIMEOUT_MS: ${SMTP_TIMEOUT_MS:-10000}
+      MAIL_FROM: ${MAIL_FROM}
+    ports:
+      - 127.0.0.1:${IDENTITY_PORT}:${IDENTITY_PORT}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:$$IDENTITY_PORT/health"']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Спека 012, 4.11: SMTP для identity (порт 1025) и UI/API писем (8025). Письма живут до перезапуска — без volume.
+  mailpit:
+    image: axllent/mailpit:v1.31.6
+    ports:
+      - 127.0.0.1:1025:1025
+      - 127.0.0.1:${MAILPIT_UI_PORT}:8025
+
   # Доступ к Docker есть только у оркестратора (Q-1): песочницы агентов создаёт он.
   orchestrator:
     build:
