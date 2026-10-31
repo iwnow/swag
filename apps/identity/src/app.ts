@@ -154,6 +154,18 @@ export async function buildApp(
     return reply.code(200).send(await core.tokenRevocations());
   });
 
+  // Спека 013, 4.8: проверка организации для api; тот же внутренний токен. Ошибка ядра — 500 через errorHandler.
+  app.get('/internal/organizations/:orgId', async (request, reply) => {
+    if (!bearerMatches(request.headers.authorization, settings.internalToken)) {
+      return fail(reply, { code: 'unauthorized', message: 'unauthorized' });
+    }
+    const { orgId } = request.params as { orgId: string };
+    if (!(await core.organizationExists(orgId))) {
+      return fail(reply, { code: 'not_found', message: 'Organization not found' });
+    }
+    return reply.code(204).send();
+  });
+
   // Спека 024, 4.8: уборка при старте и раз в час; ошибка — warn без текста ошибки (N-23).
   let purgeTimer: ReturnType<typeof setInterval> | undefined;
   const purge = () => core.purgeExpired().catch(() => app.log.warn('identity_purge_failed'));

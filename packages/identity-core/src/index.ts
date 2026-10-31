@@ -1,5 +1,6 @@
 import {
   LoginRequest,
+  OrgId,
   RegistrationConfirmRequest,
   RegistrationRequest,
   actorFromClaims,
@@ -121,6 +122,7 @@ export interface IdentityStore {
     | { status: 'email_taken' }
   >;
   listOrganizations(): Promise<(StoredOrganization & { userCount: number })[]>; // по name
+  findOrganizationById(id: string): Promise<StoredOrganization | null>; // спека 013, 4.8
   tokenRevocations(
     since: number,
   ): Promise<{ userId: string; validAfter: number; blocked: boolean }[]>; // tokens_valid_after > since
@@ -209,6 +211,7 @@ export interface IdentityCore {
     body: unknown,
   ): Promise<Result<ManagedUser>>;
   tokenRevocations(): Promise<TokenRevocationList>; // проверку внутреннего токена делает оболочка
+  organizationExists(orgId: string): Promise<boolean>; // спека 013, 4.8
   purgeExpired(): Promise<void>;
   ensureSupervisor(): Promise<void>; // бросает при занятом email (REQ-012-15); вызывает оболочка до listen
 }
@@ -586,6 +589,12 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     return ok({ organizations: organizations.map(organizationSummary) });
   };
 
+  // Спека 013, 4.8: не UUID — false без запроса к хранилищу. Исключение хранилища — в оболочке (500).
+  const organizationExists = async (orgId: string): Promise<boolean> => {
+    if (!OrgId.safeParse(orgId).success) return false;
+    return (await store.findOrganizationById(orgId)) !== null;
+  };
+
   // Спека 024, 4.8 и 4.10: приглашение создаёт пользователя в организации администратора.
   const inviteUser = async (
     accessToken: string | undefined,
@@ -723,6 +732,7 @@ export function createIdentityCore(deps: IdentityCoreDeps): IdentityCore {
     acceptInvitation: guarded('acceptInvitation', acceptInvitation),
     updateUser: guarded('updateUser', updateUser),
     tokenRevocations,
+    organizationExists,
     purgeExpired,
     ensureSupervisor,
   };
