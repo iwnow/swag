@@ -129,6 +129,19 @@ function forActor(actor: Actor, event: PlatformEvent): PlatformEvent {
   return { ...event, data: { ...event.data, providerCostMicroUsd: null } };
 }
 
+// Спека 013, 4.4 и Q-8: сумма закрытия — из итогового события; нет поля — из проекции после события.
+const FINAL_EVENT_TYPES: readonly string[] = ['swarm.completed', 'swarm.stopped', 'swarm.failed'];
+
+function finalSpent(event: PlatformEvent, view: SwarmView, log: Logger): number {
+  const spent = 'spentMicroUsd' in event.data ? event.data.spentMicroUsd : undefined;
+  if (typeof spent === 'number') return spent;
+  log.warn('balance_settled_from_events', {
+    swarmId: event.swarmId,
+    spentMicroUsd: view.spentMicroUsd,
+  });
+  return view.spentMicroUsd;
+}
+
 export function createApiCore(deps: ApiCoreDeps): ApiCore {
   const { store, orchestrator, billing, clock, ids, log, trace } = deps;
   const subscribers = new Map<string, Set<Subscriber>>();
@@ -152,12 +165,25 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
     }
   }
 
+  // Закрытие резерва на итоговом событии (013, 4.4). Сбой не отменяет запись события.
+  async function settleFinal(swarmId: string, event: PlatformEvent): Promise<void> {
+    try {
+      const view = await store.view(swarmId);
+      if (view === null) throw new Error('проекция роя не найдена после записи');
+      await billing.settle(swarmId, finalSpent(event, view, log));
+    } catch (err) {
+      log.error('billing_settle_failed', { swarmId, err });
+    }
+  }
+
   // Единственная точка записи события роя: номер назначает ядро, рассылка — подписчикам.
   function commit(swarmId: string, input: PlatformEventInput): Promise<PlatformEvent | null> {
     const write = async (): Promise<PlatformEvent | null> => {
       let event: PlatformEvent;
+      let before: SwarmView | null;
       try {
-        const seq = ((await store.view(swarmId))?.lastSeq ?? 0) + 1;
+        before = await store.view(swarmId);
+        const seq = (before?.lastSeq ?? 0) + 1;
         event = { ...input, seq } as PlatformEvent;
         await store.appendEvent(event);
       } catch (error) {
@@ -174,6 +200,9 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         if (sub.reading) sub.buffer.push(event);
         else deliver(swarmId, sub, event);
       }
+      // Повтор итогового события у уже финального роя резерв не закрывает второй раз (AC-013-12).
+      const wasFinal = before !== null && FINAL_SWARM_STATUSES.includes(before.status);
+      if (!wasFinal && FINAL_EVENT_TYPES.includes(event.type)) await settleFinal(swarmId, event);
       return event;
     };
     const written = (queues.get(swarmId) ?? Promise.resolve()).then(write);
