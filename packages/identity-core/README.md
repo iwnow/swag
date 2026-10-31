@@ -1,6 +1,6 @@
 # @swag/identity-core
 
-Ядро identity: регистрация компании, вход, сессии и токены, роли, блокировка и первый администратор (спека 012). Чистый TypeScript, не знает про HTTP, Fastify, Postgres, почту и криптобиблиотеки.
+Ядро identity: регистрация компании, вход, сессии и токены, роли и первый супервизор (спека 012). Блокировка пользователей и проверка доступа в других сервисах — спека 024, здесь не входит. Чистый TypeScript, не знает про HTTP, Fastify, Postgres, почту и криптобиблиотеки.
 
 ## Задачи
 
@@ -19,7 +19,7 @@
 - Типы операций: `RequestMeta`, `IssuedSession`, `IdentityCore`, `IdentityError`, `Result<T>` (той же формы, что в `api-core`; код — из `AuthErrorCode`), `StoredUser`, `StoredOrganization`, `MailMessage`.
 - Константы писем: `CONFIRM_MAIL_SUBJECT`, `ALREADY_REGISTERED_MAIL_SUBJECT`, `ALREADY_REGISTERED_MAIL_TEXT`, функция `confirmMailText(link, ttlHours)`.
 - Константы лимитов: `RATE_LIMITS` — ключи `register:email`, `register:ip`, `confirm:ip`, `login:email`, `login:ip`, лимиты и окна в мс.
-- Тесты: `test/identity-core.test.ts` — `info()`; `test/registration.test.ts` — `requestRegistration`, лимиты, письма; `test/confirm.test.ts` — `confirmRegistration`; `test/login.test.ts` — `login`, `me`, `dummyHash`, лимиты входа; `test/session.test.ts` — `refresh`, `logout`, сценарий без секретов в логах; `test/supervisor.test.ts` — `ensureSupervisor`, вход супервизора; `test/fakes.ts` — общие фейки ядра (`createTestEnv`, часы, хэшер, токены, JWT, `tokenFromMail`, `sentMail`). Фейки: хэш `fake-hash:<пароль>`, токены — 43 цифры, JWT — `fake.<json>`, хранилище, почта и лимиты — из `@swag/adapter-memory` (как в тестах `api-core`).
+- Тесты: `test/identity-core.test.ts` — `info()`; `test/registration.test.ts` — `requestRegistration`, лимиты, письма; `test/confirm.test.ts` — `confirmRegistration`; `test/login.test.ts` — `login`, `me`, `dummyHash`, лимиты входа; `test/session.test.ts` — `refresh`, `logout`, сценарий без секретов в логах (AC-012-22, ядро); `test/supervisor.test.ts` — `ensureSupervisor`, вход супервизора; `test/fakes.ts` — общие фейки ядра (`createTestEnv`, часы, хэшер, токены, JWT, `tokenFromMail`, `sentMail`). Фейки: хэш `fake-hash:<пароль>`, токены — 43 цифры, JWT — `fake.<json>`, хранилище, почта и лимиты — из `@swag/adapter-memory` (как в тестах `api-core`).
 
 ## Ограничения
 
@@ -40,7 +40,7 @@
 ## Ключевые решения
 
 - `Result` и `IdentityError` объявлены в пакете, а не импортируются из `api-core`: ядро зависит только от `zod` и `@swag/contracts`. Форма та же, что в `api-core`.
-- `LogContext` без email и секретов: ядро пишет только `userId` и `operation`; текст ошибки в лог не попадает, поле `err` ядро не передаёт (4.3, D-115). Контракт не запрещает передачу лишних полей на уровне типов, это проверяется ревью.
+- `LogContext` без email и секретов: ядро пишет только `userId`, `operation` (имя операции) и `limit` (имя правила лимита); текст ошибки в лог не попадает, поле `err` ядро не передаёт (4.3, D-115). Контракт не запрещает передачу лишних полей на уровне типов, это проверяется ревью.
 - Лимиты и письма — константы ядра (012, Q-6, 4.6, 4.8).
 - Срок ссылки подтверждения в письме — число часов, округлённое вверх (D-113, вариант б): 600 с → 1 ч, 5400 с → 2 ч.
 - `requestRegistration`: сначала лимит по IP, потом по email (одна попытка расходует оба). Ответ один и тот же для нового и существующего email (Q-9).

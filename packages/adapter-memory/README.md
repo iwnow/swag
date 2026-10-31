@@ -30,7 +30,7 @@
 ## Связи
 
 - Порты: `SwarmStore` из `@swag/api-core`, `IdentityStore`, `Mailer`, `RateLimiter` из `@swag/identity-core` (только типы).
-- Использует: `@swag/api-integration`, `@swag/contracts`, `@swag/identity-core`.
+- Использует: `@swag/api-core` (типы), `@swag/api-integration`, `@swag/contracts`, `@swag/identity-core`.
 - Потребители: тесты `packages/api-core`, `apps/api`; тесты `identity-core` (T-6…T-10) и общий набор хранилища (T-11).
 
 ## Ключевые решения
