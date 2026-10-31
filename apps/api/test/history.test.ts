@@ -5,7 +5,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ApiCore, Billing, OrchestratorClient } from '@swag/api-core';
 import { buildApp } from '../src/app.ts';
 import { startApiCore } from '../src/start.ts';
-import { body, bearer, makeStartedAuth, silentLog, T } from './support.ts';
+import { body, bearer, makeBilling, makeStartedAuth, silentLog, T } from './support.ts';
+
+// Баланс один на весь файл, как Postgres между перезапусками: фабрика и маршруты берут один экземпляр.
+const funded = await makeBilling();
 
 // Нужен запущенный Postgres: POSTGRES_TEST_URL (compose или сервис в CI). Схема создаётся на время файла.
 const url = process.env['POSTGRES_TEST_URL'];
@@ -22,15 +25,9 @@ describe.skipIf(!url)('история роёв на Postgres', () => {
   }
 
   // Порядок старта — тот же, что в main.ts: startApiCore. Перезапуск — новый пул и новое ядро на той же схеме.
-  const unlimitedBilling = (): Billing => ({
-    reserve: async () => 'ok' as const,
-    settle: async () => {},
-    holds: async () => [],
-  });
-
   async function start(
     orchestrator: OrchestratorClient,
-    billing: (pool: pg.Pool) => Billing = unlimitedBilling,
+    billing: (pool: pg.Pool) => Billing = () => funded,
   ): Promise<Run> {
     const { core, pool } = await startApiCore(
       { databaseUrl: url ?? '', schema, billing },
@@ -46,7 +43,7 @@ describe.skipIf(!url)('история роёв на Postgres', () => {
     );
     const run = {
       core,
-      app: await buildApp(core, {}, (await makeStartedAuth({ core })).app),
+      app: await buildApp(core, funded, {}, (await makeStartedAuth({ core })).app),
       pool,
     };
     running.add(run);

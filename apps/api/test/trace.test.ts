@@ -14,7 +14,7 @@ import {
 import { LogRecord, type PlatformEventInput } from '@swag/contracts';
 import { buildApp } from '../src/app.ts';
 import { buildApp as buildOrchestratorApp } from '../../orchestrator/src/app.ts';
-import { actorOf, body, bearer, makeStartedAuth, T, WHO } from './support.ts';
+import { actorOf, body, bearer, makeBilling, makeStartedAuth, T, WHO } from './support.ts';
 
 const ADMIN = actorOf(WHO.adminA);
 
@@ -92,6 +92,7 @@ async function stack() {
   apps.push(orchestratorApp);
   await orchestratorApp.listen({ host: '127.0.0.1', port: 0 });
 
+  const billing = await makeBilling();
   const api = createApiCore({
     version: 'test',
     store: createMemorySwarmStore(),
@@ -105,9 +106,11 @@ async function stack() {
     log: current.logger,
     trace: current.trace,
     limits: { maxActiveSwarms: 5, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
+    billing,
   });
   const apiApp = await buildApp(
     api,
+    billing,
     {
       loggerInstance: current.logger.pino,
       serverFactory: tracedHttpServer(current),

@@ -2,12 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { ALL_EVENTS, ALL_INBOXES } from '@swag/contracts';
 import { ApiConfig, BaseConfig, loadConfig } from '@swag/config';
+import { createBillingCore, type BillingCore } from '@swag/billing-core';
 import { createJoseVerifier } from '@swag/adapter-jose';
+import { createPostgresBalanceStore } from '@swag/adapter-postgres';
 import { createOrchestratorHttpClient } from '@swag/adapter-orchestrator-http';
 import { connectNatsBus } from '@swag/adapter-nats';
 import { startTelemetry, tracedHttpServer } from '@swag/adapter-telemetry';
 import { buildApp } from './app.ts';
 import { createAuthenticator } from './auth.ts';
+import { createOrgDirectory } from './organizations.ts';
 import { createRevocationSync, fetchTokenRevocations } from './revocations.ts';
 import { createBlockHandler, createStreamRegistry } from './streams.ts';
 import { startApiCore, startServer } from './start.ts';
@@ -16,6 +19,9 @@ const { version } = createRequire(import.meta.url)('../package.json') as { versi
 
 // Спека 024, 4.12: таймаут одного запроса синхронизации отзывов к identity.
 const IDENTITY_TIMEOUT_MS = 3000;
+
+// Спека 013, 4.9 (из N-25), по образцу GATEWAY_TIMEOUT_MS оркестратора (D-99). 15 с больше, чем stop оркестратора: тот ждёт finish — уборку песочниц и закрытие в gateway до LLM_GATEWAY_CLOSE_WAIT_MS.
+const ORCHESTRATOR_TIMEOUT_MS = 15000;
 
 // Телеметрия поднимается первой: ошибка конфигурации тоже уходит логом LogRecord (REQ-016-5).
 // Каждая переменная — отдельно: невалидная одна не обнуляет остальные.
@@ -50,16 +56,36 @@ try {
   config = await fail('config invalid', error);
 }
 
+const clock = { now: () => new Date().toISOString() };
+const orgs = createOrgDirectory({
+  identityUrl: config.IDENTITY_URL,
+  token: config.IDENTITY_INTERNAL_TOKEN,
+  timeoutMs: IDENTITY_TIMEOUT_MS,
+});
+
 // Миграции до приёма запросов, рои прерванного перезапуска закрыты до подписок (спека 003, 4.5).
+// Ядро баланса собирается фабрикой на пуле; маршрутам нужен тот же экземпляр (спека 013, 4.9).
+let billing: BillingCore | undefined;
 const { core, pool } = await startApiCore(
-  { databaseUrl: config.DATABASE_URL },
+  {
+    databaseUrl: config.DATABASE_URL,
+    billing: (pool) =>
+      (billing = createBillingCore({
+        store: createPostgresBalanceStore(pool),
+        orgs,
+        clock,
+        log,
+        limits: { maxTopupMicroUsd: config.BALANCE_MAX_TOPUP_MICRO_USD },
+      })),
+  },
   {
     version,
     orchestrator: createOrchestratorHttpClient({
       baseUrl: config.ORCHESTRATOR_URL,
       token: config.ORCHESTRATOR_TOKEN,
+      timeoutMs: ORCHESTRATOR_TIMEOUT_MS,
     }),
-    clock: { now: () => new Date().toISOString() },
+    clock,
     ids: { uuid: () => randomUUID() },
     log,
     trace: telemetry.trace,
@@ -111,8 +137,10 @@ const revocations = createRevocationSync({
 });
 
 // Fastify пишет тем же логгером; каждый запрос, кроме /health, — серверный спан с родителем из traceparent.
+if (billing === undefined) throw new Error('billing не собран фабрикой startApiCore');
 const app = await buildApp(
   core,
+  billing,
   {
     loggerInstance: telemetry.logger.pino,
     serverFactory: tracedHttpServer(telemetry, { ignorePaths: ['/health'] }),

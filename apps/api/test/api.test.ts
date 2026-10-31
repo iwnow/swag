@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import type { OrchestratorClient } from '@swag/api-core';
 import type { PlatformEventInput } from '@swag/contracts';
 import { buildApp } from '../src/app.ts';
-import { actorOf, body, bearer, makeCore, makeStartedAuth, T, WHO } from './support.ts';
+import { actorOf, body, bearer, makeApi, makeStartedAuth, T, WHO } from './support.ts';
 
 const apps: FastifyInstance[] = [];
 afterEach(async () => {
@@ -22,9 +23,9 @@ const ev = (
     traceId: null,
   }) as PlatformEventInput;
 
-async function started(orchestrator?: Parameters<typeof makeCore>[0]) {
-  const core = makeCore(orchestrator);
-  const app = await buildApp(core, {}, (await makeStartedAuth({ core })).app);
+async function started(orchestrator?: OrchestratorClient) {
+  const { core, billing } = await makeApi({ orchestrator });
+  const app = await buildApp(core, billing, {}, (await makeStartedAuth({ core })).app);
   apps.push(app);
   return { core, app };
 }

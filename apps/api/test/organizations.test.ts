@@ -18,9 +18,7 @@ afterEach(async () => {
   server = null;
 });
 
-async function fakeIdentity(
-  reply: Reply,
-): Promise<{
+async function fakeIdentity(reply: Reply): Promise<{
   url: string;
   requests: { path: string | undefined; authorization: string | undefined }[];
 }> {
