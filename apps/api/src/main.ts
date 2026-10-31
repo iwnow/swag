@@ -55,7 +55,10 @@ const { core, pool } = await startApiCore(
   { databaseUrl: config.DATABASE_URL },
   {
     version,
-    orchestrator: createOrchestratorHttpClient({ baseUrl: config.ORCHESTRATOR_URL }),
+    orchestrator: createOrchestratorHttpClient({
+      baseUrl: config.ORCHESTRATOR_URL,
+      token: config.ORCHESTRATOR_TOKEN,
+    }),
     clock: { now: () => new Date().toISOString() },
     ids: { uuid: () => randomUUID() },
     log,

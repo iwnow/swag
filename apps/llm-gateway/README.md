@@ -148,7 +148,7 @@ npm run down
 - Событие `llm.call` публикуется в `swarm.<swarmId>.events` через `connectNatsBus.publishJson`.
 - Секреты адаптера (4.9): мастер-ключ LiteLLM и непустые значения переменных `*_API_KEY`; они редактируются в сообщениях ошибок адаптера.
 - `version` берётся из `package.json`, как в `apps/api`.
-- Токен (`LLM_GATEWAY_TOKEN`) проверяется в `onRequest`, до разбора тела; сравнение через `crypto.timingSafeEqual`, разная длина — `401` без сравнения (4.2). Тот же `authorize` стоит на `/v1/*` и `/internal/*` (спека 004, REQ-004-7).
+- Токен (`LLM_GATEWAY_TOKEN`) проверяется в `onRequest`, до разбора тела; сравнение через `bearerMatches` из `@swag/helpers/server` (`crypto.timingSafeEqual`), разная длина — `401` без сравнения (4.2). Тот же `authorize` стоит на `/v1/*` и `/internal/*` (спека 004, REQ-004-7).
 - Формат ошибки зависит от пути: `/v1/*` — как в 002 (`{ error: { message, type: 'swag_gateway_error', code } }`), `/internal/*` — `{ error: { message, code } }` без `type` (спека 004, 4.2). Выбор — в одной функции `errorBody`, ядро о формате не знает.
 - Порядок старта (спека 004, REQ-004-14): миграции и `releaseHolds` до `listen`, поэтому вызов не может пройти, пока висят резервы прошлого процесса. Тест — `money-postgres.test.ts`.
 - `PriceBook` — `createCatalogHolder(catalog).book`: цена модели из текущего каталога процесса; обновление цен меняет только цены, id моделей остаются. Ядро проверяет модель по каталогу раньше, чем просит цену, поэтому неизвестная модель в `prices` не доходит (4.4).

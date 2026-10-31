@@ -1,5 +1,5 @@
-import { timingSafeEqual } from 'node:crypto';
 import { tracedHttpServer, type Telemetry } from '@swag/adapter-telemetry';
+import { bearerMatches } from '@swag/helpers/server';
 import { AGENT_ID_HEADER, SWARM_ID_HEADER, type GatewayErrorCode } from '@swag/contracts';
 import type { CompleteResult, InternalErrorCode, LlmGatewayCore } from '@swag/llm-gateway-core';
 import Fastify, {
@@ -34,9 +34,7 @@ export async function buildApp(
   // Токен проверяется в onRequest: до разбора тела, поэтому чужой запрос не доходит до ядра и не читается целиком.
   // Тот же токен на /v1/* (002) и /internal/* (004, REQ-004-7).
   const authorize = async (request: FastifyRequest, reply: FastifyReply) => {
-    const header = request.headers.authorization ?? '';
-    const presented = header.startsWith('Bearer ') ? header.slice('Bearer '.length) : '';
-    if (!tokenMatches(presented, gateway.token)) {
+    if (!bearerMatches(request.headers.authorization, gateway.token)) {
       return reply.code(401).send(errorBody(request, 'Invalid gateway token', 'unauthorized'));
     }
   };
@@ -126,13 +124,6 @@ async function writeStream(
   } finally {
     reply.raw.end();
   }
-}
-
-// Спека 002, 4.2: сравнение через timingSafeEqual; разная длина — отказ сразу, без сравнения.
-function tokenMatches(presented: string, expected: string): boolean {
-  const given = Buffer.from(presented);
-  const wanted = Buffer.from(expected);
-  return given.length === wanted.length && timingSafeEqual(given, wanted);
 }
 
 // Нет заголовка или он пришёл дважды (массив) — пустая строка: LlmCaller её не пропускает, ядро ответит invalid_caller.

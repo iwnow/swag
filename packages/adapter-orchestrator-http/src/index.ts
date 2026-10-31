@@ -4,8 +4,10 @@ import type { SwarmLaunch } from '@swag/contracts';
 
 // Спека 001, 4.6.1 и Q-6: api → orchestrator по HTTP.
 // Спека 016, 4.5: вызов в клиентском спане, traceparent текущего контекста — в заголовке запроса.
+// Спека 024, 4.13: каждый запрос несёт Authorization: Bearer <ORCHESTRATOR_TOKEN>.
 export interface OrchestratorHttpOptions {
   baseUrl: string; // ORCHESTRATOR_URL, например http://orchestrator:3001
+  token: string; // ORCHESTRATOR_TOKEN
   fetch?: typeof fetch;
 }
 
@@ -32,7 +34,7 @@ export function createOrchestratorHttpClient(options: OrchestratorHttpOptions): 
       },
       async (span) => {
         try {
-          const headers: Record<string, string> = {};
+          const headers: Record<string, string> = { authorization: `Bearer ${options.token}` };
           propagation.inject(context.active(), headers);
           if (body !== undefined) headers['content-type'] = 'application/json';
           const response = await doFetch(url, {

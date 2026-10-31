@@ -1,3 +1,4 @@
+import { bearerMatches } from '@swag/helpers/server';
 import type { OrchestratorCore } from '@swag/orchestrator-core';
 import Fastify, {
   type FastifyError,
@@ -5,14 +6,29 @@ import Fastify, {
   type FastifyServerOptions,
 } from 'fastify';
 
+export interface AppSettings {
+  token: string; // ORCHESTRATOR_TOKEN, спека 024, 4.13
+}
+
 // Оболочка оркестратора: HTTP 4.6.1 (вызывает только api). Решений здесь нет.
 export function buildApp(
   core: OrchestratorCore,
-  options: FastifyServerOptions = {},
+  options: FastifyServerOptions,
+  settings: AppSettings,
 ): FastifyInstance {
   const app = Fastify(options);
   // healthcheck compose опрашивает каждые 2 с — в лог только предупреждения.
   app.get('/health', { logLevel: 'warn' }, async () => ({ status: 'ok', ...core.info() }));
+
+  // Спека 024, 4.13: токен проверяется до разбора тела и до ядра; заголовок в лог не пишется.
+  app.addHook('onRequest', async (request, reply) => {
+    if (request.routeOptions.url === '/health') return;
+    if (!bearerMatches(request.headers.authorization, settings.token)) {
+      return reply
+        .code(401)
+        .send({ error: { code: 'unauthorized', message: 'Invalid orchestrator token' } });
+    }
+  });
 
   app.setErrorHandler((error: FastifyError, _request, reply) => {
     const status = error.statusCode ?? 500;

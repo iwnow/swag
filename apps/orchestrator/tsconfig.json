@@ -14,6 +14,7 @@
     { "path": "../../packages/adapter-telemetry" },
     { "path": "../../packages/config" },
     { "path": "../../packages/contracts" },
+    { "path": "../../packages/helpers" },
     { "path": "../../packages/orchestrator-core" }
   ]
 }
