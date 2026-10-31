@@ -15,6 +15,7 @@
     { "path": "packages/llm-gateway-core" },
     { "path": "packages/adapter-crypto" },
     { "path": "packages/adapter-jose" },
+    { "path": "packages/adapter-smtp" },
     { "path": "packages/adapter-memory" },
     { "path": "packages/adapter-telemetry" },
     { "path": "packages/adapter-nats" },

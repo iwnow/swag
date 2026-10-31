@@ -1,0 +1,17 @@
+{
+  "name": "@swag/adapter-smtp",
+  "version": "0.0.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@swag/identity-core": "0.0.0",
+    "nodemailer": "10.1.2"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "8.0.2"
+  }
+}
