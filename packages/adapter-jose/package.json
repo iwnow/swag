@@ -1,0 +1,15 @@
+{
+  "name": "@swag/adapter-jose",
+  "version": "0.0.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@swag/contracts": "0.0.0",
+    "@swag/identity-core": "0.0.0",
+    "jose": "6.2.12"
+  }
+}
