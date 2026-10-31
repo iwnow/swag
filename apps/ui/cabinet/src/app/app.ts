@@ -1,8 +1,8 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
-import { SESSION, currentUser } from './session.ts';
+import { CurrentUser, SESSION } from './session.ts';
 
 @Component({
   selector: 'app-root',
@@ -51,15 +51,10 @@ import { SESSION, currentUser } from './session.ts';
 })
 export class App {
   private readonly session = inject(SESSION);
+  private readonly current = inject(CurrentUser);
   private readonly router = inject(Router);
-  // Спека 013, 4.11: пункт «Баланс» — только у сессии с организацией (у супервизора её нет).
-  readonly hasOrganization = toSignal(
-    this.router.events.pipe(
-      filter((event): event is NavigationEnd => event instanceof NavigationEnd),
-      map(() => Boolean(currentUser(this.session)?.orgId)),
-    ),
-    { initialValue: false },
-  );
+  // Спека 013, 4.11: пункт «Баланс» — только у пользователя с организацией из /auth/me (у супервизора её нет).
+  readonly hasOrganization = computed(() => this.current.orgId() !== null);
   readonly onLoginPage = toSignal(
     this.router.events.pipe(
       filter((event): event is NavigationEnd => event instanceof NavigationEnd),
@@ -69,12 +64,23 @@ export class App {
   );
 
   constructor() {
-    this.session.onSignedOut(() => void this.router.navigateByUrl('/login'));
+    this.session.onSignedOut(() => {
+      this.current.clear();
+      void this.router.navigateByUrl('/login');
+    });
+    // Смена токена (renew) заметна на следующей навигации: ensure перечитает /auth/me, если токен новый.
+    this.router.events
+      .pipe(
+        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        takeUntilDestroyed(),
+      )
+      .subscribe(() => void this.current.ensure());
   }
 
   // Трактовка: ошибка api.logout не показывается — токен на клиенте уже стёрт.
   async logout(): Promise<void> {
     await this.session.logout().catch(() => undefined);
+    this.current.clear();
     await this.router.navigateByUrl('/login');
   }
 }

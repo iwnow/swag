@@ -7,7 +7,7 @@ import {
   type BalanceView,
 } from '@swag/contracts';
 import { formatUsd, usdToMicro } from '@swag/ui-core';
-import { SESSION, currentUser } from './session.ts';
+import { CurrentUser } from './session.ts';
 import { BALANCE, errorText } from './ui.ts';
 
 const KIND_LABEL: Record<BalanceEntry['kind'], string> = { topup: 'Пополнение', swarm: 'Рой' };
@@ -118,8 +118,9 @@ const formatDate = (ts: string): string =>
 })
 export class BalancePageComponent implements OnInit {
   private readonly api = inject(BALANCE);
-  private readonly user = currentUser(inject(SESSION));
-  readonly orgId = this.user?.orgId ?? null;
+  private readonly current = inject(CurrentUser);
+  readonly orgId = this.current.orgId();
+  private readonly role = this.current.role();
 
   readonly balance = signal<BalanceView | null>(null);
   readonly entries = signal<BalanceEntry[]>([]);
@@ -128,9 +129,8 @@ export class BalancePageComponent implements OnInit {
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 
-  // Спека 013, 4.11: форма пополнения — только при праве `balance.topup` у роли сессии.
-  readonly canTopup =
-    this.user !== null && ROLE_PERMISSIONS[this.user.role].includes('balance.topup');
+  // Спека 013, 4.11: форма пополнения — только при праве `balance.topup` у роли из /auth/me.
+  readonly canTopup = this.role !== null && ROLE_PERMISSIONS[this.role].includes('balance.topup');
   readonly amount = signal('');
   readonly comment = signal('');
   readonly formError = signal<string | null>(null);
