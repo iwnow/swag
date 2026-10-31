@@ -133,9 +133,12 @@ function forActor(actor: Actor, event: PlatformEvent): PlatformEvent {
 // Спека 013, 4.4 и Q-8: сумма закрытия — из итогового события; нет поля — из проекции после события.
 const FINAL_EVENT_TYPES: readonly string[] = ['swarm.completed', 'swarm.stopped', 'swarm.failed'];
 
-function finalSpent(event: PlatformEvent, view: SwarmView, log: Logger): number {
+// Проекция читается только когда поля нет: при числовом spentMicroUsd хранилище не трогается.
+async function finalSpent(event: PlatformEvent, store: SwarmStore, log: Logger): Promise<number> {
   const spent = 'spentMicroUsd' in event.data ? event.data.spentMicroUsd : undefined;
   if (typeof spent === 'number') return spent;
+  const view = await store.view(event.swarmId);
+  if (view === null) throw new Error('проекция роя не найдена после записи');
   log.warn('balance_settled_from_events', {
     swarmId: event.swarmId,
     spentMicroUsd: view.spentMicroUsd,
@@ -169,9 +172,7 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
   // Закрытие резерва на итоговом событии (013, 4.4). Сбой не отменяет запись события.
   async function settleFinal(swarmId: string, event: PlatformEvent): Promise<void> {
     try {
-      const view = await store.view(swarmId);
-      if (view === null) throw new Error('проекция роя не найдена после записи');
-      await billing.settle(swarmId, finalSpent(event, view, log));
+      await billing.settle(swarmId, await finalSpent(event, store, log));
     } catch (err) {
       log.error('billing_settle_failed', { swarmId, err });
     }
@@ -515,7 +516,7 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
               .filter((e) => FINAL_EVENT_TYPES.includes(e.type))
               .at(-1);
             if (event === undefined) throw new Error('итоговое событие роя не найдено');
-            await billing.settle(hold.swarmId, finalSpent(event, view, log));
+            await billing.settle(hold.swarmId, await finalSpent(event, store, log));
           }
           settled += 1;
         } catch (err) {
