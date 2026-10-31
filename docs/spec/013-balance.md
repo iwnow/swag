@@ -617,7 +617,7 @@ settlePending(): Promise<number>; // число закрытых резерво�
   - старые события без `spentMicroUsd` разбираются.
 
   Места, которые строят `LlmSwarmClosed` (ядро gateway, фейки в тестах), временно получают `heldMicroUsd: 0` с комментарием «013, T-5». Закрывает: AC-013-22. Готово, когда: `npm run typecheck` и тесты `packages/contracts` зелёные.
-- [ ] **T-2.** Новый пакет `packages/billing-core` по 4.3:
+- [x] **T-2.** Новый пакет `packages/billing-core` по 4.3:
   - `package.json`, `tsconfig.json` по образцу `packages/api-core`, ссылка в корневом `tsconfig.json`, README;
   - строка в `docs/architecture.md`, раздел «Пакеты»;
   - `createBillingCore`;
@@ -774,3 +774,4 @@ settlePending(): Promise<number>; // число закрытых резерво�
 |---|---|---|---|
 | 2026-11-01 | `spec/013-t1` | Взята в работу. Этапы: T-1; T-2; T-3+T-4; T-5; T-6; T-7; группа `spec/013-billing` (T-8; T-9; T-10; T-11+T-12; T-13; T-14) — T-8 делает `billing` обязательной зависимостью `ApiCoreDeps`, сборка `apps/api` красная до T-14; T-15+T-16; T-17; T-18. | — |
 | 2026-11-01 | `spec/013-t1` | T-1: `billing.ts` и экспорт из `index.ts`; `balance.read` и `balance.topup` в `Permission` и `ROLE_PERMISSIONS`; `spentMicroUsd` в `swarm.completed`, `swarm.stopped`, `swarm.failed`; `heldMicroUsd` в `LlmSwarmClosed`; `closeSwarm` в `llm-gateway-core` отдаёт `heldMicroUsd: 0` (временно, `// 013, T-5`); тесты AC-013-22 в `access.test.ts`, схемы в `billing.test.ts` и `swarm.test.ts`; `llm-gateway-core` и `apps/llm-gateway` тесты закрытия обновлены. | `adapter-postgres` не менялся: его `close` отдаёт `{ spentMicroUsd }` ядру, и ответ собирает ядро, поэтому временный `heldMicroUsd: 0` стоит в ядре, а не в адаптере. |
+| 2026-11-01 | `spec/013-t2` | T-2: пакет `packages/billing-core` (`@swag/billing-core`) по 4.3: `createBillingCore`, `getBalance`, `listEntries`, `topup`, `reserve`, `settle`, `holds`; правила доступа одной функцией; логи `balance_topup`, `balance_insufficient`, `balance_settled`, `balance_overspent`, `org_directory_unavailable`; README пакета; `BillingCoreDeps` и `BillingError` добавлены в глоссарий. Тесты `packages/billing-core/test/billing-core.test.ts`: AC-013-3 (user — `forbidden`, admin чужой — `not_found`), AC-013-4 (супервизор: без комментария, существующая, неизвестная, `org_directory_unavailable`), AC-013-5 (0, дробное, больше предела), AC-013-6 (чтение по ролям, не-UUID), AC-013-7 (страницы 50/50/20 и разбор `limit`/`before`), AC-013-23 (поля логов, `toEqual`), плюс `balance_overspent`. | Порядок `topup`: доступ, тело, предел суммы, комментарий супервизора, потом `orgs.exists` — внешний вызов только для валидного запроса (4.3 не задаёт порядок явно). Строка в `docs/architecture.md` уже была. |
