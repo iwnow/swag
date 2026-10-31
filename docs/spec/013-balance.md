@@ -332,7 +332,7 @@ export function createBillingCore(deps: BillingCoreDeps): BillingCore;
 - результат не `null` → лог `info` `balance_settled` (`orgId`, `swarmId`, `heldMicroUsd`, `chargedMicroUsd`);
 - `spentMicroUsd > heldMicroUsd` → дополнительно лог `error` `balance_overspent` с обеими суммами. Такого не бывает, пока бюджет роя в gateway равен резерву: списывается не больше резерва.
 
-Ядро — чистый TypeScript: только пакеты из `CORE_ALLOWED_PACKAGES` в `scripts/arch-check.ts` (`zod`, `@swag/contracts`); `@swag/helpers` ядру запрещён.
+Ядро — чистый TypeScript: только пакеты из `CORE_ALLOWED_PACKAGES` в `scripts/arch-check.ts` (сейчас `zod`, `@swag/contracts`, `@swag/api-integration`); `@swag/helpers` ядру запрещён.
 
 ### 4.4. `api-core`
 
@@ -349,13 +349,13 @@ export interface Billing {
 
 **`createSwarm`.** Порядок:
 1. Проверки 004, 024 и 031 — как сейчас.
-2. Место под `MAX_ACTIVE_SWARMS` (`reserving`).
-3. `actor.orgId === null` → `forbidden`. Сейчас недостижимо: у супервизора нет `swarm.create`. Ветка нужна вместо `!`.
+2. `actor.orgId === null` → `forbidden`. Сейчас недостижимо: у супервизора нет `swarm.create`. Ветка нужна вместо `!` и стоит до места под лимит.
+3. Место под `MAX_ACTIVE_SWARMS` (`reserving`). `try/finally`, который его освобождает, начинается сразу после этого шага и охватывает шаги 4–6.
 4. `billing.reserve(actor.orgId, swarmId, budgetMicroUsd)` — до записи `swarm.created`.
    - `insufficient` → `insufficient_balance` с сообщением `balance is not enough for budget`. Событий нет.
    - Исключение пробрасывается: оболочка отвечает `500` общим обработчиком ошибок.
    - В обоих случаях место под `MAX_ACTIVE_SWARMS` освобождается в том же `finally`, что и сейчас.
-5. Запись `swarm.created` — как сейчас. Если `commit` вернул `null` (запись не удалась): `billing.settle(swarmId, 0)`, затем прежний ответ.
+5. Запись `swarm.created` — как сейчас. Если `commit` вернул `null` (запись не удалась): `billing.settle(swarmId, 0)`, затем прежний ответ. Исключение этого `settle` ловится: лог `error` `billing_settle_failed`, ответ прежний. Резерв доберёт `settlePending` — роя в хранилище нет.
 6. Запуск. При сбое `orchestrator.launch`:
    - сначала `orchestrator.stop(swarmId)`, ошибка — лог `warn` `launch_stop_failed`. Если оркестратор успел запустить рой, `stop` обрывает траты;
    - затем `swarm.failed` `orchestrator_unavailable`, как сейчас.
@@ -380,7 +380,7 @@ settlePending(): Promise<number>; // число закрытых резерво�
 ```
 
 Для каждого резерва из `billing.holds()`:
-- рой в хранилище в итоговом статусе — последнее событие роя `(await store.events(swarmId, view.lastSeq - 1))[0]`, затем `billing.settle(swarmId, finalSpent(event, view))`;
+- рой в хранилище в итоговом статусе — итоговое событие ищется с конца `store.events(swarmId, 0)` по типу (`swarm.completed`, `swarm.stopped`, `swarm.failed`), затем `billing.settle(swarmId, finalSpent(event, view))`;
 - роя нет в хранилище (сбой между резервом и записью `swarm.created`) — `billing.settle(swarmId, 0)`;
 - рой не в итоговом статусе — резерв не трогается. При старте после `closeInterrupted` таких нет. Ветка защищает идущие рои, если операцию вызовут не на старте.
 
@@ -661,7 +661,7 @@ settlePending(): Promise<number>; // число закрытых резерво�
   - общий фейк `Billing` в `packages/api-core/test`, подключённый во все существующие вызовы `createApiCore`.
 
   Закрывает: REQ-013-4; AC-013-8, AC-013-15 на ядре. Готово, когда: тесты `packages/api-core` зелёные.
-- [ ] **T-9.** `api-core`: закрытие в `commit` и `finalSpent` (4.4). Закрывает: REQ-013-6, REQ-013-7; AC-013-13, AC-013-14, AC-013-17. Готово, когда: тесты `packages/api-core` зелёные.
+- [ ] **T-9.** `api-core`: закрытие в `commit` и `finalSpent` (4.4). Закрывает: REQ-013-6, REQ-013-7; AC-013-12 (повтор через `ingestEvent`), AC-013-13, AC-013-14, AC-013-17. Готово, когда: тесты `packages/api-core` зелёные.
 - [ ] **T-10.** `api-core`: `settlePending` (4.4). Закрывает: REQ-013-8, AC-013-16. Готово, когда: тесты `packages/api-core` зелёные.
 - [ ] **T-11.** Конфиг и адаптер оркестратора:
   - `BALANCE_MAX_TOPUP_MICRO_USD` в `packages/config`, `.env.example`, `.env`, `compose.yaml`;
