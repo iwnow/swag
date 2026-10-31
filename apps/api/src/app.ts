@@ -1,4 +1,5 @@
 import type { ApiCore, Result } from '@swag/api-core';
+import type { BillingCore } from '@swag/billing-core';
 import type { Actor } from '@swag/contracts';
 import websocket from '@fastify/websocket';
 import Fastify, {
@@ -24,6 +25,7 @@ export interface AppAuth {
 // Оболочка api: REST (4.5.1) и WebSocket (4.5.2). Решений здесь нет — только вход и выход ядра.
 export async function buildApp(
   core: ApiCore,
+  billing: BillingCore,
   options: FastifyServerOptions,
   auth: AppAuth,
 ): Promise<FastifyInstance> {
@@ -97,6 +99,30 @@ export async function buildApp(
       const result = await core.stopSwarm(request.actor, request.params.id);
       return send(reply, result, 202, () => ({}));
     });
+
+    // Спека 013, 4.5: баланс организации. Права и область проверяет billing-core.
+    rest.get<{ Params: { orgId: string } }>(
+      '/organizations/:orgId/balance',
+      async (request, reply) =>
+        send(reply, await billing.getBalance(request.actor, request.params.orgId), 200),
+    );
+
+    rest.get<{
+      Params: { orgId: string };
+      Querystring: { before?: string; limit?: string };
+    }>('/organizations/:orgId/balance/entries', async (request, reply) =>
+      send(
+        reply,
+        await billing.listEntries(request.actor, request.params.orgId, request.query),
+        200,
+      ),
+    );
+
+    rest.post<{ Params: { orgId: string } }>(
+      '/organizations/:orgId/balance/topups',
+      async (request, reply) =>
+        send(reply, await billing.topup(request.actor, request.params.orgId, request.body), 201),
+    );
   });
 
   app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
@@ -164,6 +190,8 @@ const STATUS = {
   too_many_active_swarms: 409,
   swarm_finished: 409,
   auth_unavailable: 503,
+  insufficient_balance: 402,
+  org_directory_unavailable: 503,
 } as const;
 
 const statusOf = (code: string): number => (STATUS as Record<string, number>)[code] ?? 500;

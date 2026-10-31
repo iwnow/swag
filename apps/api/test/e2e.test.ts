@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createApiCore,
+  type Billing,
   type Logger,
   type OrchestratorClient,
   type TraceContext,
@@ -130,6 +131,13 @@ const threeAgents = (role: (n: number) => string) =>
   ['A', 'B', 'C'].map((name, i) => ({ name, role: role(i + 1) }));
 
 // Весь рой в одном процессе: api-core, orchestrator-core, agent-core на каждую «песочницу».
+// Баланс здесь не проверяется: безлимитный фейк порта Billing (спека 013, 4.4).
+const unlimitedBilling: Billing = {
+  reserve: async () => 'ok',
+  settle: async () => undefined,
+  holds: async () => [],
+};
+
 function world(log: Logger, trace: TraceContext, script: Script = team) {
   const hub = createHub();
   let counter = 0;
@@ -206,7 +214,7 @@ function world(log: Logger, trace: TraceContext, script: Script = team) {
     version: 'test',
     sandboxes: sandboxProvider,
     bus: orchestratorBus,
-    llmSwarms: { register: async () => undefined, close: async () => null },
+    llmSwarms: { register: async () => undefined, close: async () => 0 },
     clock,
     timers: {
       setTimeout: (fn, ms) => setTimeout(fn, ms),
@@ -245,6 +253,7 @@ function world(log: Logger, trace: TraceContext, script: Script = team) {
     log,
     trace,
     limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
+    billing: unlimitedBilling,
   });
   hub.subscribe(ALL_EVENTS, (raw) => api.ingestEvent(raw));
   hub.subscribe(ALL_INBOXES, (raw) => api.ingestMessage(raw));

@@ -6,7 +6,8 @@ import {
   type OrchestratorClient,
   type SwarmStore,
 } from '@swag/api-core';
-import { createMemorySwarmStore } from '@swag/adapter-memory';
+import { createMemoryBalanceStore, createMemorySwarmStore } from '@swag/adapter-memory';
+import { createBillingCore, type BillingCore, type OrgDirectory } from '@swag/billing-core';
 import { createJoseSigner, createJoseVerifier } from '@swag/adapter-jose';
 import { actorFromClaims, type Actor, type Role, type TokenRevocationList } from '@swag/contracts';
 import { createAuthenticator } from '../src/auth.ts';
@@ -16,23 +17,63 @@ import { createBlockHandler, createStreamRegistry } from '../src/streams.ts';
 const nothing = () => undefined;
 export const silentLog: Logger = { debug: nothing, info: nothing, warn: nothing, error: nothing };
 
-// Ядро api с памятью и фейковым оркестратором для тестов оболочки.
-export function makeCore(
-  orchestrator: OrchestratorClient = { launch: async () => undefined, stop: async () => undefined },
-  log: Logger = silentLog,
-  store: SwarmStore = createMemorySwarmStore(),
-): ApiCore {
+export const ORG_A = '00000000-0000-4000-8000-0000000000a0';
+export const ORG_B = '00000000-0000-4000-8000-0000000000b0';
+
+// Спека 013, 4.10: предел пополнения в тестах — значение по умолчанию конфига.
+const MAX_TOPUP_MICRO_USD = 100000000;
+// Баланс, который получает каждая организация в тестах по умолчанию: $100.
+export const FUNDS_MICRO_USD = 100000000;
+
+// Ядро баланса с памятью. По умолчанию обе организации существуют и получают FUNDS_MICRO_USD от супервизора.
+export async function makeBilling(
+  options: { orgs?: OrgDirectory | undefined; fund?: boolean | undefined } = {},
+): Promise<BillingCore> {
+  const orgs = options.orgs ?? { exists: async (orgId) => orgId === ORG_A || orgId === ORG_B };
+  const billing = createBillingCore({
+    store: createMemoryBalanceStore(),
+    orgs,
+    clock: { now: () => '2026-10-22T10:00:00.000Z' },
+    log: silentLog,
+    limits: { maxTopupMicroUsd: MAX_TOPUP_MICRO_USD },
+  });
+  if (options.fund ?? true) {
+    for (const orgId of [ORG_A, ORG_B]) {
+      await billing.topup(actorOf(WHO.sup), orgId, {
+        amountMicroUsd: FUNDS_MICRO_USD,
+        comment: 'тест',
+      });
+    }
+  }
+  return billing;
+}
+
+// Ядро api с памятью, фейковым оркестратором и балансом для тестов оболочки. Баланс — тот же, что передаётся в buildApp.
+export async function makeApi(
+  options: {
+    orchestrator?: OrchestratorClient | undefined;
+    log?: Logger | undefined;
+    store?: SwarmStore | undefined;
+    billing?: BillingCore | undefined;
+  } = {},
+): Promise<{ core: ApiCore; billing: BillingCore }> {
+  const billing = options.billing ?? (await makeBilling());
   let counter = 0;
-  return createApiCore({
+  const core = createApiCore({
     version: 'test',
-    store,
-    orchestrator,
+    store: options.store ?? createMemorySwarmStore(),
+    orchestrator: options.orchestrator ?? {
+      launch: async () => undefined,
+      stop: async () => undefined,
+    },
     clock: { now: () => '2026-10-22T10:00:00.000Z' },
     ids: { uuid: () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}` },
-    log,
+    log: options.log ?? silentLog,
     trace: { currentTraceId: () => null },
     limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
+    billing,
   });
+  return { core, billing };
 }
 
 export const body = (count: number) => ({
@@ -53,9 +94,6 @@ export const TEST_KID = 'test-kid';
 
 // Фейковый IDENTITY_INTERNAL_TOKEN для синхронизации отзывов: в логах и спанах его быть не должно.
 export const INTERNAL_TOKEN = 'fake-internal-token-for-tests-024';
-
-export const ORG_A = '00000000-0000-4000-8000-0000000000a0';
-export const ORG_B = '00000000-0000-4000-8000-0000000000b0';
 
 export interface Who {
   sub: string;
