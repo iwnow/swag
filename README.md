@@ -69,7 +69,7 @@ npm run infra:check
 
 - `npm run infra:check` — проверяет `/health` у `llm-gateway` (`service: llm-gateway`).
 - Замер задержки NFR-002-1 (p95 поверх апстрима, порог 20 мс в спеке, в CI не проверяется): `LLM_GATEWAY_BENCH=1 npx vitest run apps/llm-gateway/test/nfr-latency.test.ts`. Без переменной тест пропускается.
-- Стек-тесты `apps/llm-gateway/test/stack.test.ts` идут против поднятого стека при `LLM_GATEWAY_URL=http://127.0.0.1:3002`; без неё пропускаются.
+- Стек-тесты `apps/llm-gateway/test/stack.test.ts` идут против поднятого стека при `STACK_TEST_GATEWAY_URL=http://127.0.0.1:3002`; без неё пропускаются.
 
 ## Команды
 

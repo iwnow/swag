@@ -14,10 +14,10 @@ import {
 } from './stack-support.ts';
 
 // Спека 002, AC-002-20 и AC-002-21: настоящий стек (`npm run up`, LLM_PROFILE=test).
-// LLM_GATEWAY_URL, например http://127.0.0.1:3002; без неё тесты пропускаются (как adapter-nats).
+// STACK_TEST_GATEWAY_URL, например http://127.0.0.1:3002; без неё тесты пропускаются (как adapter-nats).
 // Остальное из окружения: LLM_GATEWAY_TOKEN (из .env), STACK_API_URL — адрес api (по умолчанию порт 3000).
 // Запуск: см. README пакета.
-const gatewayUrl = process.env['LLM_GATEWAY_URL'];
+const gatewayUrl = process.env['STACK_TEST_GATEWAY_URL'];
 const execFileAsync = promisify(execFile);
 const json = { 'content-type': 'application/json' };
 

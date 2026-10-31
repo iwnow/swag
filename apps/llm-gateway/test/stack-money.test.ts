@@ -4,9 +4,9 @@ import { onHost } from '../../../scripts/host-url.ts';
 import { apiUrl, FETCH_TIMEOUT_MS, required, run } from './stack-support.ts';
 
 // Спека 004, AC-004-34 и AC-004-35 [stack]: настоящий стек (`npm run up`, LLM_PROFILE=test).
-// LLM_GATEWAY_URL, например http://127.0.0.1:3002; без неё тесты пропускаются, как в stack.test.ts.
+// STACK_TEST_GATEWAY_URL, например http://127.0.0.1:3002; без неё тесты пропускаются, как в stack.test.ts.
 // Из окружения: LLM_GATEWAY_TOKEN и DATABASE_URL (из .env), STACK_API_URL — адрес api.
-const gatewayUrl = process.env['LLM_GATEWAY_URL'];
+const gatewayUrl = process.env['STACK_TEST_GATEWAY_URL'];
 const json = { 'content-type': 'application/json' };
 const SWARM_TIMEOUT_MS = 240_000;
 const POLL_MS = 500;
