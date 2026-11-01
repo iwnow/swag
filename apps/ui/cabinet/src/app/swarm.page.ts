@@ -1,25 +1,17 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  OnDestroy,
-  computed,
+  DestroyRef,
+  effect,
   inject,
-  signal,
+  input,
+  untracked,
 } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import type { PlatformEvent } from '@swag/contracts';
-import type { SwarmView } from '@swag/api-integration';
-import {
-  failureReasonText,
-  formatAgentStep,
-  formatLlmCall,
-  formatSwarmMoney,
-  formatUsd,
-  spentLastMinute,
-  unreadMessageIds,
-} from '@swag/ui-core';
+import { failureReasonText, formatAgentStep, formatLlmCall, formatUsd } from '@swag/ui-core';
+import { CABINET_STORE } from '@swag/ui-angular';
 import { SwarmGraphComponent } from './swarm-graph.ts';
-import { UI, errorText } from './ui.ts';
 
 const STATUS_LABEL: Record<string, string> = {
   starting: 'запускается',
@@ -29,27 +21,26 @@ const STATUS_LABEL: Record<string, string> = {
   failed: 'ошибка',
 };
 
-// Спека 004, 4.8: строка денег и «за минуту» обновляются раз в 5 с.
-const MONEY_TICK_MS = 5000;
-
 @Component({
   selector: 'app-swarm-page',
   imports: [RouterLink, SwarmGraphComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    @let state = cabinet.swarm();
+    @let feed = state?.feed ?? [];
     <p><a routerLink="/">← Все рои</a></p>
-    @if (view(); as swarm) {
+    @if (state?.view; as swarm) {
       <div class="toolbar">
         <h1>{{ swarm.task }}</h1>
-        @if (stoppable()) {
-          <button type="button" (click)="stop()" [disabled]="stopping()">Стоп</button>
+        @if (cabinet.stoppable()) {
+          <button type="button" (click)="stop()" [disabled]="cabinet.stopping()">Стоп</button>
         }
       </div>
       <p>
         Статус: <strong>{{ statusLabel(swarm.status) }}</strong> ·
-        {{ connected() ? 'поток подключён' : 'переподключение…' }}
+        {{ state?.connected ? 'поток подключён' : 'переподключение…' }}
       </p>
-      <p class="money">{{ money() }}</p>
+      <p class="money">{{ cabinet.money() }}</p>
       <app-swarm-graph [view]="swarm" />
 
       <section>
@@ -84,18 +75,18 @@ const MONEY_TICK_MS = 5000;
         </section>
       }
     } @else {
-      <p>{{ connected() ? 'Загрузка…' : 'Подключение к рою…' }}</p>
+      <p>{{ state?.connected ? 'Загрузка…' : 'Подключение к рою…' }}</p>
     }
 
-    @if (error(); as message) {
+    @if (cabinet.swarmError(); as message) {
       <p class="error">{{ message }}</p>
     }
 
-    @if (feed().length > 0) {
+    @if (feed.length > 0) {
       <section>
         <h2>Лента</h2>
         <ol class="feed">
-          @for (event of feed(); track event.seq) {
+          @for (event of feed; track event.seq) {
             <li>
               <span class="seq">#{{ event.seq }}</span>
               <span class="type">{{ event.type }}</span>
@@ -103,10 +94,10 @@ const MONEY_TICK_MS = 5000;
                 <span class="agent">{{ event.agentId }}</span>
               }
               <span class="detail">{{ detail(event) }}</span>
-              @if (unread().has(event.id)) {
+              @if (cabinet.unread().has(event.id)) {
                 <span class="unread"> · не прочитано</span>
               }
-              @if (traceUrl(event); as url) {
+              @if (cabinet.traceUrl(event.traceId); as url) {
                 <a class="trace" [href]="url" target="_blank" rel="noopener">Трейс</a>
               }
             </li>
@@ -116,45 +107,20 @@ const MONEY_TICK_MS = 5000;
     }
   `,
 })
-export class SwarmPageComponent implements OnDestroy {
-  private readonly ui = inject(UI);
-  private readonly route = inject(ActivatedRoute);
-  readonly id = this.route.snapshot.paramMap.get('id') ?? '';
+export class SwarmPageComponent {
+  protected readonly cabinet = inject(CABINET_STORE);
+  private readonly destroyRef = inject(DestroyRef);
 
-  readonly view = signal<SwarmView | null>(null);
-  readonly feed = signal<PlatformEvent[]>([]);
-  readonly connected = signal(false);
-  readonly stopping = signal(false);
-  readonly error = signal<string | null>(null);
-  readonly stoppable = computed(() => {
-    const status = this.view()?.status;
-    return status === 'starting' || status === 'running';
-  });
-  readonly unread = computed(() => {
-    const status = this.view()?.status;
-    return status === undefined ? new Set<string>() : unreadMessageIds(this.feed(), status);
-  });
-  readonly now = signal(Date.now());
-  readonly money = computed(() => {
-    const swarm = this.view();
-    return swarm === null
-      ? null
-      : formatSwarmMoney(swarm, spentLastMinute(this.feed(), this.now()));
-  });
+  readonly id = input.required<string>();
   readonly formatUsd = formatUsd;
   readonly failureReasonText = failureReasonText;
 
-  private readonly page = this.ui.openSwarm(this.id);
-  private readonly unsubscribe = this.page.onChange(() => {
-    this.view.set(this.page.view);
-    this.feed.set([...this.page.feed]);
-    this.connected.set(this.page.connected);
-    this.now.set(Date.now());
-  });
-  private readonly moneyTimer = setInterval(() => this.now.set(Date.now()), MONEY_TICK_MS);
-
-  traceUrl(event: PlatformEvent): string | null {
-    return this.ui.traceUrl(event.traceId);
+  constructor() {
+    effect(() => {
+      const id = this.id();
+      untracked(() => this.cabinet.openSwarm(id));
+    });
+    this.destroyRef.onDestroy(() => this.cabinet.closeSwarm());
   }
 
   statusLabel(status: string): string {
@@ -178,20 +144,7 @@ export class SwarmPageComponent implements OnDestroy {
     }
   }
 
-  async stop(): Promise<void> {
-    this.stopping.set(true);
-    try {
-      await this.page.stop();
-    } catch (error) {
-      this.error.set(errorText(error));
-    } finally {
-      this.stopping.set(false);
-    }
-  }
-
-  ngOnDestroy(): void {
-    clearInterval(this.moneyTimer);
-    this.unsubscribe();
-    this.page.close();
+  stop(): void {
+    void this.cabinet.stopSwarm();
   }
 }

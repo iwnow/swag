@@ -327,6 +327,30 @@ describe('cabinet store', () => {
     expect(store.swarmsLoaded.value).toBe(true);
   });
 
+  it('AC-014-23: повторный loadSwarms до ответа — список пуст и swarmsLoaded сброшен', async () => {
+    const { store } = setup();
+    await store.loadSwarms();
+    expect(store.swarms.value).toEqual([summary]);
+
+    const pending = store.loadSwarms();
+
+    expect(store.swarms.value).toEqual([]);
+    expect(store.swarmsLoaded.value).toBe(false);
+    await pending;
+    expect(store.swarmsLoaded.value).toBe(true);
+  });
+
+  it('AC-014-23: resetForm после неверной формы — issues пуст, error null', async () => {
+    const { store } = setup();
+    await store.createSwarm({ ...DRAFT, task: '' });
+    expect(store.form.value.issues.length).toBeGreaterThan(0);
+
+    store.resetForm();
+
+    expect(store.form.value.issues).toEqual([]);
+    expect(store.form.value.error).toBeNull();
+  });
+
   it('AC-014-23: stoppable — true в starting и running, false в stopped и completed', () => {
     const { store, opened } = setup();
     store.openSwarm(SWARM);

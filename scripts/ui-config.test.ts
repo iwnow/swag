@@ -1,7 +1,14 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+
+const listFiles = (dir: string, pattern: RegExp): string[] =>
+  readdirSync(dir, { recursive: true })
+    .map(String)
+    .filter((name) => pattern.test(name))
+    .map((name) => join(dir, name));
 
 const css = readFileSync(
   new URL('../packages/ui-angular/styles/tokens.css', import.meta.url),
@@ -133,11 +140,8 @@ describe('цветовые литералы (спека 014, REQ-014-16)', () =>
   ].map((dir) => fileURLToPath(new URL(dir, import.meta.url)));
 
   const sourceFiles = (dir: string): string[] =>
-    readdirSync(dir, { recursive: true })
-      .map(String)
-      .filter((name) => /\.(ts|html|css)$/.test(name))
-      .filter((name) => !/\.(test|spec)\.ts$/.test(name))
-      .map((name) => join(dir, name))
+    listFiles(dir, /\.(ts|html|css)$/)
+      .filter((file) => !/\.(test|spec)\.ts$/.test(file))
       .filter((file) => file !== tokensFile);
 
   it('AC-014-10: в кабинете и пакете нет цветовых литералов вне tokens.css', () => {
@@ -147,5 +151,114 @@ describe('цветовые литералы (спека 014, REQ-014-16)', () =>
       [...readFileSync(file, 'utf8').matchAll(colorLiteral)].map((match) => `${file}: ${match[0]}`),
     );
     expect(found).toEqual([]);
+  });
+});
+
+// Спека 014, REQ-014-23, AC-014-26: компоненты не ходят в API, не собирают адаптеры и не открывают сигналы ядра.
+const forbiddenSpec = (spec: string): boolean =>
+  spec === '@preact/signals-core' || spec.startsWith('@preact/signals-core/');
+const forbiddenName = (name: string): boolean =>
+  /^(createRequest|authApi|create\w*(Api|Store))$/.test(name);
+const globalObjects = new Set(['window', 'globalThis', 'self']);
+
+const frontendViolations = (file: string, text: string): string[] => {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+  const found: string[] = [];
+  const namespaces = new Set<string>();
+  for (const statement of source.statements) {
+    const bindings = ts.isImportDeclaration(statement)
+      ? statement.importClause?.namedBindings
+      : undefined;
+    if (bindings && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text);
+  }
+  const checkSpec = (spec: string, kind: string): void => {
+    if (forbiddenSpec(spec)) found.push(`${kind} из ${spec}`);
+  };
+  const checkNames = (
+    spec: string,
+    kind: string,
+    elements: readonly (ts.ImportSpecifier | ts.ExportSpecifier)[],
+  ): void => {
+    for (const element of elements) {
+      const name = (element.propertyName ?? element.name).text;
+      if (forbiddenName(name)) found.push(`${kind} ${name} из ${spec}`);
+    }
+  };
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node)) {
+      const spec = (node.moduleSpecifier as ts.StringLiteral).text;
+      checkSpec(spec, 'импорт');
+      const bindings = node.importClause?.namedBindings;
+      if (bindings && ts.isNamedImports(bindings)) checkNames(spec, 'импорт', bindings.elements);
+    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier) {
+      const spec = (node.moduleSpecifier as ts.StringLiteral).text;
+      checkSpec(spec, 'реэкспорт');
+      if (node.exportClause && ts.isNamedExports(node.exportClause)) {
+        checkNames(spec, 'реэкспорт', node.exportClause.elements);
+      }
+    } else if (ts.isCallExpression(node)) {
+      const [arg] = node.arguments;
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        if (arg && ts.isStringLiteral(arg)) checkSpec(arg.text, 'динамический импорт');
+      } else if (ts.isIdentifier(node.expression) && node.expression.text === 'fetch') {
+        found.push('вызов fetch(');
+      }
+    } else if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression)) {
+      const object = node.expression.text;
+      const member = node.name.text;
+      if (globalObjects.has(object) && member === 'fetch') {
+        found.push(`обращение ${object}.fetch`);
+      } else if (namespaces.has(object) && forbiddenName(member)) {
+        found.push(`обращение ${object}.${member}`);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found.map((violation) => `${file}: ${violation}`);
+};
+
+describe('границы фронтендов (спека 014, REQ-014-23, AC-014-26)', () => {
+  const uiApps = fileURLToPath(new URL('../apps/ui', import.meta.url));
+  const uiSrcDirs = readdirSync(uiApps, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(uiApps, entry.name, 'src'))
+    .filter((dir) => existsSync(dir));
+
+  it('AC-014-26: в apps/ui/*/src нет импортов createRequest, create*Api, authApi, create*Store, @preact/signals-core и вызовов fetch(', () => {
+    expect(uiSrcDirs.length).toBeGreaterThan(0);
+    const found = uiSrcDirs
+      .flatMap((dir) => listFiles(dir, /\.ts$/))
+      .flatMap((file) => frontendViolations(file, readFileSync(file, 'utf8')));
+    expect(found).toEqual([]);
+  });
+
+  it('AC-014-26: проверка границ находит нарушения на образце', () => {
+    const sample = [
+      "import { createRequest } from '@swag/ui-angular';",
+      "import { createUsersApi as users } from '@swag/ui-angular';",
+      "import { signal } from '@preact/signals-core';",
+      "fetch('/api/me');",
+      "export { createRequest } from '@swag/ui-angular';",
+      "export * from '@preact/signals-core';",
+      "await import('@preact/signals-core');",
+      "window.fetch('/x');",
+      "globalThis.fetch('/x');",
+      "import * as api from '@swag/ui-angular';",
+      'api.createSwarmsApi(s);',
+    ].join('\n');
+    expect(frontendViolations('sample.ts', sample)).toHaveLength(10);
+  });
+
+  it('AC-014-26: проверка границ не находит нарушений в коде на мосте', () => {
+    const sample = [
+      "import { connectStore, toAngularSignal, provideCabinetStore, CABINET_STORE, SESSION_USER } from '@swag/ui-angular';",
+      "import * as ui from '@swag/ui-angular';",
+      'provideCabinetStore();',
+      'connectStore(CABINET_STORE);',
+      'toAngularSignal(SESSION_USER);',
+      'ui.connectStore(CABINET_STORE);',
+    ].join('\n');
+    expect(frontendViolations('ok.ts', sample)).toEqual([]);
   });
 });

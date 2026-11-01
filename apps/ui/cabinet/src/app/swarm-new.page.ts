@@ -1,9 +1,8 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { PlatformModel } from '@swag/contracts';
-import { formatUsd, swarmFormInput, type AgentInput, type FormIssue } from '@swag/ui-core';
-import { connectStore, HttpError, SESSION_USER } from '@swag/ui-angular';
-import { BALANCE, UI, errorText } from './ui.ts';
+import type { AgentInput } from '@swag/ui-core';
+import { CABINET_STORE } from '@swag/ui-angular';
 
 const DEFAULT_MODEL: PlatformModel = 'chat-small';
 // Спека 004, Q-5: бюджет роя по умолчанию — $0.50.
@@ -91,28 +90,26 @@ const newAgent = (): AgentInput => ({
         Добавить агента
       </button>
 
-      @if (issues().length > 0) {
+      @if (cabinet.form().issues.length > 0) {
         <ul class="error">
-          @for (issue of issues(); track $index) {
+          @for (issue of cabinet.form().issues; track $index) {
             <li>{{ issue.path || 'форма' }}: {{ issue.message }}</li>
           }
         </ul>
       }
-      @if (serverError(); as message) {
+      @if (cabinet.form().error; as message) {
         <p class="error">{{ message }}</p>
       }
 
       <div class="actions">
         <a routerLink="/">Отмена</a>
-        <button type="submit" [disabled]="submitting()">Запустить</button>
+        <button type="submit" [disabled]="cabinet.form().busy">Запустить</button>
       </div>
     </form>
   `,
 })
 export class SwarmNewPageComponent {
-  private readonly ui = inject(UI);
-  private readonly balance = inject(BALANCE);
-  private readonly session = connectStore(inject(SESSION_USER));
+  protected readonly cabinet = inject(CABINET_STORE);
   private readonly router = inject(Router);
 
   readonly models = PlatformModel.options;
@@ -120,9 +117,10 @@ export class SwarmNewPageComponent {
   readonly budget = signal(DEFAULT_BUDGET_USD);
   readonly maxTokens = signal('');
   readonly agents = signal<AgentInput[]>([newAgent()]);
-  readonly issues = signal<FormIssue[]>([]);
-  readonly serverError = signal<string | null>(null);
-  readonly submitting = signal(false);
+
+  constructor() {
+    this.cabinet.resetForm();
+  }
 
   setTask(event: Event): void {
     this.task.set((event.target as HTMLTextAreaElement).value);
@@ -159,38 +157,12 @@ export class SwarmNewPageComponent {
   }
 
   async submit(): Promise<void> {
-    this.serverError.set(null);
-    const form = swarmFormInput(this.task(), this.budget(), this.maxTokens(), this.agents());
-    const check = this.ui.validateForm(form);
-    if (!check.ok) {
-      this.issues.set(check.issues);
-      return;
-    }
-    this.issues.set([]);
-    this.submitting.set(true);
-    try {
-      const result = await this.ui.createSwarm(form);
-      if (result.ok && result.view) {
-        await this.router.navigate(['/swarms', result.view.id]);
-      }
-    } catch (error) {
-      this.serverError.set(await this.submitError(error));
-    } finally {
-      this.submitting.set(false);
-    }
-  }
-
-  // Спека 013, 4.11: 402 insufficient_balance — доступный остаток перечитывается с сервера.
-  private async submitError(error: unknown): Promise<string> {
-    const orgId = this.session.orgId();
-    const insufficient =
-      error instanceof HttpError && error.status === 402 && error.code === 'insufficient_balance';
-    if (!insufficient || orgId === null) return errorText(error);
-    try {
-      const balance = await this.balance.getBalance(orgId);
-      return `Недостаточно средств: доступно ${formatUsd(balance.availableMicroUsd)}`;
-    } catch {
-      return errorText(error);
-    }
+    const id = await this.cabinet.createSwarm({
+      task: this.task(),
+      budget: this.budget(),
+      maxTokens: this.maxTokens(),
+      agents: this.agents(),
+    });
+    if (id !== null) await this.router.navigate(['/swarms', id]);
   }
 }
