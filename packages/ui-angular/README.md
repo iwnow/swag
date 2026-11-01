@@ -13,7 +13,10 @@
 - `styles/base.css` — глобальные стили фронтендов (элементы, раскладка, классы кабинета `.feed`, `.agent-row`, `.toolbar`) только на токенах (REQ-014-16); перенесено из `<style>` кабинета (014, 4.7).
 - `ThemeService` — режим темы `system` | `light` | `dark`, атрибут `data-theme` на `<html>`, выбор в `localStorage` под `swag.theme` (014, 4.7, REQ-014-16).
 
-Guard'ы и `swag-table`, `swag-page`, `swag-confirm`, `swag-balance-panel` — в T-10, переключатель темы в шапке каркаса — в T-11 (4.7, 4.8).
+- `ensureRestored()`, `sessionGuard`, `areaGuard(area)` — guard'ы маршрутов (014, 4.4, 4.7).
+- `swag-balance-panel` — панель баланса организации (013, 4.11; 014, 4.7).
+
+Переключатель темы в шапке каркаса — в T-11 (4.7, 4.8).
 
 ## Что внутри сейчас
 
@@ -101,4 +104,13 @@ Guard'ы и `swag-table`, `swag-page`, `swag-confirm`, `swag-balance-panel` — 
 - `swag-field` — подпись оборачивает проецируемый контрол в `<label>`, ошибка выводится `<p>` с id. Директивы нет: после каждого рендера компонент находит первый `input`, `select` или `textarea` внутри себя и выставляет ему `aria-describedby` (id ошибки) и `aria-invalid`. При пустой ошибке атрибуты снимаются. Трактовка — ради 4.8 без лишнего входа.
 - `swag-card` — `<section>` с заголовком `h2`. `swag-alert` — `role="alert"` для `kind="error"`, иначе `role="status"`; вид выставляется атрибутом `data-kind` на хосте.
 - Видимый фокус (REQ-014-22) — глобальное правило `:focus-visible` в `styles/base.css`, обводка `--swag-color-focus`.
-- Проверка: пакет собирается тайпчеком; `ng build` кабинета пока не использует компоненты, их шаблоны проверятся в T-10 (панель баланса).
+- Проверка: тайпчек пакета и `ng build` кабинета (кабинет использует `swag-balance-panel`, поэтому шаблоны компонентов компилируются).
+
+## Таблица, страница, диалог, guard'ы, панель баланса (T-10, спека 014, 4.4, 4.7, 4.8)
+
+- `swag-table` (`empty`) — вход только `empty` по 4.8. Пустота определяется CSS `:has(tbody tr)` в `styles/base.css`: без строк прячутся таблица и заголовки, показывается текст `empty`. Трактовка записана в журнал.
+- `swag-page` (`title`) — заголовок `h1` и область содержимого.
+- `swag-confirm` (`text`; `confirmed`, `cancelled`) — диалог на `@angular/cdk/dialog`. 4.8 не задаёт входа «открыть», поэтому компонент открывает диалог в `ngAfterViewInit` и закрывает в `ngOnDestroy`: потребитель показывает его условно (`@if`). Esc и закрытие без выбора — `cancelled`. Оверлей стилизуется классами `cdk-*` в `base.css` на токенах.
+- `ensureRestored()` — `inject(SESSION)` внутри, поэтому вызывается только в injection context (guard). Есть токен — `true` без `restore()`. Иначе `restore()` один раз: промис кэшируется в модульной переменной навсегда, повторные вызовы получают тот же промис (4.7). Устаревший `true` после выхода не опасен: `sessionGuard` после `ensureRestored()` проверяет `accessToken()` и без токена уводит на `/login?returnTo=…`. Тест не написан: для вызова нужен injection context, а сигнатура по 4.7 без аргументов.
+- `sessionGuard` — `CanMatchFn` для родителя `''` маршрутов (014, 4.4). `areaGuard(area)` — `CanMatchFn`, доступ по `canOpen` из `@swag/ui-core`, иначе `UrlTree` на `/`.
+- `swag-balance-panel` (`orgId`, `requireComment`) — числа, история с «Ещё», форма пополнения при праве `balance.topup`. `orgId` — вход, без него панель показывает «только для пользователей организации». Сам читает `SESSION` и `CurrentUser` (роль для формы). `requireComment` делает комментарий обязательным: текст поля «Укажите комментарий.» (4.6). Панель использует `swag-field`, `swag-alert`, `swag-table`, `button[swag-button]`.

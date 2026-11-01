@@ -1,5 +1,5 @@
 import type { Routes } from '@angular/router';
-import { authGuard } from './auth.guard.ts';
+import { sessionGuard } from '@swag/ui-angular';
 import { BalancePageComponent } from './balance.page.ts';
 import { LoginPageComponent } from './login.page.ts';
 import { SwarmListPageComponent } from './swarm-list.page.ts';
@@ -13,7 +13,7 @@ export const routes: Routes = [
   { path: 'login', component: LoginPageComponent },
   {
     path: '',
-    canActivate: [authGuard],
+    canMatch: [sessionGuard],
     children: [
       { path: '', component: SwarmListPageComponent },
       { path: 'swarms/new', component: SwarmNewPageComponent },
