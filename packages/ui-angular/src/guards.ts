@@ -1,7 +1,20 @@
-import { inject } from '@angular/core';
+import { effect, inject } from '@angular/core';
 import { type CanMatchFn, Router } from '@angular/router';
 import type { UiArea } from '@swag/ui-core';
-import { SESSION_USER } from './stores.ts';
+import { connectStore, SESSION_USER } from './stores.ts';
+
+// Спека 014, REQ-014-14 и 4.12: выход — переход на `/login` при любом переходе статуса в `signed-out`,
+// но только после первой навигации роутера: до неё `sessionGuard` сам строит `returnTo`.
+// Вызывается в injection context (конструктор корня приложения).
+export function redirectOnSignOut(): void {
+  const session = connectStore(inject(SESSION_USER));
+  const router = inject(Router);
+  effect(() => {
+    if (session.status() !== 'signed-out') return;
+    if (!router.navigated || router.url.startsWith('/login')) return;
+    void router.navigateByUrl('/login');
+  });
+}
 
 // Спека 014, 4.4 и 4.12: восстановление сессии, нет токена — /login с returnTo.
 export const sessionGuard: CanMatchFn = async () => {

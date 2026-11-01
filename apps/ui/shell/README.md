@@ -9,12 +9,12 @@
 ## Что внутри сейчас (T-24)
 
 - `src/main.ts` — `initFederation({})` без remote, затем `bootstrap.ts` (динамический импорт нужен, чтобы общие модули уже были в import map).
-- `src/app/app.ts` — корень: тема (`SHELL_STORE.theme` → атрибут `data-theme` на `<html>`) применяется и на `/login`; переход с «вошёл» на «вышел» (`SESSION_USER.status`) ведёт на `/login`, первичное «вышел» уводит через guard; на `NavigationEnd` — `SESSION_USER.ensureMe()` (смена токена, D-146); alert «Раздел недоступен» (4.6) — здесь, вне Layout, сбрасывается на `NavigationEnd`.
+- `src/app/app.ts` — корень: тема (`SHELL_STORE.theme` → атрибут `data-theme` на `<html>`) применяется и на `/login`; выход — переход на `/login` при любом переходе `SESSION_USER.status` в «вышел» после первой навигации роутера (`redirectOnSignOut()` из `@swag/ui-angular`, та же логика в кабинете; до первой навигации уводит `sessionGuard`); на `NavigationEnd` — `SESSION_USER.ensureMe()` (смена токена); alert «Раздел недоступен» (4.6) — `SHELL_STORE.sectionUnavailable`: на `NavigationError` ставится, на `NavigationEnd` сбрасывается; alert здесь, вне Layout.
 - `src/app/app.config.ts` — маршрутизатор и `provideShellStore()` (мост `ShellStore`, 014, 4.12).
 - `src/app/app.routes.ts` — `/login` и раздел под `sessionGuard` с `LayoutComponent`; `admin` и `supervisor` — под `areaGuard`; `cabinet` — `''`; `**` → `''`.
 - `src/app/remote-registry.ts` — сервис `RemoteRegistry`: чтение `/federation.manifest.json`, отбрасывание адресов вне `isLocalRemoteUrl` с `console.warn('remote_rejected', name)`, `loadRoutes(name)` — `loadRemoteModule` на `./routes`.
-- `src/app/layout.ts` — шапка по REQ-014-10: пункты `SESSION_USER.navigation`, email и организация из `SESSION_USER.me`, тема (`SHELL_STORE.theme`, `setTheme`), «Выйти» (`SHELL_STORE.logout`).
-- `src/app/login.page.ts` — `/login?returnTo=`: поля на `swag-field`; форма и вход — `SHELL_STORE.form()` и `SHELL_STORE.login(email, password, returnTo)`; результат не `null` — переход на него. Уже открытая сессия (`SESSION_USER.restore()`) сразу уводит на `returnTo`.
+- `src/app/layout.ts` — шапка по REQ-014-10: пункты `SESSION_USER.navigation`, email и организация из `SESSION_USER.me`, тема (`SHELL_STORE.theme`, `setTheme`), «Выйти» (`SHELL_STORE.logout`); переход на `/login` после выхода делает корень по статусу.
+- `src/app/login.page.ts` — `/login?returnTo=`: поля на `swag-field`; форма и вход — `SHELL_STORE.form()` и `SHELL_STORE.login(email, password, returnTo)`; результат не `null` — переход на него; при создании страницы форма сбрасывается (`resetForm()`, форма общая для страниц каркаса). Уже открытая сессия (`SESSION_USER.restore()`) сразу уводит на `returnTo`.
 - `public/federation.manifest.json` — только `cabinet`; записи `admin` и `supervisor` появляются с T-15 и T-16.
 - `federation.config.mjs`, `tsconfig*.json`, `angular.json` — конфиг из журнала T-1 (`spike-shell`, переименован в `shell`), с двумя уточнениями, см. ниже.
 - `proxy.conf.json` — `/api`, `/auth`, `/grafana` и `/mf/<имя>` на контейнеры compose (4.9).
@@ -39,7 +39,6 @@
 ## Ограничения
 
 - Маршруты `/signup`, `/signup/confirm`, `/invite` и их страницы добавит T-14 (D-144).
-- Смена токена без перехода (renew после 401 в API) не перечитывает `AuthMe` до следующей навигации (D-146).
 - Стили `tokens.css` и `base.css` подключаются через `angular.json` (`styles`), remote работают в документе каркаса.
 - Dev-серверы только для разработки, продакшен-сборка и деплой — вне 014.
 

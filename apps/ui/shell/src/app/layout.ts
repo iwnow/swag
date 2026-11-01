@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
-import { Router, RouterLink, RouterOutlet } from '@angular/router';
+import { RouterLink, RouterOutlet } from '@angular/router';
 import { ButtonDirective, connectStore, SESSION_USER, SHELL_STORE } from '@swag/ui-angular';
 import type { ThemeMode } from '@swag/ui-core';
 
@@ -75,7 +75,6 @@ const THEME_LABEL: Record<ThemeMode, string> = {
   `,
 })
 export class LayoutComponent {
-  private readonly router = inject(Router);
   private readonly session = connectStore(inject(SESSION_USER));
   protected readonly shell = inject(SHELL_STORE);
   protected readonly modes = THEME_MODES;
@@ -93,9 +92,8 @@ export class LayoutComponent {
     if (mode !== undefined) this.shell.setTheme(mode);
   }
 
-  // Трактовка: ошибка logout не показывается — токен на клиенте уже стёрт (как в кабинете).
+  // Трактовка: ошибка logout не показывается — токен на клиенте уже стёрт. Переход на /login делает App по статусу.
   protected async logout(): Promise<void> {
     await this.shell.logout().catch(() => undefined);
-    await this.router.navigateByUrl('/login');
   }
 }

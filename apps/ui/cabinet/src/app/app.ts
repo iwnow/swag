@@ -1,8 +1,8 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
-import { connectStore, SESSION_USER } from '@swag/ui-angular';
+import { connectStore, redirectOnSignOut, SESSION_USER } from '@swag/ui-angular';
 
 @Component({
   selector: 'app-root',
@@ -64,16 +64,7 @@ export class App {
   );
 
   constructor() {
-    // Выход — переход с «вошёл» на «вышел»; первичное «вышел» уводит guard'ом.
-    let wasSignedIn = false;
-    effect(() => {
-      const status = this.session.status();
-      if (status === 'signed-in') wasSignedIn = true;
-      if (status === 'signed-out' && wasSignedIn) {
-        wasSignedIn = false;
-        void this.router.navigateByUrl('/login');
-      }
-    });
+    redirectOnSignOut();
     // Смена токена (renew) заметна на следующей навигации: ensureMe перечитает /auth/me, если токен новый.
     this.router.events
       .pipe(

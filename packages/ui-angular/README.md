@@ -21,8 +21,6 @@
 - `sessionGuard`, `areaGuard(area)` — guard's маршрутов на `SESSION_USER` (014, 4.4, 4.12).
 - `swag-balance-panel` — панель баланса без своего состояния: вход `state`, выходы `more` и `topup` (013, 4.11; 014, 4.12).
 
-Переключатель темы в шапке каркаса — в T-11 (4.7, 4.8).
-
 ## Что внутри сейчас
 
 - `src/http.ts` — `HttpError` (`status`, `code`; без кода в теле — `'unknown'`), `httpError(response)`, `createRequest(session, basePath)`, тип `RequestSession`.
@@ -36,7 +34,7 @@
 - `styles/tokens.css` — токены: светлая тема в `:root`, тёмная в `:root[data-theme='dark']` и в `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) }`. Проверяет `scripts/ui-config.test.ts` (AC-014-10, контраст).
 - `styles/base.css` — глобальные стили; цвета, шрифты, отступы и радиусы только `var(--swag-…)`.
 - `src/components/button.ts` — директива `button[swag-button]` (`variant`, `disabled`, `busy`), `ButtonVariant`; `field.ts` — `swag-field` (`label`, `error`); `card.ts` — `swag-card` (`title`); `alert.ts` — `swag-alert` (`kind`), `AlertKind`; `table.ts` — `swag-table` (`empty`); `page.ts` — `swag-page` (`title`); `confirm.ts` — `swag-confirm` (`text`; выходы `confirmed`, `cancelled`) на `@angular/cdk/dialog`.
-- `src/guards.ts` — `sessionGuard` (`CanMatchFn` для родителя маршрутов: `SESSION_USER.restore()`, без токена — `UrlTree` на `/login?returnTo=`), `areaGuard(area)` (`ensureMe()`, затем `canOpen`; нет доступа — `UrlTree` на `/`).
+- `src/guards.ts` — `sessionGuard` (`CanMatchFn` для родителя маршрутов: `SESSION_USER.restore()`, без токена — `UrlTree` на `/login?returnTo=`), `areaGuard(area)` (`ensureMe()`, затем `canOpen`; нет доступа — `UrlTree` на `/`), `redirectOnSignOut()` (вызов в injection context: переход с любым статусом `signed-out` на `/login`, если первая навигация уже завершилась и URL не `/login`).
 - `src/balance-panel.ts` — `BalancePanelComponent` (`swag-balance-panel`): вход `state` (`Connected<BalanceState>`), выходы `more` и `topup` (`{ amountUsd, comment }`); состояния нет, проверки и запросы — в сторе.
 - `src/manifest.ts` — `readFederationManifest()`: `fetch` манифеста федерации (014, 4.4). Приложения `apps/ui/*` `fetch` не вызывают (AC-014-26).
 - `src/index.ts` — реэкспорт всего перечисленного.
@@ -71,6 +69,7 @@
 - `sessionGuard` вызывает `SESSION_USER.restore()`: один `restore` на стор, повторные вызовы получают тот же промис (014, 4.12). После него без токена уводит на `/login`. `ensureRestored` удалён.
 - `sessionGuard` — `canMatch`, а не `canActivate`: проверка до загрузки remote (014, 4.4).
 - `swag-balance-panel` без состояния (014, 4.12): данные, проверки формы, запросы и тексты ошибок — в `BalanceState` (`createBalanceState`, `ui-core`). Панель рисует сигналы и отдаёт ввод. Поля суммы и комментария — локальные поля ввода, очищаются после отправки без ошибки формы. `requireComment` задаёт вызывающий: `balance.topup(input, requireComment)`.
+- Мост `connectStore` вкладывается только в простой объект (`Object.prototype` или `null` в прототипе); массивы, `Date` и прочее отдаются как есть, без кэша (014, 4.12, AC-014-26).
 - Видимый фокус (REQ-014-22) — глобальное `:focus-visible` в `base.css`, обводка `--swag-color-focus`.
 
 ## Дизайн-токены (T-7)

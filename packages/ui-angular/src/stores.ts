@@ -46,6 +46,13 @@ const readOnly = (): never => {
   throw new TypeError('connectStore: стор доступен только для чтения');
 };
 
+// Вложенный мост — только для простого объекта; массивы, Date и прочее отдаются как есть.
+function isPlainObject(value: unknown): value is object {
+  if (typeof value !== 'object' || value === null) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
 export function connectStore<S extends object>(
   store: S,
   destroyRef: DestroyRef = inject(DestroyRef),
@@ -58,8 +65,7 @@ export function connectStore<S extends object>(
       let bridged: unknown;
       if (value instanceof PreactSignal) bridged = toAngularSignal(value, destroyRef);
       else if (typeof value === 'function') bridged = value.bind(target);
-      else if (typeof value === 'object' && value !== null)
-        bridged = connectStore(value, destroyRef);
+      else if (isPlainObject(value)) bridged = connectStore(value, destroyRef);
       else return value;
       cache.set(key, bridged);
       return bridged;

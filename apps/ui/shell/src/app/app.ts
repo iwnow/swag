@@ -1,8 +1,14 @@
-import { ChangeDetectionStrategy, Component, effect, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, NavigationError, Router, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
-import { AlertComponent, connectStore, SESSION_USER, SHELL_STORE } from '@swag/ui-angular';
+import {
+  AlertComponent,
+  connectStore,
+  redirectOnSignOut,
+  SESSION_USER,
+  SHELL_STORE,
+} from '@swag/ui-angular';
 import type { ThemeMode } from '@swag/ui-core';
 
 // Спека 014, 4.12: тема на <html> — работа с DOM; «system» — атрибута нет, тему выбирает prefers-color-scheme.
@@ -19,15 +25,14 @@ function applyTheme(mode: ThemeMode): void {
   imports: [RouterOutlet, AlertComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (unavailable()) {
+    @if (shell.sectionUnavailable()) {
       <swag-alert kind="error">Раздел недоступен</swag-alert>
     }
     <router-outlet />
   `,
 })
 export class App {
-  protected readonly unavailable = signal(false);
-  private readonly shell = inject(SHELL_STORE);
+  protected readonly shell = inject(SHELL_STORE);
   private readonly session = connectStore(inject(SESSION_USER));
 
   constructor() {
@@ -35,17 +40,7 @@ export class App {
 
     // Применяет data-theme при создании корня — и на /login до входа.
     effect(() => applyTheme(this.shell.theme()));
-
-    // Выход — переход с «вошёл» на «вышел». Первичное «вышел» (нет сессии при загрузке) уводит guard'ом, не сюда.
-    let wasSignedIn = false;
-    effect(() => {
-      const status = this.session.status();
-      if (status === 'signed-in') wasSignedIn = true;
-      if (status === 'signed-out' && wasSignedIn) {
-        wasSignedIn = false;
-        void router.navigateByUrl('/login');
-      }
-    });
+    redirectOnSignOut();
 
     router.events
       .pipe(
@@ -54,10 +49,10 @@ export class App {
       )
       .subscribe((event) => {
         if (event instanceof NavigationError) {
-          this.unavailable.set(true);
+          this.shell.setSectionUnavailable(true);
           return;
         }
-        this.unavailable.set(false);
+        this.shell.setSectionUnavailable(false);
         void this.session.ensureMe();
       });
   }

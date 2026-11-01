@@ -101,6 +101,36 @@ describe('connectStore', () => {
 
     expect(count()).toBe(1);
   });
+
+  it('AC-014-26: поле-массив возвращается тем же массивом, без моста', () => {
+    const store = { ...makeStore(), items: [1, 2] };
+    const injector = makeInjector();
+    const connected = runInInjectionContext(injector, () => connectStore(store));
+
+    expect(connected.items).toBe(store.items);
+  });
+
+  it('AC-014-26: сигнал со значением до моста читается сразу', () => {
+    const store = makeStore();
+    store.count.value = 7;
+    const injector = makeInjector();
+    const connected = runInInjectionContext(injector, () => connectStore(store));
+
+    expect(connected.count()).toBe(7);
+  });
+
+  it('AC-014-26: инжектор уничтожен — вложенный сигнал перестаёт обновляться, прежний остаётся', () => {
+    const store = makeStore();
+    const injector = makeInjector();
+    const connected = runInInjectionContext(injector, () => connectStore(store));
+    const loaded = connected.balance.loaded;
+    expect(loaded()).toBe(false);
+
+    injector.destroy();
+    store.balance.loaded.value = true;
+
+    expect(loaded()).toBe(false);
+  });
 });
 
 describe('preferences', () => {

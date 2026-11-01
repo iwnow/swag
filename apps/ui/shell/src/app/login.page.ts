@@ -56,6 +56,8 @@ export class LoginPageComponent {
   readonly password = signal('');
 
   constructor() {
+    // Форма ShellStore общая для страниц каркаса — чужие ошибка и busy не должны попасть на вход.
+    this.shell.resetForm();
     // Сессия уже открыта (например, после обновления страницы) — сразу на returnTo.
     void this.session.restore().then(() => {
       if (this.session.accessToken() !== null) void this.router.navigateByUrl(this.returnTo);
