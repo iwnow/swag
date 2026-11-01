@@ -16,7 +16,7 @@ updated: 2026-11-01
 >   - `cabinet` — нынешние рои и баланс без своей страницы входа.
 >   - `admin` — пользователи организации: приглашение, смена роли, блокировка.
 >   - `supervisor` — организации платформы, их пользователи, баланс и пополнение.
-> - **Вся логика UI — в сторах `ui-core`** (Q-9, решение человека 2026-11-01). Состояние, загрузка данных, вычисления, ограничения и сценарии («создать рой», «пригласить пользователя», «пополнить баланс») живут в сторах `ui-core` на чистом TS (`@preact/signals-core`). В Angular их подключает мост `toNg` из `@swag/ui-angular`. `SessionUserStore` — один на страницу, плюс по одному стору на фронтенд: `ShellStore`, `CabinetStore`, `AdminStore`, `SupervisorStore`. Компоненты — только шаблоны: читают сигналы стора и вызывают его команды. Контракты — 4.12, задачи T-21…T-25.
+> - **Вся логика UI — в сторах `ui-core`** (Q-9, решение человека 2026-11-01). Состояние, загрузка данных, вычисления, ограничения и сценарии («создать рой», «пригласить пользователя», «пополнить баланс») живут в сторах `ui-core` на чистом TS (`@preact/signals-core`). В Angular их подключает мост `connectStore` из `@swag/ui-angular`. `SessionUserStore` — один на страницу, плюс по одному стору на фронтенд: `ShellStore`, `CabinetStore`, `AdminStore`, `SupervisorStore`. Компоненты — только шаблоны: читают сигналы стора и вызывают его команды. Контракты — 4.12, задачи T-21…T-25.
 > - **Права в интерфейсе** считает `ui-core`. Код микрофронтенда без прав не загружается. Доступ, как и раньше, проверяет API.
 > - **Нового API нет.** Экраны работают на эндпоинтах 012, 024 и 013. Меняются только адреса страниц в письмах: `/signup/confirm` и `/invite` вместо `/auth/confirm` и `/auth/invite`. Причина — путь `/auth/*` прокси отдаёт в identity.
 > - **Общий стиль.** Одни дизайн-токены и базовые компоненты, светлая и тёмная тема. Контраст проверяет автотест.
@@ -66,7 +66,7 @@ updated: 2026-11-01
   - порты пользователей и организаций;
   - сторы на `@preact/signals-core` и их порты (4.12, Q-9).
 - `packages/ui-angular` (Q-2):
-  - адаптеры портов на `fetch`, мост сторов в Angular-сигналы `toNg` и провайдеры сторов (4.12);
+  - адаптеры портов на `fetch`, мост сторов в Angular-сигналы `connectStore` и провайдеры сторов (4.12);
   - guard'ы поверх `SessionUserStore`;
   - панель баланса без своего состояния (4.12);
   - дизайн-токены, базовые стили, базовые компоненты.
@@ -548,13 +548,45 @@ export interface Preferences {
 | `SupervisorStore`, `supervisor.store.ts`, `{ session, users, organizations, balance }` | `organizations`, `orgId`, `users`, `error`; `organization` — из списка по `orgId`; `notFound` — список загружен, а `orgId` в нём нет; `rows` — как у `AdminStore`; `balance` — `createBalanceState` | `loadOrganizations()`; `openOrganization(orgId)` — сброс пользователей, `balance.open(orgId)`, `users.list(orgId)`, ответ для сменившегося `orgId` не пишется; `apply(userId, action)` — как у `AdminStore`, перечитывает пользователей этой организации; пополнение — `balance.topup(input, true)` |
 
 **Мост в Angular** — `@swag/ui-angular`, `src/stores.ts`:
-- `toNg(store)`: каждое поле `ReadonlySignal` стора, в том числе во вложенном `balance`, становится Angular-сигналом `Signal<T>`. Методы — те же функции. Внутри — `effect` preact, который пишет в Angular-сигнал. Тип `NgStore<S>` выводится из `S`. Функция `toNg` возвращает и `dispose()` — снять все `effect`.
+- **Мост универсальный.** Новое поле стора доступно в шаблоне без правки моста. Тип выводится из стора через generic.
+
+  ```ts
+  import type { ReadonlySignal } from '@preact/signals-core';
+  import type { DestroyRef, Signal } from '@angular/core';
+
+  export type Connected<S> = {
+    readonly [K in keyof S]: S[K] extends ReadonlySignal<infer V>
+      ? Signal<V>
+      : S[K] extends (...args: infer A) => infer R
+        ? (...args: A) => R
+        : S[K] extends object
+          ? Connected<S[K]>
+          : S[K];
+  };
+
+  export function toAngularSignal<T>(source: ReadonlySignal<T>, destroyRef: DestroyRef): Signal<T>;
+  export function connectStore<S extends object>(store: S, destroyRef?: DestroyRef): Connected<S>;
+  ```
+
+- `toAngularSignal`:
+  - создаёт Angular-`signal(source.peek())`;
+  - `effect` preact пишет в него `source.value`;
+  - снятие `effect` — в `destroyRef.onDestroy`;
+  - возвращает `asReadonly()`.
+- `connectStore` — `Proxy` над стором, только чтение:
+  - `destroyRef` по умолчанию — `inject(DestroyRef)`, синхронно, поэтому вызов — в injection context;
+  - на `get` поле, которое `instanceof Signal` preact (сюда входит и `computed`), отдаётся через `toAngularSignal`;
+  - функция отдаётся привязанной к стору;
+  - простой объект (`balance`) — вложенным `connectStore` с тем же `destroyRef`;
+  - остальное — как есть;
+  - результат кэшируется по полю: `effect` создаётся при первом чтении, повторное чтение отдаёт тот же объект;
+  - `set`, `defineProperty`, `deleteProperty` бросают `TypeError`.
 - Токены: `SESSION_USER` (`providedIn: 'root'`, фабрика: `createSessionUserStore` на адаптерах `fetch`), `SHELL_STORE`, `CABINET_STORE`, `ADMIN_STORE`, `SUPERVISOR_STORE`.
-- `provideShellStore()`, `provideCabinetStore()`, `provideAdminStore()`, `provideSupervisorStore()`: стор собирается из адаптеров и `SESSION_USER`, оборачивается в `toNg`. На `DestroyRef` инжектора — `dispose()` моста и стора.
+- `provideShellStore()`, `provideCabinetStore()`, `provideAdminStore()`, `provideSupervisorStore()`: стор собирается из адаптеров и `SESSION_USER`, оборачивается в `connectStore`. На `DestroyRef` инжектора снимаются `effect` моста и вызывается `dispose()` стора, если он есть.
 - Каркас даёт `provideShellStore()` в `app.config.ts`. Remote — свой провайдер в `providers` корневого маршрута `./routes`.
 - Адаптеры с токеном доступа строятся на `createRequest(<SessionUserStore>, basePath)` (4.7). `MeApi` и `Preferences` — новые адаптеры. `Preferences` — `localStorage` в `try/catch`.
 - `sessionGuard`: `await session.restore()`, нет токена → `UrlTree` `/login?returnTo=` (4.7). `areaGuard(area)`: `await session.ensureMe()`, затем `session.canOpen(area)`.
-- `swag-balance-panel` без своего состояния. Вход `state` — `balance` из `NgStore`. Выходы: `more`, `topup` (`{ amountUsd, comment }`).
+- `swag-balance-panel` без своего состояния. Вход `state` — `balance` из `Connected<…>`. Выходы: `more`, `topup` (`{ amountUsd, comment }`).
 - Тему на `<html>` ставит каркас: Angular-`effect` в `App` читает `theme()`. Это работа с DOM, не логика.
 - Из пакета удаляются `SESSION`, `CurrentUser`, `ensureRestored`, `ThemeService`.
 - `apps/ui/*/src` не импортирует `createRequest`, `create*Api`, `authApi`, `create*Store`, `@preact/signals-core` и не вызывает `fetch(`. Стор он получает только через токен из `@swag/ui-angular`.
@@ -703,8 +735,12 @@ export interface Preferences {
     - *When* другое ядро импортирует `@preact/signals-core` *Then* нарушение.
   - *Given* `scripts/ui-config.test.ts`, все файлы `apps/ui/*/src`. *Then* нет импортов `createRequest`, `create*Api`, `authApi`, `create*Store`, `@preact/signals-core` и вызовов `fetch(`.
   - *Given* `packages/ui-angular/test/stores.test.ts`, стор с сигналом `count` и вложенным `balance`.
-    - *When* `toNg(store)` и значение сменилось в сторе *Then* Angular-сигналы `count()` и `balance.loaded()` отдают новое.
-    - *When* после `dispose()` значение сменилось *Then* Angular-сигнал прежний.
+    - *When* `connectStore(store)` в injection context и значение сменилось в сторе *Then* Angular-сигналы `count()` и `balance.loaded()` отдают новое.
+    - *When* в стор добавлено поле-сигнал `extra`, а мост не менялся *Then* `connected.extra()` отдаёт его значение.
+    - *When* `connected.count` прочитан дважды *Then* тот же объект и один `effect`.
+    - *When* вызван метод `connected.inc()` *Then* он работает с `this` стора.
+    - *When* запись `connected.count = …` *Then* `TypeError`.
+    - *When* инжектор уничтожен, затем значение сменилось *Then* Angular-сигнал прежний.
 - **AC-014-27** — состояние баланса (REQ-014-13, 013 4.11). *Given* `createBalanceState` на заглушках (`packages/ui-core/test/balance.state.test.ts`).
   - *When* `open('a')`, затем `open('b')`, и ответ `a` пришёл последним — успех или ошибка *Then* `view`, `entries` и `error` — от `b`.
   - *When* `more()` *Then* `listBalanceEntries` с `before = nextBefore`, записи дописаны в конец.
@@ -821,7 +857,7 @@ export interface Preferences {
 - [ ] **T-22.** `packages/ui-core`: `src/balance.state.ts` и `src/shell.store.ts` по 4.12, тесты AC-014-27 и AC-014-22. README, глоссарий. Закрывает: AC-014-22, AC-014-27. Готово, когда: тесты зелёные.
 - [ ] **T-23.** `packages/ui-core/src/cabinet.store.ts` поверх `createUiCore` и `createBalanceState`, тест AC-014-23. README, глоссарий. Закрывает: AC-014-23. Готово, когда: тесты зелёные.
 - [ ] **T-24.** `packages/ui-angular`: мост и переход каркаса на сторы.
-  - `src/stores.ts`: `toNg`, `NgStore`, токены, `provideShellStore`, `provideCabinetStore`. Тест — AC-014-26, часть `stores.test.ts`.
+  - `src/stores.ts`: `toAngularSignal`, `connectStore`, `Connected`, токены, `provideShellStore`, `provideCabinetStore`. Тест — AC-014-26, часть `stores.test.ts`.
   - Адаптеры `MeApi` и `Preferences`.
   - Guard'ы на `SESSION_USER`.
   - `swag-balance-panel` без своего состояния.
@@ -971,7 +1007,7 @@ export interface Preferences {
 
   Рассмотрены:
   - (а) `@ngrx/signals` в `ui-core`. Пакет импортирует `@angular/core` (`inject`, `Injectable`, `effect`) и `rxjs-interop`, ядро стало бы зависеть от Angular. Человек выбрал его первым, затем заменил на (б);
-  - (б) `@preact/signals-core` — сигналы без фреймворка, мост `toNg` в `@swag/ui-angular`;
+  - (б) `@preact/signals-core` — сигналы без фреймворка, мост `connectStore` в `@swag/ui-angular`;
   - (в) `alien-signals` — то же, API беднее;
   - (г) `signal-polyfill` — предложение TC39 на стадии 1;
   - (д) `@xstate/store`, `nanostores` — вычисления не на сигналах.
@@ -993,7 +1029,7 @@ export interface Preferences {
 | 2026-11-01 | `spec/014-t9` / 0fbd615 | T-9: `components/button.ts` (директива `button[swag-button]`: `variant`, `disabled`, `busy`), `components/field.ts` (`swag-field`: `label`, `error`), `components/card.ts` (`swag-card`: `title`), `components/alert.ts` (`swag-alert`: `kind`), экспорт из `index.ts`; фокус `:focus-visible` и варианты кнопок — в `styles/base.css` | Трактовка: `swag-button` сделан атрибутным селектором `button[swag-button]`, чтобы `type` остался нативным (submit в формах) без нового входа в 4.8. `swag-field` без директивы: после рендера компонент ставит `aria-describedby` и `aria-invalid` на проецируемый контрол (описано в README). Шаблоны компонентов `ng build` кабинета пока не компилирует (нет использования); проверятся в T-10. Вопросы на подтверждение: D-135 (`button[swag-button]`, `busy` как нативный `disabled`), D-136 (связка `swag-field` с ошибкой) |
 | 2026-11-01 | `spec/014-t9` / c0fc54f | T-10: `components/table.ts` (`swag-table`, вход `empty`), `components/page.ts` (`swag-page`, `title`), `components/confirm.ts` (`swag-confirm`, `text`, `confirmed`, `cancelled`, на `@angular/cdk/dialog`), `guards.ts` (`ensureRestored`, `sessionGuard`, `areaGuard`), `balance-panel.ts` (`swag-balance-panel`, `orgId`, `requireComment`); кабинет: `balance.page.ts` — обёртка над панелью, `auth.guard.ts` удалён, маршрут за `canMatch: [sessionGuard]`; стили таблицы и оверлея — в `styles/base.css` | Трактовка: пустота `swag-table` определяется CSS `:has(tbody tr)`, вход только `empty` по 4.8. `swag-confirm` открывает диалог в `ngAfterViewInit` и закрывает в `ngOnDestroy`: в 4.8 нет входа «открыть», потребитель показывает компонент условно (`@if`). `ensureRestored` кэширует промис `restore()` навсегда, как в 4.7; токен проверяет `sessionGuard`. Тест на `ensureRestored` не написан: он берёт SESSION через `inject`, нужен injection context. `sessionGuard` — `canMatch`, не `canActivate`: `CanMatchFn` проверяется до загрузки remote (4.4). `requireComment` в кабинете = false (013, 4.11). `returnTo` в `/login` кабинета пока не читается: вход переезжает в каркас (T-11). Вопросы на подтверждение: D-137 (пустота `swag-table`), D-138 (открытие и закрытие `swag-confirm`), D-139 (кэш `ensureRestored`) |
 | 2026-11-01 | `spec/014-t11` / 2e00e98 | T-11: `apps/ui/shell` (`@swag/shell`): `federation.config.mjs`, `angular.json`, `tsconfig*.json` из журнала T-1 (`spike-shell` переименован в `shell`); `main.ts` с `initFederation({})` и `bootstrap.ts`; `remote-registry.ts` (`RemoteRegistry`, `loadRoutes`); `app.routes.ts` по 4.4 (`/login`, раздел под `sessionGuard`, `admin` и `supervisor` под `areaGuard`, `cabinet` — `''`, `**` → `''`); `layout.ts` (`LayoutComponent`, шапка REQ-014-10); `app.ts` (`App`: тема, alert «Раздел недоступен» вне Layout, смена токена на `NavigationEnd`); `login.page.ts` (`/login?returnTo=` на `swag-field`, `swag-alert`, `button[swag-button]`); `public/federation.manifest.json` с `cabinet`; `proxy.conf.json` по 4.9; `Dockerfile`; `README.md`. В `package-lock.json` 33 новых пакета, версии существующих не менялись | Отклонения: (1) `ng serve --host 0.0.0.0 --port 4200` из 4.9 не работает: builder `serve` Native Federation не принимает `host`; `start` — `ng serve --configuration container`, host задаётся в `serve-original` (D-143); (2) в `skipList` добавлен `@angular/cdk/schematics`, без него сборка падает (D-141); (3) в `package.json` каркаса добавлены `@angular/cdk` и `@angular/forms` (D-142), `es-module-shims` зафиксирован точно: `2.8.4` вместо `^2.8.0` из T-1; (4) маршруты `/signup`, `/signup/confirm`, `/invite` и их страницы — T-14 (D-144); ссылка «Зарегистрировать компанию» на `/login` до T-14 ведёт на `**`; (5) `<meta name="referrer" content="no-referrer">` стоит в `index.html` каркаса уже в T-11, как требует REQ-014-9; (6) до T-12 раздел `/` показывает «Раздел недоступен»: remote `cabinet` не собран, это ожидаемо по плану задач; (7) `main.ts` и `bootstrap.ts` — два файла (D-145). Трактовка: смена токена перечитывает `AuthMe` на `NavigationEnd`, события смены токена в `AuthSessionKeeper` нет (D-146) |
-| 2026-11-01 | `spec/014-state` | Дополнение по Q-9 (решение человека): сторы `ui-core` на `@preact/signals-core` и мост `toNg` в `@swag/ui-angular` — REQ-014-23…25, раздел 4.12, AC-014-21…27, задачи T-21…T-25, правки T-14…T-17. Спека заблокирована до подтверждения дополнения человеком. D-139 и D-146 сняты: поведение задано в 4.12 (`restore()` и перечитывание `AuthMe` при смене токена) | Разделы 2–8 изменены по решению человека, не агентом самостоятельно: правило 1 `CLAUDE.md` |
+| 2026-11-01 | `spec/014-state` | Дополнение по Q-9 (решение человека): сторы `ui-core` на `@preact/signals-core` и мост `connectStore` в `@swag/ui-angular` — REQ-014-23…25, раздел 4.12, AC-014-21…27, задачи T-21…T-25, правки T-14…T-17. Спека заблокирована до подтверждения дополнения человеком. D-139 и D-146 сняты: поведение задано в 4.12 (`restore()` и перечитывание `AuthMe` при смене токена) | Разделы 2–8 изменены по решению человека, не агентом самостоятельно: правило 1 `CLAUDE.md` |
 
 ### T-1. Итоги проверки федерации
 
