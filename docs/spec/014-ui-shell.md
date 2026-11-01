@@ -1,7 +1,7 @@
 ---
 id: "014"
 title: "UI: каркас с регистрацией и входом, микрофронтенды кабинета, админки и супервизора"
-status: ready
+status: in-progress
 roadmap_stage: 5
 depends_on: ["012", "024", "013"]
 superseded_by: null
@@ -173,6 +173,7 @@ export function isLocalRemoteUrl(url: string): boolean;
 
 | `area` | `label` | `path` | `canOpen` — `true`, когда |
 |---|---|---|---|
+| 2026-11-01 | `spec/014-t1` / ab82477 (не сливается) | T-1: проверка федерации на Angular 22.2.3 и `@angular-architects/native-federation` 22.2.4, итоги — ниже. T-1 выполнил Sonnet, а не Haiku: задача проверки технологии (раздел 8, «Исполнитель») | Уточнения 4.5 и 4.9 без смены контракта: файл `federation.config.mjs` вместо `.js` (пакеты `"type": "module"`); `shareAll(cfg, { skipList })` с исключением `@swag/*` и сборочных пакетов; `features.ignoreUnusedDeps: false`; `baseHref` remote в `serve`; `public/` каркаса в `assets`; явный `@angular/compiler-cli` 22.2.3 |
 | `swarms` | Рои | `/` | есть `swarm.read` |
 | `balance` | Баланс | `/balance` | есть `balance.read` и `me.organization !== null` |
 | `admin` | Админка | `/admin/users` | есть `user.manage` и `me.user.role = 'admin'` |
@@ -600,7 +601,7 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
 - **Сборка.** T-12 и T-13 ломают вход до перевода compose: кабинет перестаёт быть приложением, а `ui` в compose ещё на нём. Поэтому они идут группой через фича-ветку `spec/014-cabinet-remote` (implement-spec, «Связанные задачи»). Группа и причина записываются в журнал до T-12. До T-15 и T-16 администратор и супервизор видят пункты «Админка» и «Организации» с текстом «Раздел недоступен». Это ожидаемо, пометка — в журнал. Остальные задачи аддитивны и `main` не ломают.
 - **Исполнитель.** Задачи — субагенту Haiku, кроме T-1 и T-7. T-1 — проверка технологии с возможной блокировкой. T-7 — дизайн скиллом. Обе отдаются Sonnet, отклонение от правила 9 `CLAUDE.md` записывается в журнал.
 
-- [ ] **T-1.** Проверка федерации на Angular 22.2 и `@angular-architects/native-federation` 22.2.x. Ветка `spec/014-t1`, которая не сливается: каркас и один remote, оба импортируют `@swag/ui-angular`-заглушку с `InjectionToken` и `@swag/ui-core`. Проверить:
+- [x] **T-1.** Проверка федерации на Angular 22.2 и `@angular-architects/native-federation` 22.2.x. Ветка `spec/014-t1`, которая не сливается: каркас и один remote, оба импортируют `@swag/ui-angular`-заглушку с `InjectionToken` и `@swag/ui-core`. Проверить:
   - `initFederation({})` и `loadRemoteModule({ remoteEntry, exposedModule })` — до перехода нет запросов к remote;
   - один экземпляр токена и пакета в каркасе и remote (сравнить объекты);
   - `servePath` remote за прокси dev-сервера каркаса с `changeOrigin: false`;
@@ -796,3 +797,84 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+
+### T-1. Итоги проверки федерации
+
+**Пакеты** (точные версии, во всех фронтендах):
+- `@angular-architects/native-federation` 22.2.4 — последняя 22.2.x, peer `@angular/build ~22.2.0`, `@angular/localize ~22.2.0`; тянет `@softarc/native-federation` 4.9.0;
+- `@softarc/native-federation-orchestrator` 4.9.0 — схематик пишет `^4.8.0`, версия фиксируется;
+- `@angular/localize` 22.2.3 — обязательный peer;
+- `@angular/compiler-cli` 22.2.3 — явно, иначе `npm install` падает с ERESOLVE: peer `@angular/build` тянет compiler-cli 22.2.4, который требует `@angular/compiler` 22.2.4.
+
+**`federation.config.mjs` remote** (у каркаса тот же, `name` свой и без `exposes`):
+
+```js
+import {
+  withNativeFederation,
+  shareAll,
+  mappingsFromWorkspace,
+  NG_SKIP_LIST,
+} from '@angular-architects/native-federation/config';
+
+const skipList = [
+  ...NG_SKIP_LIST,
+  'rxjs/ajax',
+  'rxjs/fetch',
+  'rxjs/testing',
+  'rxjs/webSocket',
+  /^@angular\/(build|cli|compiler-cli)(\/|$)/,
+  /^@swag\//,
+];
+
+export default withNativeFederation({
+  name: 'cabinet',
+  exposes: { './routes': './src/app/routes.ts' },
+  shared: shareAll({ singleton: true, strictVersion: true, requiredVersion: 'auto' }, { skipList }),
+  sharedMappings: mappingsFromWorkspace({ singleton: true, strictVersion: true })
+    .filter(['@swag/ui-angular', '@swag/ui-core', '@swag/contracts'])
+    .get(),
+  features: { ignoreUnusedDeps: false },
+});
+```
+
+Почему так:
+- `/^@swag\//` в `skipList` обязателен. Иначе `@swag/*` попадают в shared дважды — как npm-пакет и как mapping. npm-копия собирается без AOT, и каркас падает: «injectable 'CurrentUser' needs to be compiled using the JIT compiler».
+- `@swag/*` нельзя класть в верхнеуровневый `skip`: он вырезает и mappings, пакеты попадают в каждое приложение своей копией. Шаблон `'@swag/*'` не работает — только строки, регулярки и функции.
+- `ignoreUnusedDeps: false`: `angular.json` в каталоге фронтенда делает его корнем, и сканер неиспользуемых зависимостей падает на файлах `packages/*` («is outside of root»). Поэтому `shareAll` публикует все пакеты из `package.json`, и сборочные исключены в `skipList`.
+
+**tsconfig.json фронтенда** — `paths`, по ним `mappingsFromWorkspace` находит пакеты (без них mappings пустые):
+
+```json
+"paths": {
+  "@swag/ui-angular": ["../../../packages/ui-angular/src/index.ts"],
+  "@swag/ui-core": ["../../../packages/ui-core/src/index.ts"],
+  "@swag/contracts": ["../../../packages/contracts/src/index.ts"]
+}
+```
+
+Схематик `ng g @angular-architects/native-federation:init --type host|remote --port N` добавляет `tsconfig.federation.json` (расширяет `tsconfig.app.json`, `include: ["src/**/*.d.ts"]`).
+
+**angular.json** после схематика:
+- `build` и `serve` — билдер `@angular-architects/native-federation:build`; прежние `@angular/build:application` и `@angular/build:dev-server` переезжают в `esbuild` и `serve-original`, в `esbuild` добавлен полифил `es-module-shims`;
+- remote: в `serve` — `"baseHref": "/mf/<имя>/"`, без него `remoteEntry.json` и чанки отдаются от `/`, а по `/mf/<имя>/` — 404; в `serve-original` — `port`, `host`, `"servePath": "/mf/<имя>/"`;
+- каркас: в `esbuild.options.assets` — `{ "glob": "**/*", "input": "public" }`, иначе `public/federation.manifest.json` не отдаётся; в `serve-original` — `"proxyConfig": "proxy.conf.json"`, `host`, `port`;
+- схематик не перезаписывает `main.ts` хоста, а у remote заменяет его вариантом с `hostRemoteEntry`.
+
+`proxy.conf.json` каркаса: `{ "/mf/cabinet": { "target": "http://127.0.0.1:4201", "secure": false, "changeOrigin": false } }`.
+
+**Итоги проверок** (браузерная панель, `ng serve` обоих на 127.0.0.1):
+1. Ленивость — прошло: на `/` запросов к `/mf/*`, `routes.js` и манифесту нет; после перехода — `/federation.manifest.json`, `/mf/cabinet/remoteEntry.json`, `/mf/cabinet/routes.js`, все 200.
+2. Один экземпляр — прошло: `InjectionToken`, экземпляр `@Injectable`-сервиса и модульная константа заглушки `@swag/ui-angular` в каркасе и remote совпадают; функция `@swag/ui-core` одна.
+3. `servePath` за прокси — прошло: браузер ходит только на порт каркаса, `changeOrigin: false` работает, `allowedHosts` для Host `127.0.0.1:4200` не нужен.
+4. Workspace-пакеты — прошло: `remoteEntry.json` каркаса и remote содержат `@swag/contracts`, `@swag/ui-angular`, `@swag/ui-core` с `singleton` и `strictVersion` в AOT-сборке; `ng build` обоих без ошибок.
+5. Команда проверки экземпляра — работает, вывод `{"ui-angular":1,"ui-core":1,"angular-core":1,"in-remote":[]}`.
+
+**Команда для консоли браузера (AC-014-16)**, после перехода на маршрут remote; ожидается три единицы и пустой `in-remote`:
+
+```js
+(() => { const n = performance.getEntriesByType('resource').map(r => new URL(r.name).pathname); const c = (re) => new Set(n.filter(p => re.test(p))).size; return JSON.stringify({ 'ui-angular': c(/\/_swag_ui_angular(\.[^/_]*)?\.js$/), 'ui-core': c(/\/_swag_ui_core(\.[^/_]*)?\.js$/), 'angular-core': c(/\/_angular_core(\.[^/_]*)?\.js$/), 'in-remote': n.filter(p => p.startsWith('/mf/') && /_swag_|_angular_/.test(p)) }); })()
+```
+
+В dev-сборке имена файлов содержат `-dev` и хэш; регулярку уточнить в T-11 по выводу продакшен-сборки.
+
+**Не проверено в T-1** (проверяется в T-11…T-13): compose и Host вида `ui:4200` у remote (при отказе — `allowedHosts` по 4.9), `--host 0.0.0.0`, несколько remote сразу, guard'ы, `RemoteRegistry` и `isLocalRemoteUrl`.
