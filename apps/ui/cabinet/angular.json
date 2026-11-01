@@ -9,13 +9,47 @@
       "sourceRoot": "src",
       "architect": {
         "build": {
+          "builder": "@angular-architects/native-federation:build",
+          "options": {
+            "cacheExternalArtifacts": true,
+            "tsConfig": "tsconfig.federation.json"
+          },
+          "configurations": {
+            "production": {
+              "target": "cabinet:esbuild:production"
+            },
+            "development": {
+              "target": "cabinet:esbuild:development",
+              "dev": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular-architects/native-federation:build",
+          "options": {
+            "target": "cabinet:serve-original:development",
+            "tsConfig": "tsconfig.federation.json",
+            "rebuildDelay": 500,
+            "cacheExternalArtifacts": true,
+            "dev": true,
+            "devServer": true,
+            "port": 0,
+            "baseHref": "/mf/cabinet/"
+          },
+          "configurations": {
+            "container": {
+              "target": "cabinet:serve-original:container"
+            }
+          }
+        },
+        "esbuild": {
           "builder": "@angular/build:application",
           "options": {
             "browser": "src/main.ts",
             "index": "src/index.html",
             "outputPath": "dist/cabinet",
-            "tsConfig": "tsconfig.app.json",
-            "styles": ["@swag/ui-angular/styles/tokens.css", "@swag/ui-angular/styles/base.css"]
+            "tsConfig": "tsconfig.app.json"
           },
           "configurations": {
             "production": {
@@ -29,10 +63,13 @@
           },
           "defaultConfiguration": "production"
         },
-        "serve": {
+        "serve-original": {
           "builder": "@angular/build:dev-server",
           "options": {
             "proxyConfig": "proxy.conf.json",
+            "host": "127.0.0.1",
+            "port": 4201,
+            "servePath": "/mf/cabinet/",
             "prebundle": {
               "exclude": [
                 "@swag/api-integration",
@@ -44,7 +81,11 @@
           },
           "configurations": {
             "development": {
-              "buildTarget": "cabinet:build:development"
+              "buildTarget": "cabinet:esbuild:development"
+            },
+            "container": {
+              "buildTarget": "cabinet:esbuild:development",
+              "host": "0.0.0.0"
             }
           },
           "defaultConfiguration": "development"

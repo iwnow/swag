@@ -24,7 +24,7 @@
 - `npm run start` в `apps/ui/shell` — `ng serve --configuration container`: host `0.0.0.0`, порт `4200`. Так работает образ `Dockerfile`.
 - `npx ng build` — сборка каркаса с `remoteEntry.json` и манифестом в `dist/shell/browser`.
 
-До T-12 remote `cabinet` не собран, поэтому раздел `/` показывает «Раздел недоступен» (ожидаемо, в журнале спеки).
+Remote `cabinet` собирается с T-12, но compose поднимает `ui` без него до T-13: до T-13 раздел `/` в `npm run up` показывает «Раздел недоступен» (ожидаемо, в журнале спеки).
 
 ## Ключевые решения
 

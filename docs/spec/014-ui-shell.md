@@ -874,7 +874,7 @@ export interface Preferences {
   - проверка импортов AC-014-26 — пока по кабинету и каркасу.
 
   README кабинета. Закрывает: REQ-014-23 (кабинет), AC-014-26 (часть). Готово, когда: в `npm run up` кабинет показывает, создаёт и останавливает рои, `/balance` работает, `npm run check` зелёный.
-- [ ] **T-12.** *(группа `spec/014-cabinet-remote`)* `apps/ui/cabinet` становится remote:
+- [x] **T-12.** *(группа `spec/014-cabinet-remote`)* `apps/ui/cabinet` становится remote:
   - `federation.config.js` с конфигом T-1, экспорт `./routes` с guard'ами 4.4;
   - удалить `login.page.ts`, `auth.guard.ts`, шапку из `app.ts` и `app.routes.ts`;
   - убрать `tokens.css` и `base.css` из `styles` своего `angular.json`: стили даёт каркас;
