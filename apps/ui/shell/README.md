@@ -20,16 +20,16 @@
 - `src/app/remote-registry.ts` — сервис `RemoteRegistry`: чтение `/federation.manifest.json`, отбрасывание адресов вне `isLocalRemoteUrl` с `console.warn('remote_rejected', name)`, `loadRoutes(name)` — `loadRemoteModule` на `./routes`.
 - `src/app/layout.ts` — шапка по REQ-014-10: пункты `SESSION_USER.navigation`, email и организация из `SESSION_USER.me`, тема (`SHELL_STORE.theme`, `setTheme`), «Выйти» (`SHELL_STORE.logout`); переход на `/login` после выхода делает корень по статусу.
 - `src/app/login.page.ts` — `/login?returnTo=`: поля на `swag-field`; форма и вход — `SHELL_STORE.form()` и `SHELL_STORE.login(email, password, returnTo)`; результат не `null` — переход на него; при создании страницы форма сбрасывается (`resetForm()`, форма общая для страниц каркаса). Уже открытая сессия (`SESSION_USER.restore()`) сразу уводит на `returnTo`.
-- `public/federation.manifest.json` — `cabinet` и `admin`; запись `supervisor` появится с T-16.
+- `public/federation.manifest.json` — `cabinet`, `admin` и `supervisor`.
 - `federation.config.mjs`, `tsconfig*.json`, `angular.json` — конфиг из журнала T-1 (`spike-shell`, переименован в `shell`), с двумя уточнениями, см. ниже.
-- `proxy.conf.json` — `/api`, `/auth`, `/grafana` на контейнеры compose, `/mf/cabinet` на `ui-cabinet:4201`, `/mf/admin` на `ui-admin:4202` и `/mf/supervisor` на `ui-supervisor:4203` (4.9): записи прокси уже есть. Сервиса `ui-supervisor` в compose пока нет (T-16) — до него пункт «Организации» показывает «Раздел недоступен».
+- `proxy.conf.json` — `/api`, `/auth`, `/grafana` на контейнеры compose, `/mf/cabinet` на `ui-cabinet:4201`, `/mf/admin` на `ui-admin:4202` и `/mf/supervisor` на `ui-supervisor:4203` (4.9): записи прокси уже есть. Сервис `ui-supervisor` есть в compose (T-16), пункт «Организации» открывает remote.
 
 ## Как запускать
 
 - `npm run start` в `apps/ui/shell` — `ng serve --configuration container`: host `0.0.0.0`, порт `4200`. Так работает образ `Dockerfile`.
 - `npx ng build` — сборка каркаса с `remoteEntry.json` и манифестом в `dist/shell/browser`.
 
-Compose поднимает `ui` (этот каркас, порт `UI_PORT`) и `ui-cabinet` (remote кабинета, порт не публикуется). `ui` ждёт `ui-cabinet` (`service_healthy`), поэтому после `npm run up` вход и разделы кабинета доступны в браузере через `http://127.0.0.1:4200`.
+Compose поднимает `ui` (этот каркас, порт `UI_PORT`), `ui-cabinet`, `ui-admin` и `ui-supervisor` (remote, порты не публикуются). `ui` ждёт их (`service_healthy`), поэтому после `npm run up` вход и разделы кабинета доступны в браузере через `http://127.0.0.1:4200`.
 
 ## Ключевые решения
 
@@ -52,7 +52,7 @@ Compose поднимает `ui` (этот каркас, порт `UI_PORT`) и `
 
 - `@swag/ui-angular` — `SESSION_USER`, `SHELL_STORE`, `connectStore`, `provideShellStore`, `readFederationManifest`, `sessionGuard`, `areaGuard`, компоненты.
 - `@swag/ui-core` — `navigationFor`, `authErrorText`, `safeReturnTo`, `isLocalRemoteUrl`.
-- `apps/ui/cabinet` — remote `cabinet` (T-12). `apps/ui/admin` — remote `admin` (T-15). `apps/ui/supervisor` — T-16.
+- `apps/ui/cabinet` — remote `cabinet` (T-12). `apps/ui/admin` — remote `admin` (T-15). `apps/ui/supervisor` — remote `supervisor` (T-16).
 
 ## Спеки
 

@@ -280,3 +280,4 @@
 | Таблица | `TableComponent` | `swag-table`: вход `empty`; пустота определяется CSS (014, 4.8; D-137). |
 | Страница | `PageComponent` | `swag-page`: заголовок `h1` и содержимое (014, 4.8). |
 | Диалог подтверждения | `ConfirmComponent` | `swag-confirm`: диалог на `@angular/cdk/dialog`; выходы `confirmed` и `cancelled`; клик по фону и Esc — `cancelled` (014, 4.8; D-138). |
+| Таблица пользователей | `UserTableComponent` | `swag-user-table`: общая таблица пользователей админки и супервизора (014, T-16); вход `rows`, `loaded`; выход `action` `{ userId, action }`; подтверждение блокировки внутри. |

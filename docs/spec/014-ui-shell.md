@@ -896,7 +896,7 @@ export interface Preferences {
   - `infra:check`.
 
   Закрывает: REQ-014-12, AC-014-24. Готово, когда: «Админка» работает у администратора в `npm run up`.
-- [ ] **T-16.** `apps/ui/supervisor` (`@swag/supervisor`):
+- [x] **T-16.** `apps/ui/supervisor` (`@swag/supervisor`):
   - remote, `./routes` с `providers: [SupervisorStore]`, страницы REQ-014-13 на `SupervisorStore` (4.12) и `swag-balance-panel`;
   - `SupervisorStore` в `ui-core`, тест AC-014-25;
   - `Dockerfile`, README;

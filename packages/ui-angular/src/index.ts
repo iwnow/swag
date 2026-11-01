@@ -15,3 +15,4 @@ export * from './components/alert.ts';
 export * from './components/table.ts';
 export * from './components/page.ts';
 export * from './components/confirm.ts';
+export * from './components/user-table.ts';

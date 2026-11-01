@@ -20,6 +20,7 @@
 
 - `sessionGuard`, `areaGuard(area)` — guard's маршрутов на `SESSION_USER` (014, 4.4, 4.12).
 - `swag-balance-panel` — панель баланса без своего состояния: вход `state`, выходы `more` и `topup` (013, 4.11; 014, 4.12).
+- `swag-user-table` — таблица пользователей админки и супервизора (014, T-16): вход `rows` (`UserRow` из `userRows`), `loaded`; выход `action` `{ userId, action }`; подтверждение блокировки внутри.
 
 ## Что внутри сейчас
 
@@ -34,7 +35,7 @@
 - `src/users-api.ts` — `createUsersApi`, `createOrganizationsApi`.
 - `styles/tokens.css` — токены: светлая тема в `:root`, тёмная в `:root[data-theme='dark']` и в `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) }`. Проверяет `scripts/ui-config.test.ts` (AC-014-10, контраст).
 - `styles/base.css` — глобальные стили; цвета, шрифты, отступы и радиусы только `var(--swag-…)`.
-- `src/components/button.ts` — директива `button[swag-button]` (`variant`, `disabled`, `busy`), `ButtonVariant`; `field.ts` — `swag-field` (`label`, `error`); `card.ts` — `swag-card` (`title`); `alert.ts` — `swag-alert` (`kind`), `AlertKind`; `table.ts` — `swag-table` (`empty`); `page.ts` — `swag-page` (`title`); `confirm.ts` — `swag-confirm` (`text`; выходы `confirmed`, `cancelled`) на `@angular/cdk/dialog`.
+- `src/components/button.ts` — директива `button[swag-button]` (`variant`, `disabled`, `busy`), `ButtonVariant`; `field.ts` — `swag-field` (`label`, `error`); `card.ts` — `swag-card` (`title`); `alert.ts` — `swag-alert` (`kind`), `AlertKind`; `table.ts` — `swag-table` (`empty`); `page.ts` — `swag-page` (`title`); `confirm.ts` — `swag-confirm` (`text`; выходы `confirmed`, `cancelled`) на `@angular/cdk/dialog`; `user-table.ts` — `swag-user-table` (`rows`, `loaded`; выход `action`), общая таблица пользователей.
 - `src/guards.ts` — `sessionGuard` (`CanMatchFn` для родителя маршрутов: `SESSION_USER.restore()`, без токена — `UrlTree` на `/login?returnTo=`), `areaGuard(area)` (`ensureMe()`, затем `canOpen`; нет доступа — `UrlTree` на `/`), `redirectOnSignOut()` (вызов в injection context: переход с любым статусом `signed-out` на `/login`, если первая навигация уже завершилась и путь текущего адреса не в `OPEN_PATHS` — `/login`, `/signup`, `/signup/confirm`, `/invite`; путь текущего адреса берётся структурным разбором `router.parseUrl` — сегменты первичного outlet через `/`, без query и fragment; `/invitex` — закрытая страница; до первой навигации и при статусе `signed-in` перехода нет). Открытые страницы каркаса без сессии, поэтому выход на них (в том числе «Выйти и продолжить» на `/signup/confirm` и `/invite`, REQ-014-9) не уводит на `/login`. Тест — `test/guards.test.ts`; `effect` Angular в нём заменён моком, колбэк вызывается вручную (без DOM эффект не запускается).
 - `src/balance-panel.ts` — `BalancePanelComponent` (`swag-balance-panel`): вход `state` (`Connected<BalanceState>`), выходы `more` и `topup` (`{ amountUsd, comment }`); состояния нет, проверки и запросы — в сторе.
 - `src/manifest.ts` — `readFederationManifest()`: `fetch` манифеста федерации (014, 4.4). Приложения `apps/ui/*` `fetch` не вызывают (AC-014-26).
@@ -65,6 +66,7 @@
 - `button[swag-button]` — директива на нативной кнопке, а не элемент `swag-button`: `type` остаётся нативным, submit внутри форм работает без нового входа. `busy` ставит нативный `disabled` и `aria-busy="true"` (D-135). Вид disabled один для всех вариантов: `.swag-button:disabled` в `base.css` с селектором (0,2,0) перебивает варианты.
 - `swag-field` без директивы: после каждого рендера ставит `aria-describedby` (id ошибки) и `aria-invalid` первому проецируемому `input`, `select` или `textarea`. Чужие id в `aria-describedby` сохраняются, снимается только свой. Ошибка выводится с `role="alert"` (D-136).
 - Пустота `swag-table` определяется CSS `:has(tbody tr)` в `base.css`; входа строк нет (D-137).
+- `swag-user-table` выносит разметку пользователей из админки, чтобы супервизор не дублировал её (REQ-014-17, REQ-014-23). Компонент держит только открытое подтверждение блокировки, данные и действия — в сторе (`AdminStore`, `SupervisorStore`).
 - `swag-confirm` открывает диалог в `ngAfterViewInit` и закрывает в `ngOnDestroy`: потребитель показывает компонент через `@if`. Esc и клик по фону — `cancelled`, `confirmed` только по кнопке «Подтвердить». `aria-describedby` диалога указывает на абзац текста, id уникален на экземпляр (D-138).
 - `sessionGuard` вызывает `SESSION_USER.restore()`: один `restore` на стор, повторные вызовы получают тот же промис (014, 4.12). После него без токена уводит на `/login`. `ensureRestored` удалён.
 - `sessionGuard` — `canMatch`, а не `canActivate`: проверка до загрузки remote (014, 4.4).
