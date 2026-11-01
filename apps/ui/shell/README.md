@@ -13,7 +13,8 @@
 - `src/app/signup.page.ts` — `/signup`: email, после `form.sent` вместо формы — `REGISTRATION_SENT_TEXT`; ссылка «Уже есть аккаунт»; при открытой сессии — на `/`.
 - `src/app/signup-confirm.page.ts` — `/signup/confirm?token=`: пароль, повтор, название организации; без токена — `authErrorText('invalid_token')` и ссылка «Зарегистрироваться заново»; открытая сессия — «Вы вошли как …» и «Выйти и продолжить».
 - `src/app/invite.page.ts` — `/invite?token=`: пароль и повтор; без токена — `INVITATION_INVALID_TEXT`; открытая сессия — как на `/signup/confirm`.
-- `src/app/auth-page.ts` — общее для трёх страниц: `takeToken` (токен из query один раз, `Location.replaceState` без query), `issueText` (текст ошибки поля), `inputValue`.
+- `src/app/auth-page.ts` — общее для страниц входа и регистрации: `takeToken` (токен из query один раз, `Location.replaceState` без query; пустой — как отсутствующий), `restoreSession` (`restore()` с `finally` — страница показывается и при отказе; переход после восстановления — только пока страница жива), `issueText` (текст ошибки поля), `inputValue`.
+- `src/app/signed-in-notice.ts` — `app-signed-in-notice` (вход `email`): «Вы вошли как …» и «Выйти и продолжить» (`SHELL_STORE.logout`) на `/signup/confirm` и `/invite` при открытой сессии.
 - `src/app/app.config.ts` — маршрутизатор (`withComponentInputBinding()`) и `provideShellStore()` (мост `ShellStore`, 014, 4.12).
 - `src/app/app.routes.ts` — `/login` и раздел под `sessionGuard` с `LayoutComponent`; `admin` и `supervisor` — под `areaGuard`; `cabinet` — `''`; `**` → `''`.
 - `src/app/remote-registry.ts` — сервис `RemoteRegistry`: чтение `/federation.manifest.json`, отбрасывание адресов вне `isLocalRemoteUrl` с `console.warn('remote_rejected', name)`, `loadRoutes(name)` — `loadRemoteModule` на `./routes`.

@@ -11,12 +11,20 @@ import {
   SHELL_STORE,
 } from '@swag/ui-angular';
 import { authErrorText } from '@swag/ui-core';
-import { inputValue, issueText, takeToken } from './auth-page.ts';
+import { inputValue, issueText, restoreSession, takeToken } from './auth-page.ts';
+import { SignedInNoticeComponent } from './signed-in-notice.ts';
 
 // Спека 014, 4.11, REQ-014-7 и REQ-014-9: /signup/confirm?token= — пароль, повтор и название организации.
 @Component({
   selector: 'app-signup-confirm-page',
-  imports: [RouterLink, AlertComponent, ButtonDirective, FieldComponent, PageComponent],
+  imports: [
+    RouterLink,
+    AlertComponent,
+    ButtonDirective,
+    FieldComponent,
+    PageComponent,
+    SignedInNoticeComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <swag-page title="Регистрация компании">
@@ -25,10 +33,7 @@ import { inputValue, issueText, takeToken } from './auth-page.ts';
           <swag-alert kind="error">{{ invalidTokenText }}</swag-alert>
           <p><a routerLink="/signup">Зарегистрироваться заново</a></p>
         } @else if (session.status() === 'signed-in') {
-          <p>Вы вошли как {{ session.me()?.user.email }}</p>
-          <button swag-button type="button" [busy]="shell.form().busy" (click)="leave()">
-            Выйти и продолжить
-          </button>
+          <app-signed-in-notice [email]="session.me()?.user.email" />
         } @else {
           <form (submit)="$event.preventDefault(); submit()">
             <swag-field label="Пароль" [error]="issue('password')">
@@ -85,15 +90,11 @@ export class SignupConfirmPageComponent {
 
   constructor() {
     this.shell.resetForm();
-    void this.session.restore().then(() => this.ready.set(true));
+    restoreSession(this.session, () => this.ready.set(true));
   }
 
   protected issue(path: string): string | null {
     return issueText(this.shell.form().issues, path);
-  }
-
-  protected async leave(): Promise<void> {
-    await this.shell.logout();
   }
 
   protected async submit(): Promise<void> {

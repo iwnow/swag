@@ -22,7 +22,7 @@ const THEME_MODES: readonly ThemeMode[] = ['system', 'light', 'dark'];
 export interface ShellForm {
   busy: boolean;
   error: string | null;
-  // Отказ invalid_token на подтверждении или приглашении: страница предлагает регистрацию заново (отклонение от 4.12, D-n).
+  // Отказ invalid_token на подтверждении или приглашении: страница предлагает регистрацию заново (отклонение от 4.12, D-152).
   invalidToken: boolean;
   issues: FormIssue[];
   sent: boolean;
@@ -70,6 +70,15 @@ export function createShellStore({
   };
   const clearErrors = (): void => patch({ error: null, invalidToken: false, issues: [] });
 
+  // Проверка формы не прошла, запроса нет. Токен не прошёл схему (например, длиннее 200) — отказ invalid_token, как от сервера; остальные issues не показываем.
+  const formRejected = (issues: FormIssue[], invalidTokenText: string): void => {
+    if (issues.some((issue) => issue.path === 'token')) {
+      patch({ error: invalidTokenText, invalidToken: true, issues: [] });
+    } else {
+      patch({ issues });
+    }
+  };
+
   // Запрос с busy; возвращает код отказа или null при успехе; исключение — код 'unknown'; busy сбрасывается всегда.
   async function attempt(request: () => Promise<AuthResult>): Promise<string | null> {
     patch({ busy: true });
@@ -112,7 +121,7 @@ export function createShellStore({
       clearErrors();
       const checked = validateConfirmForm(input);
       if (!checked.ok) {
-        patch({ issues: checked.issues });
+        formRejected(checked.issues, authErrorText('invalid_token'));
         return null;
       }
       const failure = await attempt(() => session.confirmRegistration(checked.body));
@@ -125,7 +134,7 @@ export function createShellStore({
       clearErrors();
       const checked = validateInviteForm(input);
       if (!checked.ok) {
-        patch({ issues: checked.issues });
+        formRejected(checked.issues, INVITATION_INVALID_TEXT);
         return null;
       }
       const failure = await attempt(() => session.acceptInvitation(checked.body));

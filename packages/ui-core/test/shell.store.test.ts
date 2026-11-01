@@ -122,6 +122,36 @@ describe('shell store', () => {
     expect(store.form.value.invalidToken).toBe(true);
   });
 
+  it('AC-014-22: confirmRegistration с токеном длиннее 200 — invalidToken, текст authErrorText, API не вызван', async () => {
+    const session = fakeSession();
+    const store = createShellStore({ session, preferences: fakePreferences() });
+
+    const result = await store.confirmRegistration({ ...VALID_CONFIRM, token: 'т'.repeat(201) });
+
+    expect(result).toBeNull();
+    expect(store.form.value.invalidToken).toBe(true);
+    expect(store.form.value.error).toBe(authErrorText('invalid_token'));
+    expect(store.form.value.issues).toEqual([]);
+    expect(session.confirmRegistration).not.toHaveBeenCalled();
+  });
+
+  it('AC-014-22: acceptInvitation с токеном длиннее 200 — invalidToken, INVITATION_INVALID_TEXT, API не вызван', async () => {
+    const session = fakeSession();
+    const store = createShellStore({ session, preferences: fakePreferences() });
+
+    const result = await store.acceptInvitation({
+      token: 'т'.repeat(201),
+      password: 'пароль-один',
+      repeat: 'пароль-один',
+    });
+
+    expect(result).toBeNull();
+    expect(store.form.value.invalidToken).toBe(true);
+    expect(store.form.value.error).toBe(INVITATION_INVALID_TEXT);
+    expect(store.form.value.issues).toEqual([]);
+    expect(session.acceptInvitation).not.toHaveBeenCalled();
+  });
+
   it('AC-014-22: следующая команда сбрасывает invalidToken', async () => {
     const session = fakeSession({
       confirmRegistration: vi.fn(async (): Promise<AuthResult> => ({
