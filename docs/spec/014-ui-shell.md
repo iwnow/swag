@@ -866,7 +866,7 @@ export interface Preferences {
   - Каркас: `/login`, шапка и тема только через `SHELL_STORE` и `SESSION_USER`.
 
   README пакета и каркаса, глоссарий. Закрывает: REQ-014-23 (каркас), REQ-014-24, AC-014-26 (часть). Готово, когда: `ng build` каркаса и кабинета и `npm run check` зелёные.
-- [ ] **T-25.** Кабинет на `CABINET_STORE`:
+- [x] **T-25.** Кабинет на `CABINET_STORE`:
   - `provideCabinetStore()` в `app.config.ts` кабинета; после T-12 провайдер переезжает в `./routes`;
   - `swarm-list.page.ts`, `swarm-new.page.ts`, `swarm.page.ts`, `balance.page.ts` только читают стор и вызывают его методы;
   - `api.ts` и `ui.ts` кабинета — только адаптеры для `provideCabinetStore` или удаляются;

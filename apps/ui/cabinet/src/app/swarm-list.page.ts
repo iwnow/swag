@@ -1,7 +1,6 @@
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import type { SwarmSummary } from '@swag/contracts';
-import { UI, errorText } from './ui.ts';
+import { CABINET_STORE } from '@swag/ui-angular';
 
 const STATUS_LABEL: Record<string, string> = {
   starting: 'запускается',
@@ -20,13 +19,13 @@ const STATUS_LABEL: Record<string, string> = {
       <h1>Рои</h1>
       <a class="button" routerLink="/swarms/new">Новый рой</a>
     </div>
-    @if (error(); as message) {
+    @if (cabinet.swarmsError(); as message) {
       <p class="error">{{ message }}</p>
     }
-    @if (swarms().length === 0 && loaded()) {
+    @if (cabinet.swarms().length === 0 && cabinet.swarmsLoaded()) {
       <p>Роёв пока нет.</p>
     }
-    @if (swarms().length > 0) {
+    @if (cabinet.swarms().length > 0) {
       <table>
         <thead>
           <tr>
@@ -37,7 +36,7 @@ const STATUS_LABEL: Record<string, string> = {
           </tr>
         </thead>
         <tbody>
-          @for (swarm of swarms(); track swarm.id) {
+          @for (swarm of cabinet.swarms(); track swarm.id) {
             <tr>
               <td>
                 <a [routerLink]="['/swarms', swarm.id]">{{ swarm.task }}</a>
@@ -52,23 +51,14 @@ const STATUS_LABEL: Record<string, string> = {
     }
   `,
 })
-export class SwarmListPageComponent implements OnInit {
-  private readonly ui = inject(UI);
-  readonly swarms = signal<SwarmSummary[]>([]);
-  readonly loaded = signal(false);
-  readonly error = signal<string | null>(null);
+export class SwarmListPageComponent {
+  protected readonly cabinet = inject(CABINET_STORE);
+
+  constructor() {
+    void this.cabinet.loadSwarms();
+  }
 
   statusLabel(status: string): string {
     return STATUS_LABEL[status] ?? status;
-  }
-
-  async ngOnInit(): Promise<void> {
-    try {
-      this.swarms.set(await this.ui.listSwarms());
-    } catch (error) {
-      this.error.set(errorText(error));
-    } finally {
-      this.loaded.set(true);
-    }
   }
 }
