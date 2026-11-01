@@ -1,6 +1,6 @@
 import { inject } from '@angular/core';
 import { type CanActivateFn, Router } from '@angular/router';
-import { CurrentUser, SESSION } from './session.ts';
+import { CurrentUser, SESSION } from '@swag/ui-angular';
 
 // Спека 024, REQ-024-13: маршруты роёв — только после входа. Нет токена — restore() по cookie, неудача — /login.
 // Спека 013, 4.11 (D-130): после входа или восстановления роль и организация перечитываются из /auth/me до показа страницы.

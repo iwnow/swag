@@ -2,8 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { Router, RouterLink } from '@angular/router';
 import { PlatformModel } from '@swag/contracts';
 import { formatUsd, swarmFormInput, type AgentInput, type FormIssue } from '@swag/ui-core';
-import { ApiError } from './api.ts';
-import { CurrentUser } from './session.ts';
+import { CurrentUser, HttpError } from '@swag/ui-angular';
 import { BALANCE, UI, errorText } from './ui.ts';
 
 const DEFAULT_MODEL: PlatformModel = 'chat-small';
@@ -185,7 +184,7 @@ export class SwarmNewPageComponent {
   private async submitError(error: unknown): Promise<string> {
     const orgId = this.current.orgId();
     const insufficient =
-      error instanceof ApiError && error.status === 402 && error.code === 'insufficient_balance';
+      error instanceof HttpError && error.status === 402 && error.code === 'insufficient_balance';
     if (!insufficient || orgId === null) return errorText(error);
     try {
       const balance = await this.balance.getBalance(orgId);

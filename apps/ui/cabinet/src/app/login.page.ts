@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { SESSION } from './session.ts';
+import { SESSION } from '@swag/ui-angular';
 
 // Спека 024, 4.2: тексты по коду ошибки входа; неизвестный код — общий текст.
 const LOGIN_ERRORS: Record<string, string> = {

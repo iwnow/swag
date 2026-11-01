@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "experimentalDecorators": false,
+    "lib": ["ES2022", "dom"],
+    "types": []
+  },
+  "include": ["src"],
+  "references": [{ "path": "../contracts" }, { "path": "../ui-core" }]
+}

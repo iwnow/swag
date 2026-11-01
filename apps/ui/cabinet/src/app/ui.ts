@@ -1,7 +1,7 @@
 import { inject, InjectionToken } from '@angular/core';
 import { createUiCore, type UiCore } from '@swag/ui-core';
-import { createBalanceApi, createSwarmStream, createSwarmsApi, type BalanceApi } from './api.ts';
-import { SESSION } from './session.ts';
+import { createBalanceApi, SESSION, type BalanceApi } from '@swag/ui-angular';
+import { createSwarmStream, createSwarmsApi } from './api.ts';
 
 // Спека 016, Q-6 и 4.10: Grafana за прокси `ng serve` на /grafana, ссылка относительная.
 // Explore с источником Tempo (uid `tempo` в grafana/otel-lgtm) и запросом по traceId.

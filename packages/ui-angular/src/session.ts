@@ -1,4 +1,4 @@
-import { computed, inject, Injectable, InjectionToken, signal } from '@angular/core';
+import { computed, inject, Injectable, InjectionToken, signal, type Signal } from '@angular/core';
 import { AuthMe, type Role } from '@swag/contracts';
 import { createAuthSessionKeeper, type AuthSessionKeeper } from '@swag/ui-core';
 import { authApi, getMe } from './auth-api.ts';
@@ -15,7 +15,8 @@ export const SESSION = new InjectionToken<AuthSessionKeeper>('auth-session', {
 @Injectable({ providedIn: 'root' })
 export class CurrentUser {
   private readonly session = inject(SESSION);
-  private readonly me = signal<AuthMe | null>(null);
+  private readonly meState = signal<AuthMe | null>(null);
+  readonly me: Signal<AuthMe | null> = this.meState;
   private loadedToken: string | null = null;
   private pending: { token: string; done: Promise<void> } | null = null;
   private generation = 0;
@@ -41,10 +42,10 @@ export class CurrentUser {
     this.generation += 1;
     this.loadedToken = null;
     this.pending = null;
-    this.me.set(null);
+    this.meState.set(null);
   }
 
-  // Трактовка: 401 — один renew и повтор, как в api.ts; любая неудача или неразобранный ответ — пользователь неизвестен.
+  // Трактовка: 401 — один renew и повтор; любая неудача или неразобранный ответ — пользователь неизвестен.
   private async load(token: string): Promise<void> {
     const generation = this.generation;
     let current = token;
@@ -63,6 +64,6 @@ export class CurrentUser {
     }
     if (generation !== this.generation) return;
     this.loadedToken = current;
-    this.me.set(result);
+    this.meState.set(result);
   }
 }
