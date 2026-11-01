@@ -95,6 +95,21 @@ describe('токены дизайн-системы (спека 014, 4.8)', () =>
     expect([...themes.darkBySystem]).toEqual([...themes.dark]);
   });
 
+  it('AC-014-10: блок системной тёмной темы лежит внутри @media (prefers-color-scheme: dark)', () => {
+    const media = css.indexOf('@media (prefers-color-scheme: dark)');
+    const selector = css.indexOf(":root:not([data-theme='light'])");
+    expect(media).toBeGreaterThanOrEqual(0);
+    expect(selector).toBeGreaterThan(media);
+    let depth = 0;
+    let closed = false;
+    for (const ch of css.slice(media, selector)) {
+      if (ch === '{') depth++;
+      else if (ch === '}' && --depth === 0) closed = true;
+    }
+    expect(closed).toBe(false);
+    expect(depth).toBeGreaterThan(0);
+  });
+
   it('AC-014-10: пары REQ-014-21 дают контраст не ниже 4.5:1 в обеих темах', () => {
     for (const [themeName, theme] of Object.entries(themes)) {
       for (const [fg, bg] of pairs) {
@@ -107,7 +122,10 @@ describe('токены дизайн-системы (спека 014, 4.8)', () =>
 
 describe('цветовые литералы (спека 014, REQ-014-16)', () => {
   const colorLiteral =
-    /(?<![\w&/-])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?![\w-])|\b(?:rgba?|hsla?)\(/gi;
+    /(?<![\w&/-])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![\w-])|(?<![\w-])(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/gi;
+  const tokensFile = fileURLToPath(
+    new URL('../packages/ui-angular/styles/tokens.css', import.meta.url),
+  );
   const sourceDirs = [
     '../apps/ui/cabinet/src',
     '../packages/ui-angular/src',
@@ -119,17 +137,15 @@ describe('цветовые литералы (спека 014, REQ-014-16)', () =>
       .map(String)
       .filter((name) => /\.(ts|html|css)$/.test(name))
       .filter((name) => !/\.(test|spec)\.ts$/.test(name))
-      .filter((name) => name !== join('styles', 'tokens.css') && name !== 'tokens.css')
-      .map((name) => join(dir, name));
+      .map((name) => join(dir, name))
+      .filter((file) => file !== tokensFile);
 
   it('AC-014-10: в кабинете и пакете нет цветовых литералов вне tokens.css', () => {
-    const found = sourceDirs
-      .flatMap(sourceFiles)
-      .flatMap((file) =>
-        [...readFileSync(file, 'utf8').matchAll(colorLiteral)].map(
-          (match) => `${file}: ${match[0]}`,
-        ),
-      );
+    const files = sourceDirs.flatMap(sourceFiles);
+    expect(files.length).toBeGreaterThan(0);
+    const found = files.flatMap((file) =>
+      [...readFileSync(file, 'utf8').matchAll(colorLiteral)].map((match) => `${file}: ${match[0]}`),
+    );
     expect(found).toEqual([]);
   });
 });

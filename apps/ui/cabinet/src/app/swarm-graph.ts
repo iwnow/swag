@@ -139,17 +139,11 @@ function quadPoint(start: Point, control: Point, end: Point, t = 0.5): Point {
           markerHeight="8"
           orient="auto-start-reverse"
         >
-          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--swag-color-text-muted)" />
+          <path d="M 0 0 L 10 5 L 0 10 z" class="arrow-head" />
         </marker>
       </defs>
       @for (edge of edges(); track edge.key) {
-        <path
-          [attr.d]="edge.d"
-          fill="none"
-          stroke="var(--swag-color-text-muted)"
-          stroke-width="2"
-          marker-end="url(#arrow)"
-        />
+        <path [attr.d]="edge.d" class="edge" stroke-width="2" marker-end="url(#arrow)" />
         <text
           [attr.x]="edge.label.x"
           [attr.y]="edge.label.y"
@@ -168,8 +162,8 @@ function quadPoint(start: Point, control: Point, end: Point, t = 0.5): Point {
             [attr.width]="nodeW"
             [attr.height]="nodeH"
             rx="10"
-            [attr.fill]="node.fill"
-            stroke="var(--swag-color-text)"
+            [style.fill]="node.fill"
+            class="node-box"
             stroke-width="1.5"
           />
           <text [attr.x]="nodeW / 2" y="24" text-anchor="middle" class="node-name">
@@ -186,6 +180,16 @@ function quadPoint(start: Point, control: Point, end: Point, t = 0.5): Point {
     </svg>
   `,
   styles: `
+    .arrow-head {
+      fill: var(--swag-color-text-muted);
+    }
+    .edge {
+      fill: none;
+      stroke: var(--swag-color-text-muted);
+    }
+    .node-box {
+      stroke: var(--swag-color-text);
+    }
     .node-name {
       font:
         600 14px system-ui,

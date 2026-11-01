@@ -49,7 +49,7 @@ td {
 }
 
 a {
-  color: var(--swag-color-focus);
+  color: var(--swag-color-primary);
 }
 
 .toolbar {
@@ -61,7 +61,7 @@ a {
 
 .button,
 button {
-  background: var(--swag-color-focus);
+  background: var(--swag-color-primary);
   color: var(--swag-color-primary-text);
   border: 0;
   border-radius: var(--swag-radius-md);
@@ -158,7 +158,7 @@ pre {
 }
 
 .feed .agent {
-  color: var(--swag-color-focus);
+  color: var(--swag-color-primary);
 }
 
 .feed .detail {
