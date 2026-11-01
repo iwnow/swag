@@ -854,7 +854,7 @@ export interface Preferences {
   - README `ui-core`, глоссарий.
 
   Закрывает: REQ-014-24 (часть), REQ-014-25, AC-014-21, AC-014-26 (часть). Готово, когда: `npm run check` зелёный.
-- [ ] **T-22.** `packages/ui-core`: `src/balance.state.ts` и `src/shell.store.ts` по 4.12, тесты AC-014-27 и AC-014-22. README, глоссарий. Закрывает: AC-014-22, AC-014-27. Готово, когда: тесты зелёные.
+- [x] **T-22.** `packages/ui-core`: `src/balance.state.ts` и `src/shell.store.ts` по 4.12, тесты AC-014-27 и AC-014-22. README, глоссарий. Закрывает: AC-014-22, AC-014-27. Готово, когда: тесты зелёные.
 - [ ] **T-23.** `packages/ui-core/src/cabinet.store.ts` поверх `createUiCore` и `createBalanceState`, тест AC-014-23. README, глоссарий. Закрывает: AC-014-23. Готово, когда: тесты зелёные.
 - [ ] **T-24.** `packages/ui-angular`: мост и переход каркаса на сторы.
   - `src/stores.ts`: `toAngularSignal`, `connectStore`, `Connected`, токены, `provideShellStore`, `provideCabinetStore`. Тест — AC-014-26, часть `stores.test.ts`.
@@ -1032,6 +1032,7 @@ export interface Preferences {
 | 2026-11-01 | `spec/014-state` | Дополнение по Q-9 (решение человека): сторы `ui-core` на `@preact/signals-core` и мост `connectStore` в `@swag/ui-angular` — REQ-014-23…25, раздел 4.12, AC-014-21…27, задачи T-21…T-25, правки T-14…T-17. Спека заблокирована до подтверждения дополнения человеком. D-139 и D-146 сняты: поведение задано в 4.12 (`restore()` и перечитывание `AuthMe` при смене токена) | Разделы 2–8 изменены по решению человека, не агентом самостоятельно: правило 1 `CLAUDE.md` |
 | 2026-11-01 | `spec/014-state` | Человек подтвердил дополнение 4.12 с мостом `connectStore`. Спека снова в работе: следующие этапы T-21…T-25, затем T-12…T-20 | — |
 | 2026-11-01 | `spec/014-t21` / 44303f4 | T-21: `@preact/signals-core` 1.14.5 в `ui-core`; `arch:check` пускает его только в `ui-core` и без подпутей (`UI_CORE_EXTRA_PACKAGES`); порты `BalanceApi`, `MeApi`, `Preferences`; `createSessionUserStore`, тип `SessionStatus`. Тесты AC-014-21 (`packages/ui-core/test/session-user.store.test.ts`), AC-014-26 часть `arch-check`. Трактовки на подтверждение: D-147 (сбой `MeApi.me`), D-148 (`AuthMe` дважды `null` после renew) | Исключение для preact записано в правило 1 «Правила ядра» (белый список), а не в правило 2, как в 4.12: правило 2 — про фреймворки, белый список — правило 1 |
+| 2026-11-01 | `spec/014-t22` / 3d548f9 | T-22: `createBalanceState` (`balance.state.ts`), `createShellStore` (`shell.store.ts`), тип `ThemeMode`; `formatUsd` и `usdToMicro` вынесены в `money.ts` без смены API. Тесты AC-014-27, AC-014-22. Трактовки: зависимости сторов — узкие `Pick<SessionUserStore, …>`; устаревший ответ баланса отбрасывается по счётчику поколений, в том числе на ошибке и у `more`; `open` сбрасывает и `loadingMore`, `submitting`; `topup` после смены организации её не перечитывает; повторные `more` и `topup` в полёте игнорируются; исключение сессии в `ShellStore` даёт `authErrorText('unknown')`; `register` возвращает `Promise<void>` | Стейл-проверка баланса на ошибке — как требует 4.12; прежняя панель проверяла только успех |
 
 ### T-1. Итоги проверки федерации
 
