@@ -1,7 +1,20 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
-import { BalancePanelComponent, CurrentUser, PageComponent } from '@swag/ui-angular';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  effect,
+  inject,
+  untracked,
+} from '@angular/core';
+import {
+  BalancePanelComponent,
+  CABINET_STORE,
+  PageComponent,
+  SESSION_USER,
+  toAngularSignal,
+} from '@swag/ui-angular';
 
-// Спека 013, 4.11 и 014, 4.11: страница «Баланс» — обёртка над `swag-balance-panel` с `orgId` из `CurrentUser`.
+// Спека 013, 4.11 и 014, 4.12: страница «Баланс» рисует `CabinetStore.balance`; организация — из SESSION_USER.
 // Комментарий пополнения в кабинете не обязателен (`requireComment` = false).
 @Component({
   selector: 'app-balance-page',
@@ -9,10 +22,26 @@ import { BalancePanelComponent, CurrentUser, PageComponent } from '@swag/ui-angu
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <swag-page title="Баланс">
-      <swag-balance-panel [orgId]="orgId()" [requireComment]="false" />
+      <swag-balance-panel
+        [state]="cabinet.balance"
+        (more)="cabinet.balance.more()"
+        (topup)="onTopup($event)"
+      />
     </swag-page>
   `,
 })
 export class BalancePageComponent {
-  readonly orgId = inject(CurrentUser).orgId;
+  protected readonly cabinet = inject(CABINET_STORE);
+
+  constructor() {
+    const orgId = toAngularSignal(inject(SESSION_USER).orgId, inject(DestroyRef));
+    effect(() => {
+      const id = orgId();
+      untracked(() => void this.cabinet.balance.open(id));
+    });
+  }
+
+  protected onTopup(input: { amountUsd: string; comment: string }): void {
+    void this.cabinet.balance.topup(input, false);
+  }
 }

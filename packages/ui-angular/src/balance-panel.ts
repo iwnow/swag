@@ -1,28 +1,20 @@
 import {
-  booleanAttribute,
   ChangeDetectionStrategy,
   Component,
-  computed,
   effect,
-  inject,
   input,
+  output,
   signal,
   untracked,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import {
-  ROLE_PERMISSIONS,
-  TopupRequest,
-  type BalanceEntry,
-  type BalanceView,
-} from '@swag/contracts';
-import { FORM_TEXT, formatUsd, usdToMicro } from '@swag/ui-core';
-import { createBalanceApi } from './balance-api.ts';
+import type { BalanceEntry } from '@swag/contracts';
+import { formatUsd, type BalanceState } from '@swag/ui-core';
 import { AlertComponent } from './components/alert.ts';
 import { ButtonDirective } from './components/button.ts';
 import { FieldComponent } from './components/field.ts';
 import { TableComponent } from './components/table.ts';
-import { CurrentUser, SESSION } from './session.ts';
+import type { Connected } from './stores.ts';
 
 const KIND_LABEL: Record<BalanceEntry['kind'], string> = { topup: 'Пополнение', swarm: 'Рой' };
 
@@ -36,23 +28,20 @@ const formatDate = (ts: string): string =>
     timeStyle: 'short',
   });
 
-const errorText = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
-// Спека 013, 4.11 и 014, 4.7: панель баланса организации. Числа и история — от API, правил нет.
-// Форма пополнения — при праве `balance.topup` у роли из /auth/me. `requireComment` делает комментарий обязательным (014, 4.6).
+// Спека 013, 4.11 и 014, 4.12: панель баланса без своего состояния. Данные, проверки и запросы — в сторе
+// (`state`, BalanceState из ui-core). Панель рисует сигналы и отдаёт ввод формы наружу через `topup` и `more`.
 @Component({
   selector: 'swag-balance-panel',
   imports: [RouterLink, ButtonDirective, AlertComponent, FieldComponent, TableComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (orgId() === null) {
+    @if (state().orgId() === null) {
       <p>Баланс доступен только пользователям организации.</p>
     } @else {
-      @if (error(); as message) {
+      @if (state().error(); as message) {
         <swag-alert kind="error">{{ message }}</swag-alert>
       }
-      @if (balance(); as view) {
+      @if (state().view(); as view) {
         <div class="numbers">
           <div>
             <span>Баланс</span>
@@ -69,9 +58,9 @@ const errorText = (error: unknown): string =>
         </div>
       }
 
-      @if (canTopup()) {
+      @if (state().canTopup()) {
         <h2>Пополнение</h2>
-        <form (submit)="$event.preventDefault(); topup()">
+        <form (submit)="$event.preventDefault(); submit()">
           <swag-field label="Сумма, $">
             <input
               type="number"
@@ -81,18 +70,18 @@ const errorText = (error: unknown): string =>
               (input)="setAmount($event)"
             />
           </swag-field>
-          <swag-field label="Комментарий" [error]="commentError()">
+          <swag-field label="Комментарий" [error]="state().commentError()">
             <input maxlength="500" [value]="comment()" (input)="setComment($event)" />
           </swag-field>
-          @if (formError(); as message) {
+          @if (state().formError(); as message) {
             <swag-alert kind="error">{{ message }}</swag-alert>
           }
-          <button swag-button type="submit" [busy]="submitting()">Пополнить</button>
+          <button swag-button type="submit" [busy]="state().submitting()">Пополнить</button>
         </form>
       }
 
       <h2>История</h2>
-      <swag-table [empty]="loaded() ? 'Записей пока нет.' : ''">
+      <swag-table [empty]="state().loaded() ? 'Записей пока нет.' : ''">
         <table>
           <thead>
             <tr>
@@ -104,7 +93,7 @@ const errorText = (error: unknown): string =>
             </tr>
           </thead>
           <tbody>
-            @for (entry of entries(); track entry.id) {
+            @for (entry of state().entries(); track entry.id) {
               <tr>
                 <td>{{ date(entry.ts) }}</td>
                 <td>{{ kind(entry.kind) }}</td>
@@ -120,13 +109,13 @@ const errorText = (error: unknown): string =>
           </tbody>
         </table>
       </swag-table>
-      @if (nextBefore() !== null) {
+      @if (state().nextBefore() !== null) {
         <button
           swag-button
           variant="secondary"
           type="button"
-          [busy]="loading()"
-          (click)="loadMore()"
+          [busy]="state().loadingMore()"
+          (click)="more.emit()"
         >
           Ещё
         </button>
@@ -151,27 +140,12 @@ const errorText = (error: unknown): string =>
   `,
 })
 export class BalancePanelComponent {
-  readonly orgId = input<string | null>(null);
-  readonly requireComment = input(false, { transform: booleanAttribute });
-  private readonly api = createBalanceApi(inject(SESSION));
-  private readonly current = inject(CurrentUser);
+  readonly state = input.required<Connected<BalanceState>>();
+  readonly more = output<void>();
+  readonly topup = output<{ amountUsd: string; comment: string }>();
 
-  readonly balance = signal<BalanceView | null>(null);
-  readonly entries = signal<BalanceEntry[]>([]);
-  readonly nextBefore = signal<number | null>(null);
-  readonly loaded = signal(false);
-  readonly loading = signal(false);
-  readonly error = signal<string | null>(null);
-
-  readonly canTopup = computed(() => {
-    const role = this.current.role();
-    return role !== null && ROLE_PERMISSIONS[role].includes('balance.topup');
-  });
   readonly amount = signal('');
   readonly comment = signal('');
-  readonly formError = signal<string | null>(null);
-  readonly commentError = signal<string | null>(null);
-  readonly submitting = signal(false);
 
   readonly usd = formatUsd;
   readonly signed = signedUsd;
@@ -179,36 +153,22 @@ export class BalancePanelComponent {
   readonly kind = (value: BalanceEntry['kind']): string => KIND_LABEL[value];
 
   constructor() {
-    // Смена orgId (переключение организации) сбрасывает состояние и перечитывает данные. Остальное читается untracked.
+    // Поля формы очищаются, когда отправка прошла без ошибки формы: проверки и запросы — в сторе.
+    let sending = false;
     effect(() => {
-      const orgId = this.orgId();
+      const busy = this.state().submitting();
       untracked(() => {
-        this.balance.set(null);
-        this.entries.set([]);
-        this.nextBefore.set(null);
-        this.error.set(null);
-        this.loaded.set(false);
-        this.formError.set(null);
-        this.commentError.set(null);
-        void this.reload(orgId);
+        if (busy) {
+          sending = true;
+          return;
+        }
+        if (sending && this.state().formError() === null) {
+          this.amount.set('');
+          this.comment.set('');
+        }
+        sending = false;
       });
     });
-  }
-
-  async loadMore(): Promise<void> {
-    const orgId = this.orgId();
-    const before = this.nextBefore();
-    if (orgId === null || before === null) return;
-    this.loading.set(true);
-    try {
-      const page = await this.api.listBalanceEntries(orgId, before);
-      this.entries.update((list) => [...list, ...page.entries]);
-      this.nextBefore.set(page.nextBefore);
-    } catch (error) {
-      this.error.set(errorText(error));
-    } finally {
-      this.loading.set(false);
-    }
   }
 
   setAmount(event: Event): void {
@@ -219,59 +179,7 @@ export class BalancePanelComponent {
     this.comment.set((event.target as HTMLInputElement).value);
   }
 
-  // Тело — по схеме TopupRequest; пустой комментарий уходит как null. Без комментария при requireComment — ошибка поля.
-  async topup(): Promise<void> {
-    const orgId = this.orgId();
-    if (orgId === null) return;
-    this.formError.set(null);
-    this.commentError.set(null);
-    const comment = this.comment().trim();
-    if (this.requireComment() && comment === '') {
-      this.commentError.set(FORM_TEXT.comment);
-      return;
-    }
-    const body = TopupRequest.safeParse({
-      amountMicroUsd: usdToMicro(this.amount()),
-      comment: comment === '' ? null : comment,
-    });
-    if (!body.success) {
-      this.formError.set('Проверьте сумму: от $0.000001 до $1000, комментарий до 500 символов.');
-      return;
-    }
-    this.submitting.set(true);
-    try {
-      await this.api.topup(orgId, body.data);
-      this.amount.set('');
-      this.comment.set('');
-      await this.reload(orgId);
-    } catch (error) {
-      this.formError.set(errorText(error));
-    } finally {
-      this.submitting.set(false);
-    }
-  }
-
-  // Баланс и первая страница истории перечитываются вместе.
-  // Ответ, пришедший после смены orgId, не применяется.
-  private async reload(orgId: string | null): Promise<void> {
-    if (orgId === null) {
-      this.loaded.set(true);
-      return;
-    }
-    this.error.set(null);
-    try {
-      const [balance, page] = await Promise.all([
-        this.api.getBalance(orgId),
-        this.api.listBalanceEntries(orgId, null),
-      ]);
-      if (this.orgId() !== orgId) return;
-      this.balance.set(balance);
-      this.entries.set(page.entries);
-      this.nextBefore.set(page.nextBefore);
-    } catch (error) {
-      this.error.set(errorText(error));
-    } finally {
-      this.loaded.set(true);
-    }
+  submit(): void {
+    this.topup.emit({ amountUsd: this.amount(), comment: this.comment() });
   }
 }

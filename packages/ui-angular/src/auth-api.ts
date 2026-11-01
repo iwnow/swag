@@ -1,10 +1,11 @@
-import type {
-  AuthRefreshed,
-  AuthSession,
-  InvitationAcceptRequest,
-  RegistrationConfirmRequest,
+import {
+  AuthMe,
+  type AuthRefreshed,
+  type AuthSession,
+  type InvitationAcceptRequest,
+  type RegistrationConfirmRequest,
 } from '@swag/contracts';
-import type { AuthApi } from '@swag/ui-core';
+import type { AuthApi, MeApi } from '@swag/ui-core';
 import { httpError } from './http.ts';
 
 // Спека 024, 4.15: адаптер AuthApi на fetch. Идёт через прокси `/auth` → identity; cookie swag_refresh — same-origin.
@@ -27,13 +28,23 @@ async function signIn(
   return (await response.json()) as AuthSession;
 }
 
-// Спека 013, 4.11 (D-130): GET /auth/me с токеном доступа; ответ разбирает CurrentUser по схеме AuthMe.
+// Спека 013, 4.11 (D-130): GET /auth/me с токеном доступа; ответ разбирает meApi по схеме AuthMe.
 export function getMe(token: string): Promise<Response> {
   return fetch('/auth/me', {
     credentials: 'same-origin',
     headers: { authorization: `Bearer ${token}` },
   });
 }
+
+// Спека 014, 4.12: MeApi поверх getMe. 401 — null; прочая ошибка и неразобранный ответ — исключение (ensureMe сбрасывает кэш, D-147).
+export const meApi: MeApi = {
+  async me(token) {
+    const response = await getMe(token);
+    if (response.status === 401) return null;
+    if (!response.ok) throw await httpError(response);
+    return AuthMe.parse(await response.json());
+  },
+};
 
 export const authApi: AuthApi = {
   login: (email, password) => signIn('/login', { email, password }),

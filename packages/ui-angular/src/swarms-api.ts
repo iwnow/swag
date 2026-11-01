@@ -1,12 +1,12 @@
 import type { PlatformEvent, SwarmCreateRequest, SwarmSummary } from '@swag/contracts';
-import type { AuthSessionKeeper, EventStream, SwarmsApi } from '@swag/ui-core';
+import type { EventStream, SwarmsApi } from '@swag/ui-core';
 import type { SwarmView } from '@swag/api-integration';
-import { createRequest } from '@swag/ui-angular';
+import { createRequest, type RequestSession } from './http.ts';
 
 // Адаптеры UI к API роёв и потока: REST и WebSocket идут по относительному пути /api (прокси снимает префикс).
 // Спека 024, 4.15: каждый запрос с Bearer-токеном сессии; на 401 — renew и один повтор (`createRequest`).
 
-export function createSwarmsApi(session: AuthSessionKeeper): SwarmsApi {
+export function createSwarmsApi(session: RequestSession): SwarmsApi {
   const request = createRequest(session, '/api');
   return {
     list: () => request<SwarmSummary[]>('GET', '/swarms'),
@@ -19,7 +19,7 @@ export function createSwarmsApi(session: AuthSessionKeeper): SwarmsApi {
 }
 
 // Спека 024, 4.6: токен в подпротоколе `swag.bearer.<token>`. Закрытие 4401 — обновить токен до переподключения.
-export function createSwarmStream(session: AuthSessionKeeper): EventStream {
+export function createSwarmStream(session: RequestSession): EventStream {
   return {
     open(swarmId, after, handlers) {
       const token = session.accessToken();

@@ -1,6 +1,7 @@
 import { loadRemoteModule } from '@angular-architects/native-federation';
 import { inject, Injectable } from '@angular/core';
 import type { Routes } from '@angular/router';
+import { readFederationManifest } from '@swag/ui-angular';
 import { isLocalRemoteUrl } from '@swag/ui-core';
 
 // Спека 014, 4.4: адреса remote из манифеста каркаса. Записи с чужим адресом отбрасываются.
@@ -24,9 +25,7 @@ export class RemoteRegistry {
   private async readManifest(): Promise<void> {
     let manifest: unknown;
     try {
-      const response = await fetch('/federation.manifest.json');
-      if (!response.ok) throw new Error(`manifest_http_${response.status}`);
-      manifest = await response.json();
+      manifest = await readFederationManifest();
       if (typeof manifest !== 'object' || manifest === null) throw new Error('manifest_shape');
     } catch {
       this.reading = null;

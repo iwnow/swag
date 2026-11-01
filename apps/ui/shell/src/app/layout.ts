@@ -1,13 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
-import { Router, RouterLink, RouterOutlet } from '@angular/router';
-import {
-  ButtonDirective,
-  CurrentUser,
-  SESSION,
-  ThemeService,
-  type ThemeMode,
-} from '@swag/ui-angular';
-import { navigationFor } from '@swag/ui-core';
+import { RouterLink, RouterOutlet } from '@angular/router';
+import { ButtonDirective, connectStore, SESSION_USER, SHELL_STORE } from '@swag/ui-angular';
+import type { ThemeMode } from '@swag/ui-core';
 
 const THEME_MODES: readonly ThemeMode[] = ['system', 'light', 'dark'];
 const THEME_LABEL: Record<ThemeMode, string> = {
@@ -37,7 +31,7 @@ const THEME_LABEL: Record<ThemeMode, string> = {
           Тема
           <select (change)="setTheme($event)">
             @for (mode of modes; track mode) {
-              <option [value]="mode" [selected]="mode === theme.mode()">{{ labels[mode] }}</option>
+              <option [value]="mode" [selected]="mode === shell.theme()">{{ labels[mode] }}</option>
             }
           </select>
         </label>
@@ -81,28 +75,25 @@ const THEME_LABEL: Record<ThemeMode, string> = {
   `,
 })
 export class LayoutComponent {
-  private readonly session = inject(SESSION);
-  private readonly current = inject(CurrentUser);
-  private readonly router = inject(Router);
-  protected readonly theme = inject(ThemeService);
+  private readonly session = connectStore(inject(SESSION_USER));
+  protected readonly shell = inject(SHELL_STORE);
   protected readonly modes = THEME_MODES;
   protected readonly labels = THEME_LABEL;
-  protected readonly navigation = computed(() => navigationFor(this.current.me()));
+  protected readonly navigation = this.session.navigation;
   protected readonly who = computed(() => {
-    const me = this.current.me();
+    const me = this.session.me();
     if (me === null) return null;
     return me.organization === null ? me.user.email : `${me.user.email} · ${me.organization.name}`;
   });
+
   protected setTheme(event: Event): void {
     const value = (event.target as HTMLSelectElement).value;
     const mode = THEME_MODES.find((candidate) => candidate === value);
-    if (mode !== undefined) this.theme.setMode(mode);
+    if (mode !== undefined) this.shell.setTheme(mode);
   }
 
-  // Трактовка: ошибка logout не показывается — токен на клиенте уже стёрт (как в кабинете).
+  // Трактовка: ошибка logout не показывается — токен на клиенте уже стёрт. Переход на /login делает App по статусу.
   protected async logout(): Promise<void> {
-    await this.session.logout().catch(() => undefined);
-    this.current.clear();
-    await this.router.navigateByUrl('/login');
+    await this.shell.logout().catch(() => undefined);
   }
 }

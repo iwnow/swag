@@ -3,14 +3,14 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   AlertComponent,
   ButtonDirective,
-  ensureRestored,
   FieldComponent,
   PageComponent,
-  SESSION,
+  SESSION_USER,
+  SHELL_STORE,
 } from '@swag/ui-angular';
-import { authErrorText, safeReturnTo } from '@swag/ui-core';
+import { safeReturnTo } from '@swag/ui-core';
 
-// Спека 014, 4.11: /login?returnTo= — при открытой сессии сразу на safeReturnTo(returnTo).
+// Спека 014, 4.11 и 4.12: /login?returnTo= — вход через ShellStore; при открытой сессии сразу на returnTo.
 @Component({
   selector: 'app-login-page',
   imports: [RouterLink, AlertComponent, ButtonDirective, FieldComponent, PageComponent],
@@ -36,28 +36,30 @@ import { authErrorText, safeReturnTo } from '@swag/ui-core';
             (input)="password.set(inputValue($event))"
           />
         </swag-field>
-        @if (error(); as message) {
+        @if (shell.form().error; as message) {
           <swag-alert kind="error">{{ message }}</swag-alert>
         }
-        <button swag-button type="submit" [busy]="busy()">Войти</button>
+        <button swag-button type="submit" [busy]="shell.form().busy">Войти</button>
       </form>
       <p><a routerLink="/signup">Зарегистрировать компанию</a></p>
     </swag-page>
   `,
 })
 export class LoginPageComponent {
-  private readonly session = inject(SESSION);
+  protected readonly shell = inject(SHELL_STORE);
+  private readonly session = inject(SESSION_USER);
   private readonly router = inject(Router);
   private readonly returnTo = safeReturnTo(
     inject(ActivatedRoute).snapshot.queryParamMap.get('returnTo'),
   );
   readonly email = signal('');
   readonly password = signal('');
-  readonly error = signal<string | null>(null);
-  readonly busy = signal(false);
 
   constructor() {
-    void ensureRestored().then(() => {
+    // Форма ShellStore общая для страниц каркаса — чужие ошибка и busy не должны попасть на вход.
+    this.shell.resetForm();
+    // Сессия уже открыта (например, после обновления страницы) — сразу на returnTo.
+    void this.session.restore().then(() => {
       if (this.session.accessToken() !== null) void this.router.navigateByUrl(this.returnTo);
     });
   }
@@ -67,15 +69,11 @@ export class LoginPageComponent {
   }
 
   protected async submit(): Promise<void> {
-    this.busy.set(true);
-    this.error.set(null);
-    const result = await this.session.login(this.email(), this.password());
-    this.busy.set(false);
-    if (result.ok) {
-      await this.router.navigateByUrl(this.returnTo);
+    const next = await this.shell.login(this.email(), this.password(), this.returnTo);
+    if (next !== null) {
+      await this.router.navigateByUrl(next);
       return;
     }
     this.password.set('');
-    this.error.set(authErrorText(result.code));
   }
 }
