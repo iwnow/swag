@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { Router, RouterLink } from '@angular/router';
 import { PlatformModel } from '@swag/contracts';
 import { formatUsd, swarmFormInput, type AgentInput, type FormIssue } from '@swag/ui-core';
-import { CurrentUser, HttpError } from '@swag/ui-angular';
+import { connectStore, HttpError, SESSION_USER } from '@swag/ui-angular';
 import { BALANCE, UI, errorText } from './ui.ts';
 
 const DEFAULT_MODEL: PlatformModel = 'chat-small';
@@ -112,7 +112,7 @@ const newAgent = (): AgentInput => ({
 export class SwarmNewPageComponent {
   private readonly ui = inject(UI);
   private readonly balance = inject(BALANCE);
-  private readonly current = inject(CurrentUser);
+  private readonly session = connectStore(inject(SESSION_USER));
   private readonly router = inject(Router);
 
   readonly models = PlatformModel.options;
@@ -182,7 +182,7 @@ export class SwarmNewPageComponent {
 
   // Спека 013, 4.11: 402 insufficient_balance — доступный остаток перечитывается с сервера.
   private async submitError(error: unknown): Promise<string> {
-    const orgId = this.current.orgId();
+    const orgId = this.session.orgId();
     const insufficient =
       error instanceof HttpError && error.status === 402 && error.code === 'insufficient_balance';
     if (!insufficient || orgId === null) return errorText(error);

@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { SESSION } from '@swag/ui-angular';
+import { SESSION_USER } from '@swag/ui-angular';
 
 // Спека 024, 4.2: тексты по коду ошибки входа; неизвестный код — общий текст.
 const LOGIN_ERRORS: Record<string, string> = {
@@ -45,7 +45,7 @@ const FALLBACK_ERROR = 'Не удалось войти. Попробуйте е�
   `,
 })
 export class LoginPageComponent {
-  private readonly session = inject(SESSION);
+  private readonly session = inject(SESSION_USER);
   private readonly router = inject(Router);
   readonly email = signal('');
   readonly password = signal('');

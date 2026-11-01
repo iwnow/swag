@@ -28,7 +28,7 @@ async function signIn(
   return (await response.json()) as AuthSession;
 }
 
-// Спека 013, 4.11 (D-130): GET /auth/me с токеном доступа; ответ разбирает CurrentUser по схеме AuthMe.
+// Спека 013, 4.11 (D-130): GET /auth/me с токеном доступа; ответ разбирает meApi по схеме AuthMe.
 export function getMe(token: string): Promise<Response> {
   return fetch('/auth/me', {
     credentials: 'same-origin',

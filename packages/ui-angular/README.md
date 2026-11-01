@@ -4,7 +4,7 @@
 
 ## Задачи
 
-- `SESSION` и `CurrentUser` — один `AuthSessionKeeper` на приложение; роль и организация из `GET /auth/me` (спека 013, D-130).
+- Сессия — `SessionUserStore` (`SESSION_USER`, `ui-core`): один `AuthSessionKeeper` и `GET /auth/me` на страницу; роль и организация из `/auth/me` (спека 013, D-130; 014, 4.12).
 - `createRequest(session, basePath)` — REST с `Authorization: Bearer`, на `401` один `renew()` и повтор, ошибка — `HttpError`.
 - `authApi`, `getMe` — адаптер `AuthApi` из `ui-core` на `fetch` по `/auth` (024, 4.15).
 - `meApi` — порт `MeApi` поверх `getMe`: `401` → `null`, прочая ошибка — исключение (014, 4.12).
@@ -16,17 +16,16 @@
 - `createUsersApi(session)`, `createOrganizationsApi(session)` — порты админки и супервизора (014, 4.3) по `/auth` (024, 4.7).
 - `styles/tokens.css` — дизайн-токены 4.8 для светлой и тёмной темы (REQ-014-16, REQ-014-21).
 - `styles/base.css` — глобальные стили фронтендов (элементы, раскладка, классы кабинета `.feed`, `.agent-row`, `.toolbar`) только на токенах (REQ-014-16); перенесено из `<style>` кабинета (014, 4.7).
-- `ThemeService` — режим темы `system` | `light` | `dark`, атрибут `data-theme` на `<html>`, выбор в `localStorage` под `swag.theme` (014, 4.7, REQ-014-16).
+- Тема — `SHELL_STORE.theme` и `setTheme` (014, 4.12): выбор хранит `preferences` под `swag.theme`, атрибут `data-theme` на `<html>` ставит каркас (REQ-014-16).
 
-- `ensureRestored()`, `sessionGuard`, `areaGuard(area)` — guard'ы маршрутов (014, 4.4, 4.7).
-- `swag-balance-panel` — панель баланса организации (013, 4.11; 014, 4.7).
+- `sessionGuard`, `areaGuard(area)` — guard's маршрутов на `SESSION_USER` (014, 4.4, 4.12).
+- `swag-balance-panel` — панель баланса без своего состояния: вход `state`, выходы `more` и `topup` (013, 4.11; 014, 4.12).
 
 Переключатель темы в шапке каркаса — в T-11 (4.7, 4.8).
 
 ## Что внутри сейчас
 
 - `src/http.ts` — `HttpError` (`status`, `code`; без кода в теле — `'unknown'`), `httpError(response)`, `createRequest(session, basePath)`, тип `RequestSession`.
-- `src/session.ts` — `SESSION` и `CurrentUser`: `role`, `orgId`, публичный `me: Signal<AuthMe | null>` (только чтение), `ensure()`, `clear()`.
 - `src/auth-api.ts` — `authApi`, `getMe(token)`.
 - `src/balance-api.ts` — `createBalanceApi`, тип `BalanceApi`.
 - `src/swarms-api.ts` — `createSwarmsApi(session)` (REST, basePath `/api`), `createSwarmStream(session)` (WebSocket, подпротокол `swag.bearer.<token>`, `4401` → `renew`). Принимают `RequestSession`.
@@ -35,11 +34,11 @@
 - `test/stores.test.ts` — AC-014-26 (мост на Angular injection context из `@angular/core`, без TestBed) и тест `preferences`.
 - `src/users-api.ts` — `createUsersApi`, `createOrganizationsApi`.
 - `styles/tokens.css` — токены: светлая тема в `:root`, тёмная в `:root[data-theme='dark']` и в `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) }`. Проверяет `scripts/ui-config.test.ts` (AC-014-10, контраст).
-- `src/theme.ts` — `ThemeService` (`providedIn: 'root'`): `mode` — signal только для чтения, `setMode(mode)`; `ThemeMode`.
 - `styles/base.css` — глобальные стили; цвета, шрифты, отступы и радиусы только `var(--swag-…)`.
 - `src/components/button.ts` — директива `button[swag-button]` (`variant`, `disabled`, `busy`), `ButtonVariant`; `field.ts` — `swag-field` (`label`, `error`); `card.ts` — `swag-card` (`title`); `alert.ts` — `swag-alert` (`kind`), `AlertKind`; `table.ts` — `swag-table` (`empty`); `page.ts` — `swag-page` (`title`); `confirm.ts` — `swag-confirm` (`text`; выходы `confirmed`, `cancelled`) на `@angular/cdk/dialog`.
-- `src/guards.ts` — `ensureRestored()`, `sessionGuard` (`CanMatchFn` для родителя маршрутов), `areaGuard(area)` (`canOpen` из `ui-core`, иначе `UrlTree` на `/`).
-- `src/balance-panel.ts` — `BalancePanelComponent` (`swag-balance-panel`: `orgId`, `requireComment`): числа, история с «Ещё», форма пополнения при праве `balance.topup`.
+- `src/guards.ts` — `sessionGuard` (`CanMatchFn` для родителя маршрутов: `SESSION_USER.restore()`, без токена — `UrlTree` на `/login?returnTo=`), `areaGuard(area)` (`ensureMe()`, затем `canOpen`; нет доступа — `UrlTree` на `/`).
+- `src/balance-panel.ts` — `BalancePanelComponent` (`swag-balance-panel`): вход `state` (`Connected<BalanceState>`), выходы `more` и `topup` (`{ amountUsd, comment }`); состояния нет, проверки и запросы — в сторе.
+- `src/manifest.ts` — `readFederationManifest()`: `fetch` манифеста федерации (014, 4.4). Приложения `apps/ui/*` `fetch` не вызывают (AC-014-26).
 - `src/index.ts` — реэкспорт всего перечисленного.
 - `test/http.test.ts` — AC-014-19 (403 без `renew`, `401` → `renew` → повтор, два одновременных `401` → один `renew`).
 - `package.json` — `exports`: `.` → `./src/index.ts`, `./styles/*` → `./styles/*`.
@@ -59,20 +58,19 @@
 - `authApi` не использует `createRequest`: у входа и обновления нет Bearer, а `refresh` сам вызывается keeper'ом (иначе цикл).
 - `HttpError` из `@swag/ui-angular` и `HttpError` из `@swag/helpers/server` (повтор с задержкой, 004) — разные классы с разными конструкторами. Импортировать каждый из своего пакета.
 - Тело ошибки, которое не JSON, даёт `HttpError` с кодом `'unknown'` (раньше в кабинете это был `SyntaxError`).
-- `CurrentUser.me` публичен только для чтения: `Signal` без `set` снаружи.
 - `@angular/forms` 22.2.3 — явная зависимость. Без неё `npm install` не сходится: `@angular/cdk@22.2.3` требует `@angular/forms` в диапазоне `^22`, и npm берёт `22.2.4`, у которого peer `@angular/common` 22.2.4. Тот же приём, что в T-1 для `@angular/compiler-cli`.
 - Версия `@angular/cdk` — 22.2.3: есть в npm (`npm view @angular/cdk@22.2.3 version`), совпадает с остальными `@angular/*`.
 - Пакет подключается по workspace (`packages/*` в `package.json` корня), без `paths`: `node_modules/@swag/ui-angular` ведёт сюда.
 - Стили подключаются в `apps/ui/cabinet/angular.json` (`build.options.styles`) по имени пакета: `@swag/ui-angular/styles/tokens.css`, затем `base.css`. Сборка `ng build` резолвит `exports` без путей `../../../packages/...`; `<style>` из `index.html` кабинета удалён.
-- `ThemeService`: «system» — атрибут `data-theme` снимается, тему выбирает `prefers-color-scheme` через `tokens.css`; «light» и «dark» — атрибут на `<html>`, перекрывает системную тему. `localStorage` и его ошибки (приватный режим) — в `try/catch`, при недоступности выбор живёт до перезагрузки. Трактовка API (`mode` signal, `setMode`) — D-133.
+- Тема: «system» — атрибут `data-theme` снимается, тему выбирает `prefers-color-scheme` через `tokens.css`; «light» и «dark» — атрибут на `<html>`, перекрывает системную тему. Хранение — `preferences` в `try/catch`; при недоступности выбор живёт до перезагрузки. `ThemeService` удалён (014, 4.12), вопрос D-133 о его API снят.
 - `base.css` задаёт `color-scheme: light dark` на `:root`, с `data-theme` — `light` или `dark` соответственно: нативные контролы браузера совпадают с темой.
 - `button[swag-button]` — директива на нативной кнопке, а не элемент `swag-button`: `type` остаётся нативным, submit внутри форм работает без нового входа. `busy` ставит нативный `disabled` и `aria-busy="true"` (D-135). Вид disabled один для всех вариантов: `.swag-button:disabled` в `base.css` с селектором (0,2,0) перебивает варианты.
 - `swag-field` без директивы: после каждого рендера ставит `aria-describedby` (id ошибки) и `aria-invalid` первому проецируемому `input`, `select` или `textarea`. Чужие id в `aria-describedby` сохраняются, снимается только свой. Ошибка выводится с `role="alert"` (D-136).
 - Пустота `swag-table` определяется CSS `:has(tbody tr)` в `base.css`; входа строк нет (D-137).
 - `swag-confirm` открывает диалог в `ngAfterViewInit` и закрывает в `ngOnDestroy`: потребитель показывает компонент через `@if`. Esc и клик по фону — `cancelled`, `confirmed` только по кнопке «Подтвердить». `aria-describedby` диалога указывает на абзац текста, id уникален на экземпляр (D-138).
-- `ensureRestored()` кэширует промис `restore()` на загрузку страницы. `sessionGuard` после него проверяет `accessToken()`, без токена уводит на `/login` (D-139).
+- `sessionGuard` вызывает `SESSION_USER.restore()`: один `restore` на стор, повторные вызовы получают тот же промис (014, 4.12). После него без токена уводит на `/login`. `ensureRestored` удалён.
 - `sessionGuard` — `canMatch`, а не `canActivate`: проверка до загрузки remote (014, 4.4).
-- `swag-balance-panel` перечитывает данные при смене `orgId`: effect сбрасывает баланс, историю, ошибки и формы и вызывает `reload()`. Остальное в effect читается через `untracked`, поэтому effect зависит только от `orgId`. Успешный ответ по прежней организации не применяется. Пустой комментарий при `requireComment` — ошибка поля с текстом `FORM_TEXT.comment` из `@swag/ui-core`.
+- `swag-balance-panel` без состояния (014, 4.12): данные, проверки формы, запросы и тексты ошибок — в `BalanceState` (`createBalanceState`, `ui-core`). Панель рисует сигналы и отдаёт ввод. Поля суммы и комментария — локальные поля ввода, очищаются после отправки без ошибки формы. `requireComment` задаёт вызывающий: `balance.topup(input, requireComment)`.
 - Видимый фокус (REQ-014-22) — глобальное `:focus-visible` в `base.css`, обводка `--swag-color-focus`.
 
 ## Дизайн-токены (T-7)
@@ -109,7 +107,7 @@
 
 ## Ограничения
 
-- Тестов Angular-части нет (нет TestBed-раннера). `session.ts` проверяется сборкой кабинета (`ng build`) и ручной проверкой. `ensureRestored` без теста: нужен injection context (D-139).
+- Тестов Angular-части нет (нет TestBed-раннера). Мост проверяет `test/stores.test.ts`; guard's, панель и каркас проверяются сборкой (`ng build`) и ручной проверкой.
 
 ## Связи
 
@@ -118,6 +116,6 @@
 
 ## Спеки
 
-- 014 — 4.4, 4.7, 4.8 (токены и компоненты), 4.1, 4.3, AC-014-10 (контраст и литералы, тест в `scripts/ui-config.test.ts`), AC-014-19, REQ-014-13, REQ-014-16, REQ-014-17, REQ-014-21, REQ-014-22, T-5 — T-10. Открытые: D-133 (`ThemeService`), D-134 (цвета статусов графа), D-135 — D-139 (компоненты и `ensureRestored`, приёмка 014).
+- 014 — 4.4, 4.7, 4.8 (токены и компоненты), 4.1, 4.3, 4.12 (мост, сторы, guard's, панель без состояния; T-24), AC-014-10 (контраст и литералы, тест в `scripts/ui-config.test.ts`), AC-014-19, AC-014-26 (часть), REQ-014-13, REQ-014-16, REQ-014-17, REQ-014-21, REQ-014-22, T-5 — T-10. Открытые: D-134 (цвета статусов графа), D-135 — D-138 (компоненты, приёмка 014). D-133 и D-139 касались удалённых `ThemeService` и `ensureRestored`.
 - 024 — 4.15 (сессия, `/auth`).
 - 013 — 4.11 (баланс, `/auth/me`, D-130).

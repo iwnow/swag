@@ -4,7 +4,7 @@ import {
   createBalanceApi,
   createSwarmStream,
   createSwarmsApi,
-  SESSION,
+  SESSION_USER,
   TRACE_URL_TEMPLATE,
   type BalanceApi,
 } from '@swag/ui-angular';
@@ -12,7 +12,7 @@ import {
 // Логика UI из @swag/ui-core; компоненты получают её через токен.
 export const UI = new InjectionToken<UiCore>('ui-core', {
   factory: () => {
-    const session = inject(SESSION);
+    const session = inject(SESSION_USER);
     return createUiCore({
       api: createSwarmsApi(session),
       stream: createSwarmStream(session),
@@ -27,7 +27,7 @@ export const UI = new InjectionToken<UiCore>('ui-core', {
 
 // Спека 013, 4.11: адаптер баланса (REST по `/api`), тот же токен сессии.
 export const BALANCE = new InjectionToken<BalanceApi>('balance-api', {
-  factory: () => createBalanceApi(inject(SESSION)),
+  factory: () => createBalanceApi(inject(SESSION_USER)),
 });
 
 export const errorText = (error: unknown): string =>
