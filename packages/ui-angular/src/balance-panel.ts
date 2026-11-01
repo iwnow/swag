@@ -3,10 +3,11 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   inject,
   input,
-  type OnInit,
   signal,
+  untracked,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import {
@@ -15,7 +16,7 @@ import {
   type BalanceEntry,
   type BalanceView,
 } from '@swag/contracts';
-import { formatUsd, usdToMicro } from '@swag/ui-core';
+import { FORM_TEXT, formatUsd, usdToMicro } from '@swag/ui-core';
 import { createBalanceApi } from './balance-api.ts';
 import { AlertComponent } from './components/alert.ts';
 import { ButtonDirective } from './components/button.ts';
@@ -149,7 +150,7 @@ const errorText = (error: unknown): string =>
     }
   `,
 })
-export class BalancePanelComponent implements OnInit {
+export class BalancePanelComponent {
   readonly orgId = input<string | null>(null);
   readonly requireComment = input(false, { transform: booleanAttribute });
   private readonly api = createBalanceApi(inject(SESSION));
@@ -177,8 +178,21 @@ export class BalancePanelComponent implements OnInit {
   readonly date = formatDate;
   readonly kind = (value: BalanceEntry['kind']): string => KIND_LABEL[value];
 
-  async ngOnInit(): Promise<void> {
-    await this.reload();
+  constructor() {
+    // Смена orgId (переключение организации) сбрасывает состояние и перечитывает данные. Остальное читается untracked.
+    effect(() => {
+      const orgId = this.orgId();
+      untracked(() => {
+        this.balance.set(null);
+        this.entries.set([]);
+        this.nextBefore.set(null);
+        this.error.set(null);
+        this.loaded.set(false);
+        this.formError.set(null);
+        this.commentError.set(null);
+        void this.reload(orgId);
+      });
+    });
   }
 
   async loadMore(): Promise<void> {
@@ -213,7 +227,7 @@ export class BalancePanelComponent implements OnInit {
     this.commentError.set(null);
     const comment = this.comment().trim();
     if (this.requireComment() && comment === '') {
-      this.commentError.set('Укажите комментарий.');
+      this.commentError.set(FORM_TEXT.comment);
       return;
     }
     const body = TopupRequest.safeParse({
@@ -229,7 +243,7 @@ export class BalancePanelComponent implements OnInit {
       await this.api.topup(orgId, body.data);
       this.amount.set('');
       this.comment.set('');
-      await this.reload();
+      await this.reload(orgId);
     } catch (error) {
       this.formError.set(errorText(error));
     } finally {
@@ -238,8 +252,8 @@ export class BalancePanelComponent implements OnInit {
   }
 
   // Баланс и первая страница истории перечитываются вместе.
-  private async reload(): Promise<void> {
-    const orgId = this.orgId();
+  // Ответ, пришедший после смены orgId, не применяется.
+  private async reload(orgId: string | null): Promise<void> {
     if (orgId === null) {
       this.loaded.set(true);
       return;
@@ -250,6 +264,7 @@ export class BalancePanelComponent implements OnInit {
         this.api.getBalance(orgId),
         this.api.listBalanceEntries(orgId, null),
       ]);
+      if (this.orgId() !== orgId) return;
       this.balance.set(balance);
       this.entries.set(page.entries);
       this.nextBefore.set(page.nextBefore);

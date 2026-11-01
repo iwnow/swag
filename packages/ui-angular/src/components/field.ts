@@ -2,6 +2,12 @@ import { afterEveryRender, Component, ElementRef, inject, input } from '@angular
 
 let nextFieldId = 0;
 
+const setAttribute = (element: Element, name: string, value: string | null): void => {
+  if (element.getAttribute(name) === value) return;
+  if (value === null) element.removeAttribute(name);
+  else element.setAttribute(name, value);
+};
+
 // Спека 014, 4.8: `swag-field`. Директива не нужна: после каждого рендера компонент находит проецируемый
 // контрол (input, select, textarea) и ставит ему `aria-describedby` и `aria-invalid` на id ошибки.
 @Component({
@@ -12,7 +18,7 @@ let nextFieldId = 0;
       <ng-content />
     </label>
     @if (error(); as message) {
-      <p class="swag-field__error" [id]="errorId">{{ message }}</p>
+      <p class="swag-field__error" [id]="errorId" role="alert">{{ message }}</p>
     }
   `,
   styles: `
@@ -40,15 +46,20 @@ export class FieldComponent {
     afterEveryRender(() => this.linkControl());
   }
 
+  // Чужие id в aria-describedby сохраняются: снимается только id ошибки этого поля.
   private linkControl(): void {
     const control = this.host.nativeElement.querySelector('input, select, textarea');
     if (control === null) return;
-    if (this.error() === null) {
-      control.removeAttribute('aria-describedby');
-      control.removeAttribute('aria-invalid');
+    const ids = (control.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
+    const message = this.error();
+    if (message === null) {
+      const rest = ids.filter((id) => id !== this.errorId);
+      setAttribute(control, 'aria-describedby', rest.length > 0 ? rest.join(' ') : null);
+      setAttribute(control, 'aria-invalid', null);
     } else {
-      control.setAttribute('aria-describedby', this.errorId);
-      control.setAttribute('aria-invalid', 'true');
+      const next = ids.includes(this.errorId) ? ids : [...ids, this.errorId];
+      setAttribute(control, 'aria-describedby', next.join(' '));
+      setAttribute(control, 'aria-invalid', 'true');
     }
   }
 }

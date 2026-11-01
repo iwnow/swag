@@ -256,3 +256,10 @@
 | Каталог моделей (файл) | `readCatalog` | Чтение `infra/llm/<профиль>/models.json` по `LLM_CATALOG_PATH` и проверка схемой `ModelCatalog` в оболочке шлюза (002, 4.7). |
 | Опции Fastify телеметрии | `telemetryAppOptions` | Опции Fastify оболочки `apps/llm-gateway`: логгер телеметрии и серверный спан на запрос, кроме `/health`; общие для `main.ts` и тестов (002, 4.10, REQ-002-14). |
 | Дизайн-токены | `--swag-color-*`, `--swag-font-*`, `--swag-text-*`, `--swag-space-*`, `--swag-radius-*`, `--swag-shadow-1`, `styles/tokens.css`, `styles/base.css`, `ThemeMode`, `data-theme`, `swag.theme` | CSS custom properties `@swag/ui-angular`: светлая тема в `:root`, тёмная в `:root[data-theme='dark']` и по `prefers-color-scheme`; цвета — `#rrggbb`, пары текста с контрастом ≥ 4.5:1 (014, 4.8, REQ-014-16, REQ-014-21). |
+| Кнопка | `ButtonDirective`, `ButtonVariant` | Директива `button[swag-button]` на нативной кнопке: варианты `primary`, `secondary`, `danger`; `busy` ставит нативный `disabled` (014, 4.8; D-135). |
+| Поле формы | `FieldComponent` | `swag-field`: подпись и ошибка; связывает ошибку с контролом через `aria-describedby` и `aria-invalid` (014, 4.8; D-136). |
+| Карточка | `CardComponent` | `swag-card`: блок с заголовком `h2` (014, 4.8). |
+| Уведомление | `AlertComponent`, `AlertKind` | `swag-alert`: виды `error`, `info`, `success`; у ошибки `role="alert"` (014, 4.8). |
+| Таблица | `TableComponent` | `swag-table`: вход `empty`; пустота определяется CSS (014, 4.8; D-137). |
+| Страница | `PageComponent` | `swag-page`: заголовок `h1` и содержимое (014, 4.8). |
+| Диалог подтверждения | `ConfirmComponent` | `swag-confirm`: диалог на `@angular/cdk/dialog`; выходы `confirmed` и `cancelled`; клик по фону и Esc — `cancelled` (014, 4.8; D-138). |

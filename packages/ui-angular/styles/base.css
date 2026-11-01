@@ -195,6 +195,13 @@ svg {
   color: var(--swag-color-danger-text);
 }
 
+/* Спека 014, 4.8: disabled и busy одинаковы для всех вариантов. Селектор (0,2,0) перебивает варианты и `button:disabled`. */
+.swag-button:disabled {
+  background: var(--swag-color-surface-2);
+  color: var(--swag-color-text-muted);
+  cursor: default;
+}
+
 /* Спека 014, 4.8: пустота swag-table — только CSS. Без строк таблица скрыта, виден текст `empty`. */
 .swag-table:has(tbody tr) .swag-table__empty {
   display: none;

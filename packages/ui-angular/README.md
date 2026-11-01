@@ -28,8 +28,9 @@
 - `styles/tokens.css` — токены: светлая тема в `:root`, тёмная в `:root[data-theme='dark']` и в `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) }`. Проверяет `scripts/ui-config.test.ts` (AC-014-10, контраст).
 - `src/theme.ts` — `ThemeService` (`providedIn: 'root'`): `mode` — signal только для чтения, `setMode(mode)`; `ThemeMode`.
 - `styles/base.css` — глобальные стили; цвета, шрифты, отступы и радиусы только `var(--swag-…)`.
-- `src/components/button.ts` — директива `button[swag-button]` (`variant`, `disabled`, `busy`), `ButtonVariant`.
-- `src/components/field.ts` — `swag-field` (`label`, `error`), `src/components/card.ts` — `swag-card` (`title`), `src/components/alert.ts` — `swag-alert` (`kind`).
+- `src/components/button.ts` — директива `button[swag-button]` (`variant`, `disabled`, `busy`), `ButtonVariant`; `field.ts` — `swag-field` (`label`, `error`); `card.ts` — `swag-card` (`title`); `alert.ts` — `swag-alert` (`kind`), `AlertKind`; `table.ts` — `swag-table` (`empty`); `page.ts` — `swag-page` (`title`); `confirm.ts` — `swag-confirm` (`text`; выходы `confirmed`, `cancelled`) на `@angular/cdk/dialog`.
+- `src/guards.ts` — `ensureRestored()`, `sessionGuard` (`CanMatchFn` для родителя маршрутов), `areaGuard(area)` (`canOpen` из `ui-core`, иначе `UrlTree` на `/`).
+- `src/balance-panel.ts` — `BalancePanelComponent` (`swag-balance-panel`: `orgId`, `requireComment`): числа, история с «Ещё», форма пополнения при праве `balance.topup`.
 - `src/index.ts` — реэкспорт всего перечисленного.
 - `test/http.test.ts` — AC-014-19 (403 без `renew`, `401` → `renew` → повтор, два одновременных `401` → один `renew`).
 - `package.json` — `exports`: `.` → `./src/index.ts`, `./styles/*` → `./styles/*`.
@@ -50,6 +51,14 @@
 - Стили подключаются в `apps/ui/cabinet/angular.json` (`build.options.styles`) по имени пакета: `@swag/ui-angular/styles/tokens.css`, затем `base.css`. Сборка `ng build` резолвит `exports` без путей `../../../packages/...`; `<style>` из `index.html` кабинета удалён.
 - `ThemeService`: «system» — атрибут `data-theme` снимается, тему выбирает `prefers-color-scheme` через `tokens.css`; «light» и «dark» — атрибут на `<html>`, перекрывает системную тему. `localStorage` и его ошибки (приватный режим) — в `try/catch`, при недоступности выбор живёт до перезагрузки. Трактовка API (`mode` signal, `setMode`) — D-133.
 - `base.css` задаёт `color-scheme: light dark` на `:root`, с `data-theme` — `light` или `dark` соответственно: нативные контролы браузера совпадают с темой.
+- `button[swag-button]` — директива на нативной кнопке, а не элемент `swag-button`: `type` остаётся нативным, submit внутри форм работает без нового входа. `busy` ставит нативный `disabled` и `aria-busy="true"` (D-135). Вид disabled один для всех вариантов: `.swag-button:disabled` в `base.css` с селектором (0,2,0) перебивает варианты.
+- `swag-field` без директивы: после каждого рендера ставит `aria-describedby` (id ошибки) и `aria-invalid` первому проецируемому `input`, `select` или `textarea`. Чужие id в `aria-describedby` сохраняются, снимается только свой. Ошибка выводится с `role="alert"` (D-136).
+- Пустота `swag-table` определяется CSS `:has(tbody tr)` в `base.css`; входа строк нет (D-137).
+- `swag-confirm` открывает диалог в `ngAfterViewInit` и закрывает в `ngOnDestroy`: потребитель показывает компонент через `@if`. Esc и клик по фону — `cancelled`, `confirmed` только по кнопке «Подтвердить». `aria-describedby` диалога указывает на абзац текста, id уникален на экземпляр (D-138).
+- `ensureRestored()` кэширует промис `restore()` на загрузку страницы. `sessionGuard` после него проверяет `accessToken()`, без токена уводит на `/login` (D-139).
+- `sessionGuard` — `canMatch`, а не `canActivate`: проверка до загрузки remote (014, 4.4).
+- `swag-balance-panel` перечитывает данные при смене `orgId`: effect сбрасывает баланс, историю, ошибки и формы и вызывает `reload()`. Остальное в effect читается через `untracked`, поэтому effect зависит только от `orgId`. Успешный ответ по прежней организации не применяется. Пустой комментарий при `requireComment` — ошибка поля с текстом `FORM_TEXT.comment` из `@swag/ui-core`.
+- Видимый фокус (REQ-014-22) — глобальное `:focus-visible` в `base.css`, обводка `--swag-color-focus`.
 
 ## Дизайн-токены (T-7)
 
@@ -85,7 +94,7 @@
 
 ## Ограничения
 
-- Тестов Angular-части нет (нет TestBed-раннера). `session.ts` проверяется сборкой кабинета (`ng build`) и ручной проверкой.
+- Тестов Angular-части нет (нет TestBed-раннера). `session.ts` проверяется сборкой кабинета (`ng build`) и ручной проверкой. `ensureRestored` без теста: нужен injection context (D-139).
 
 ## Связи
 
@@ -94,23 +103,6 @@
 
 ## Спеки
 
-- 014 — 4.7, 4.8 (токены), 4.1, 4.3, AC-014-10 (контраст и литералы, тест в `scripts/ui-config.test.ts`), AC-014-19, REQ-014-16, REQ-014-21, T-5, T-6, T-7, T-8. Открытые: D-133 (`ThemeService`), D-134 (цвета статусов графа).
+- 014 — 4.4, 4.7, 4.8 (токены и компоненты), 4.1, 4.3, AC-014-10 (контраст и литералы, тест в `scripts/ui-config.test.ts`), AC-014-19, REQ-014-13, REQ-014-16, REQ-014-17, REQ-014-21, REQ-014-22, T-5 — T-10. Открытые: D-133 (`ThemeService`), D-134 (цвета статусов графа), D-135 — D-139 (компоненты и `ensureRestored`, приёмка 014).
 - 024 — 4.15 (сессия, `/auth`).
 - 013 — 4.11 (баланс, `/auth/me`, D-130).
-
-## Базовые компоненты (T-9, спека 014, 4.8, REQ-014-17, REQ-014-22)
-
-- `button[swag-button]` — директива на нативной `<button>`, а не компонент `<swag-button>`: `type` остаётся нативным, поэтому submit внутри формы работает без нового входа. `busy` ставит нативный `disabled` и `aria-busy="true"`. Варианты `.swag-button--*` стилизуются в `styles/base.css`, рядом с общими правилами `button`.
-- `swag-field` — подпись оборачивает проецируемый контрол в `<label>`, ошибка выводится `<p>` с id. Директивы нет: после каждого рендера компонент находит первый `input`, `select` или `textarea` внутри себя и выставляет ему `aria-describedby` (id ошибки) и `aria-invalid`. При пустой ошибке атрибуты снимаются. Трактовка — ради 4.8 без лишнего входа.
-- `swag-card` — `<section>` с заголовком `h2`. `swag-alert` — `role="alert"` для `kind="error"`, иначе `role="status"`; вид выставляется атрибутом `data-kind` на хосте.
-- Видимый фокус (REQ-014-22) — глобальное правило `:focus-visible` в `styles/base.css`, обводка `--swag-color-focus`.
-- Проверка: тайпчек пакета и `ng build` кабинета (кабинет использует `swag-balance-panel`, поэтому шаблоны компонентов компилируются).
-
-## Таблица, страница, диалог, guard'ы, панель баланса (T-10, спека 014, 4.4, 4.7, 4.8)
-
-- `swag-table` (`empty`) — вход только `empty` по 4.8. Пустота определяется CSS `:has(tbody tr)` в `styles/base.css`: без строк прячутся таблица и заголовки, показывается текст `empty`. Трактовка записана в журнал.
-- `swag-page` (`title`) — заголовок `h1` и область содержимого.
-- `swag-confirm` (`text`; `confirmed`, `cancelled`) — диалог на `@angular/cdk/dialog`. 4.8 не задаёт входа «открыть», поэтому компонент открывает диалог в `ngAfterViewInit` и закрывает в `ngOnDestroy`: потребитель показывает его условно (`@if`). Esc и закрытие без выбора — `cancelled`. Оверлей стилизуется классами `cdk-*` в `base.css` на токенах.
-- `ensureRestored()` — `inject(SESSION)` внутри, поэтому вызывается только в injection context (guard). Есть токен — `true` без `restore()`. Иначе `restore()` один раз: промис кэшируется в модульной переменной навсегда, повторные вызовы получают тот же промис (4.7). Устаревший `true` после выхода не опасен: `sessionGuard` после `ensureRestored()` проверяет `accessToken()` и без токена уводит на `/login?returnTo=…`. Тест не написан: для вызова нужен injection context, а сигнатура по 4.7 без аргументов.
-- `sessionGuard` — `CanMatchFn` для родителя `''` маршрутов (014, 4.4). `areaGuard(area)` — `CanMatchFn`, доступ по `canOpen` из `@swag/ui-core`, иначе `UrlTree` на `/`.
-- `swag-balance-panel` (`orgId`, `requireComment`) — числа, история с «Ещё», форма пополнения при праве `balance.topup`. `orgId` — вход, без него панель показывает «только для пользователей организации». Сам читает `SESSION` и `CurrentUser` (роль для формы). `requireComment` делает комментарий обязательным: текст поля «Укажите комментарий.» (4.6). Панель использует `swag-field`, `swag-alert`, `swag-table`, `button[swag-button]`.

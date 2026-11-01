@@ -11,6 +11,8 @@ import {
 import { Dialog, DialogRef } from '@angular/cdk/dialog';
 import { ButtonDirective } from './button.ts';
 
+let nextConfirmId = 0;
+
 // Спека 014, 4.8: `swag-confirm` на `@angular/cdk/dialog`. Компонент открывает диалог при появлении
 // и закрывает при уничтожении. Esc и закрытие диалога без выбора — `cancelled`.
 @Component({
@@ -19,7 +21,7 @@ import { ButtonDirective } from './button.ts';
   template: `
     <ng-template #content>
       <div class="swag-confirm">
-        <p class="swag-confirm__text">{{ text() }}</p>
+        <p class="swag-confirm__text" [id]="textId">{{ text() }}</p>
         <div class="swag-confirm__actions">
           <button swag-button variant="secondary" type="button" (click)="cancel()">Отмена</button>
           <button swag-button variant="danger" type="button" (click)="confirm()">
@@ -52,11 +54,12 @@ export class ConfirmComponent implements AfterViewInit, OnDestroy {
   readonly cancelled = output<void>();
   private readonly dialog = inject(Dialog);
   private readonly content = viewChild.required<TemplateRef<unknown>>('content');
+  protected readonly textId = `swag-confirm-text-${nextConfirmId++}`;
   private ref: DialogRef<unknown> | null = null;
   private finished = false;
 
   ngAfterViewInit(): void {
-    this.ref = this.dialog.open(this.content(), { panelClass: 'swag-confirm-panel' });
+    this.ref = this.dialog.open(this.content(), { ariaDescribedBy: this.textId });
     this.ref.closed.subscribe(() => {
       if (this.finished) return;
       this.finished = true;
