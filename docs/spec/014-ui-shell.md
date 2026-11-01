@@ -209,7 +209,8 @@ export function isLocalRemoteUrl(url: string): boolean;
 **Формы.** Файл `src/auth-forms.ts`.
 
 ```ts
-export type FormIssue = { field: string; message: string };
+// FormIssue — существующий тип ui-core из 001: { path: string; message: string }
+export function validateEmailForm(input: { email: string }): { ok: true; email: string } | { ok: false; issues: FormIssue[] };
 export function validateConfirmForm(input: { token: string; password: string; repeat: string; organizationName: string }):
   { ok: true; body: RegistrationConfirmRequest } | { ok: false; issues: FormIssue[] };
 export function validateInviteForm(input: { token: string; password: string; repeat: string }):
@@ -217,9 +218,10 @@ export function validateInviteForm(input: { token: string; password: string; rep
 ```
 
 - Тело проверяется схемой `RegistrationConfirmRequest` или `InvitationAcceptRequest`.
-- `field` — первый элемент пути ошибки Zod, `message` — текст 4.6 для поля.
-- `repeat !== password` даёт дополнительную ошибку `{ field: 'repeat', message: 'Пароли не совпадают.' }`.
-- Ошибки идут в порядке полей: `password`, `repeat`, `organizationName`.
+- `path` — первый элемент пути ошибки Zod, `message` — текст 4.6 для поля. Ошибка в `token` (пустой или длиннее 200) даёт `{ path: 'token', message: <текст invalid_token> }`.
+- `repeat !== password` даёт дополнительную ошибку `{ path: 'repeat', message: 'Пароли не совпадают.' }`.
+- Ошибки идут в порядке полей: `token`, `password`, `repeat`, `organizationName`.
+- `validateEmailForm` проверяет схемой `Email` из `@swag/contracts`, ошибка — `{ path: 'email', message: 'Введите email.' }`. Её вызывает `/signup` до запроса.
 
 ### 4.3. `@swag/ui-core`: порты пользователей и организаций
 
@@ -240,7 +242,7 @@ export interface OrganizationsApi {
 
 ### 4.4. Манифест и загрузка микрофронтендов
 
-Файл `apps/ui/shell/public/federation.manifest.json` — имя remote → адрес `remoteEntry.json`. Запись появляется в той задаче, которая создаёт remote (T-11, T-14, T-15).
+Файл `apps/ui/shell/public/federation.manifest.json` — имя remote → адрес `remoteEntry.json`. Запись появляется в той задаче, которая создаёт remote (T-11, T-15, T-16).
 
 ```json
 {
@@ -306,7 +308,7 @@ export interface OrganizationsApi {
 
 ### 4.6. Тексты
 
-Константы `ui-core`, файл `src/auth-forms.ts`. `authErrorText(code)` для неизвестного кода — «Что-то пошло не так. Попробуйте ещё раз.»
+Константы `ui-core`, файл `src/auth-forms.ts`, там же `validateConfirmForm`, `validateInviteForm`, `validateEmailForm`. `authErrorText(code)` для неизвестного кода — «Что-то пошло не так. Попробуйте ещё раз.»
 
 | Код | Текст |
 |---|---|
@@ -323,7 +325,7 @@ export interface OrganizationsApi {
 | `org_directory_unavailable`, `auth_unavailable` | Сервис временно недоступен. Попробуйте позже. |
 | `internal_error`, `unknown` | Что-то пошло не так. Попробуйте ещё раз. |
 
-Тексты полей форм:
+Тексты полей форм (`path` в `FormIssue`):
 
 | Поле | Текст |
 |---|---|
@@ -363,7 +365,7 @@ export interface OrganizationsApi {
 | `auth-api.ts` | адаптер `AuthApi` (4.1) на `fetch`, ошибки — `HttpError` | перенос `apps/ui/cabinet/src/app/auth-api.ts`, класс `AuthRequestError` заменяется `HttpError` |
 | `users-api.ts` | `createUsersApi(session)`, `createOrganizationsApi(session)` (4.3) на `createRequest(session, '/auth')` | новое |
 | `balance-api.ts` | `createBalanceApi(session)` | перенос из `api.ts` кабинета |
-| `guards.ts` | `sessionGuard`: `CanMatchFn` — `restore()` один раз за загрузку страницы, затем `CurrentUser.ensure()`; нет токена — `UrlTree` `/login?returnTo=<router.currentNavigation()?.extractedUrl>` | замена `apps/ui/cabinet/src/app/auth.guard.ts` |
+| `guards.ts` | `ensureRestored(): Promise<boolean>` — один `restore()` на загрузку страницы, повторные вызовы получают тот же промис (каждый `restore()` ротирует refresh-cookie); `sessionGuard`: `CanMatchFn` — `ensureRestored()`, затем `CurrentUser.ensure()`; нет токена — `router.createUrlTree(['/login'], { queryParams: { returnTo: router.serializeUrl(router.currentNavigation()!.extractedUrl) } })` | замена `apps/ui/cabinet/src/app/auth.guard.ts` |
 | | `areaGuard(area)`: `CanMatchFn` — `ensure()`, затем `canOpen(area, me)`; `false` — `UrlTree` `/` | новое |
 | `balance-panel.ts` | компонент `swag-balance-panel`: вход `orgId`, `requireComment`; числа, история с «Ещё», форма пополнения при `balance.topup`; поведение — 013, 4.11 | вынос из `apps/ui/cabinet/src/app/balance.page.ts` |
 | `theme.ts` | `ThemeService`: `mode` (`system` \| `light` \| `dark`), атрибут `data-theme` на `<html>`, `localStorage['swag.theme']` в `try/catch` | новое |
@@ -413,8 +415,8 @@ API роёв (`createSwarmsApi`, `createSwarmStream`) остаётся в `cabin
 |---|---|---|---|
 | `ui` | `apps/ui/shell/Dockerfile` | `127.0.0.1:${UI_PORT}:4200` | `--host 0.0.0.0 --port 4200` |
 | `ui-cabinet` | `apps/ui/cabinet/Dockerfile` | не публикуется | `--host 0.0.0.0 --port 4201 --serve-path /mf/cabinet/` |
-| `ui-admin` | `apps/ui/admin/Dockerfile` | не публикуется | `--port 4202 --serve-path /mf/admin/` |
-| `ui-supervisor` | `apps/ui/supervisor/Dockerfile` | не публикуется | `--port 4203 --serve-path /mf/supervisor/` |
+| `ui-admin` | `apps/ui/admin/Dockerfile` | не публикуется | `--host 0.0.0.0 --port 4202 --serve-path /mf/admin/` |
+| `ui-supervisor` | `apps/ui/supervisor/Dockerfile` | не публикуется | `--host 0.0.0.0 --port 4203 --serve-path /mf/supervisor/` |
 
 Команда — скрипт `start` в `package.json` фронтенда.
 - **Healthcheck remote**: `wget -qO- http://127.0.0.1:<порт>/mf/<имя>/remoteEntry.json`.
@@ -464,7 +466,7 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
 | `/signup/confirm?token=` | «Вы вошли как …», «Выйти и продолжить» (REQ-014-9) | пароль, повтор, название организации |
 | `/invite?token=` | так же | пароль, повтор |
 
-`/signup/confirm` и `/invite` без `token` показывают текст `invalid_token`. Есть ли сессия, страницы узнают через `restore()`: общий вызов с `sessionGuard`, один раз за загрузку страницы.
+`/signup/confirm` и `/invite` без `token` показывают текст `invalid_token`. Есть ли сессия, страницы узнают через `ensureRestored()` (4.7). Это общий с `sessionGuard` вызов, один раз за загрузку страницы.
 
 ## 5. Критерии приёмки
 
@@ -504,15 +506,15 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
   - пустое название;
   - верные данные.
 
-  *Then* ошибки 4.6 по полям `password`, `repeat`, `organizationName` в этом порядке, на верных данных — `ok` и тело, которое проходит схему контракта.
+  *Then* ошибки 4.6 по полям `password`, `repeat`, `organizationName` в этом порядке, на верных данных — `ok` и тело, которое проходит схему контракта. *When* пустой `token` *Then* ошибка `token`. *When* `validateEmailForm` с `a@b` и с ` A@B.example ` *Then* ошибка `email`, затем `ok` с `a@b.example`.
 - **AC-014-8** — *Given* `scripts/ui-config.test.ts`:
   - *When* читает `apps/ui/shell/public/federation.manifest.json` *Then* у каждой записи `isLocalRemoteUrl` — `true`, имена — ровно `cabinet`, `admin`, `supervisor`.
   - *When* читает исходники `apps/ui/shell/src` *Then* нет импорта из `apps/ui/cabinet`, `apps/ui/admin`, `apps/ui/supervisor`, `@swag/cabinet`, `@swag/admin`, `@swag/supervisor` (REQ-014-2).
 - **AC-014-9** — *Given* `scripts/ui-config.test.ts`:
   - *When* читает `.env.example` *Then* `IDENTITY_CONFIRM_URL` и `IDENTITY_INVITE_URL` — пути `/signup/confirm` и `/invite` на порту `UI_PORT` того же файла; есть `UI_CABINET_PORT`, `UI_ADMIN_PORT`, `UI_SUPERVISOR_PORT`.
   - *When* читает `compose.yaml` *Then* у `ui-cabinet`, `ui-admin`, `ui-supervisor` нет `ports`; `ui` публикует только `127.0.0.1:`.
-  - *When* читает `proxy.conf.json` и `proxy.host.conf.mjs` каркаса *Then* нет ключа, который начинается с `/internal`.
-- **AC-014-10** — *Given* `scripts/ui-config.test.ts` *When* читает `packages/ui-angular/styles/tokens.css` *Then* у обеих тем есть все токены 4.8, пары REQ-014-21 дают контраст ≥ 4.5:1. *When* ищет в `apps/ui/*/src` и `packages/ui-angular/src` литералы `#hex`, `rgb(`, `hsl(` в `.css`, `.html` и строках стилей `.ts` *Then* не находит (REQ-014-16).
+  - *When* читает `apps/ui/shell/proxy.conf.json` *Then* нет ключа, который начинается с `/internal`.
+- **AC-014-10** — *Given* `scripts/ui-config.test.ts` *When* читает `packages/ui-angular/styles/tokens.css` *Then* у обеих тем есть все токены 4.8, пары REQ-014-21 дают контраст ≥ 4.5:1. *When* ищет в `apps/ui/*/src` и `packages/ui-angular/src` (без тестов) `#rgb` и `#rrggbb`, `rgb(`, `hsl(` в любых строках `.css`, `.html` и `.ts`, включая атрибуты SVG `fill` и `stroke` *Then* не находит (REQ-014-16).
 - **AC-014-11** `[manual]` — регистрация (из S-1, шаги 1–4).
   - *Given* `npm run up`.
   - *When* без входа открыть `/balance` и `/admin/users` *Then* `/login?returnTo=%2Fbalance` и `…%2Fadmin%2Fusers`. Во вкладке «Сеть» нет запросов под `/mf/`.
@@ -530,10 +532,10 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
   - *When* в другом профиле браузера принять приглашение *Then* у приглашённого «Рои» и «Баланс», без «Админки». *When* он открывает `/admin/users` *Then* `/`, запросов под `/mf/admin/` нет.
   - *When* администратор блокирует приглашённого с подтверждением *Then* в списке «заблокирован». Через `API_REVOCATION_POLL_MS` + 1 с действие приглашённого в «Роях» уводит его на `/login`, повторный вход — текст `user_blocked`.
   - *When* разблокировать и сделать администратором *Then* список отражает изменения. После входа приглашённого у него есть «Админка».
-- **AC-014-13** `[manual]` — `403` и смена прав (REQ-014-4, REQ-014-14).
+- **AC-014-13** `[manual]` — смена прав (REQ-014-4).
   - *Given* два администратора организации A — `adm1` и `adm2`, у `adm2` открыта «Админка».
-  - *When* `adm1` делает `adm2` пользователем, а `adm2`, не перезагружая страницу, нажимает «Заблокировать» у третьего пользователя *Then* токен `adm2` отозван (024, AC-024-7), `renew` выдаёт токен с ролью `user`, `PATCH` отвечает `403`. На экране «Недостаточно прав», сессия не закрыта.
-  - *When* перейти на «Рои» *Then* пункта «Админка» в шапке нет.
+  - *When* `adm1` делает `adm2` пользователем, проходит `API_REVOCATION_POLL_MS` + 1 с, и `adm2`, не перезагружая страницу, нажимает «Заблокировать» у третьего пользователя *Then* по 024 (AC-024-7) токен и сессия `adm2` отозваны: `401`, `renew` не удался, `adm2` на `/login`.
+  - *When* `adm2` входит снова *Then* в шапке «Рои» и «Баланс», «Админки» нет, `/admin/users` ведёт на `/`.
 - **AC-014-14** `[manual]` — супервизор (из S-1, шаги 8, 10).
   - *Given* организации A (AC-014-11) и B (вторая регистрация), администратор A из AC-014-12.
   - *When* вход супервизором из `.env` *Then* пункты «Рои» и «Организации».
@@ -552,7 +554,7 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
 - **AC-014-16** `[manual]` — одна сессия (REQ-014-15).
   - *Given* `IDENTITY_ACCESS_TTL_S=60` в `.env` на время проверки, вход администратором, открыты «Рои», затем «Админка».
   - *When* подождать больше 60 с, затем открыть «Рои» и сразу «Админку» *Then* во вкладке «Сеть» один `POST /auth/refresh`.
-  - В консоли `[...document.querySelectorAll('script[type="importmap-shim"],script[type="importmap"]')]` показывает один адрес `@swag/ui-angular`.
+  - Команда проверки из журнала T-1 подтверждает один экземпляр `@swag/ui-angular`.
   - В `localStorage` и `sessionStorage` только `swag.theme`.
 - **AC-014-17** `[manual]` — темы и клавиатура (REQ-014-16, REQ-014-22).
   - *When* «тёмная», «светлая», «как в системе» при тёмной системной теме *Then* тёмная, светлая, тёмная; выбор переживает перезагрузку.
@@ -563,6 +565,14 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
   - *When* `npm run ui:dev` и правка текста `/login` *Then* изменение видно без перезапуска.
   - Вход и «Админка» работают.
   - *When* `npm run ui:dev` при запущенном `ui` *Then* текст «Остановите ui…».
+- **AC-014-19** — *Given* `createRequest` из `packages/ui-angular/src/http.ts` с заглушками `fetch` и `AuthSessionKeeper` (`packages/ui-angular/test/http.test.ts`).
+  - *When* ответ `403 { error: { code: 'forbidden' } }` *Then* reject `HttpError { status: 403, code: 'forbidden' }`, `renew` и `onSignedOut` не вызваны.
+  - *When* `401`, затем `200` *Then* один `renew` и один повтор с новым токеном, результат — тело `200`.
+  - *When* два одновременных запроса получают `401` *Then* `renew` вызван один раз.
+  - *When* `401` и `renew` → `false` *Then* reject `HttpError { status: 401 }` без повтора.
+  - *When* `500` без тела *Then* `HttpError { status: 500, code: 'unknown' }`.
+  - *When* `basePath` `/auth` *Then* запрос уходит на `/auth/<путь>`.
+- **AC-014-20** — *Given* `scripts/ui-config.test.ts` *When* импортирует `apps/ui/shell/proxy.host.conf.mjs` с заданными `API_PORT`, `IDENTITY_PORT`, `GRAFANA_PORT`, `UI_*_PORT` *Then* адреса 4.9 на `127.0.0.1` с этими портами, ключей `/internal` нет.
 
 ## 6. Нефункциональные требования
 
@@ -574,28 +584,37 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
 ## 7. Безопасность: что не должно сломаться
 
 - **Скрытие в UI — не доступ.** Права проверяют `api` и identity, AC 024 и 013 на `403` и область видимости остаются зелёными (`npm run check`).
+- **`403` не выкидывает из сессии, `401` даёт один `renew`:** AC-014-19.
 - **Код раздела без прав не загружается:** REQ-014-3, AC-014-2, AC-014-11, AC-014-12, AC-014-14.
 - **Remote только своего origin под `/mf/`:** AC-014-5, AC-014-8.
 - **Нет открытого редиректа после входа:** AC-014-6.
 - **Токены из писем** не остаются в адресе, не уходят в `Referer` и консоль. Старая ссылка не выкидывает из сессии молча — нужен явный «Выйти и продолжить»: REQ-014-9, AC-014-11.
 - **Токен доступа только в памяти**, один на страницу: REQ-014-15, AC-014-16.
 - **Нет перебора email на `/signup`:** REQ-014-6, AC-014-11.
-- **Порты.** Remote не опубликованы, каркас — только на `127.0.0.1`. `/internal` не проксируется: AC-014-9.
+- **Порты.** Remote не опубликованы, каркас — только на `127.0.0.1`. `/internal` не проксируется: AC-014-9, AC-014-20.
 - **Grafana.** Ссылку «трейс» видит только супервизор (AC-014-15). Сама Grafana в dev по адресу `/grafana` открыта любому, кто открыл UI на `127.0.0.1`. Закрыть её входом — спека эксплуатации (Q-4).
 
 ## 8. Задачи для агента
 
 Выполняются по порядку, коммит на задачу.
-- **Сборка.** T-11 и T-12 ломают вход до перевода compose: кабинет перестаёт быть приложением, а `ui` в compose ещё на нём. Поэтому они идут группой через фича-ветку `spec/014-cabinet-remote` (implement-spec, «Связанные задачи»). Группа и причина записываются в журнал до T-11. Остальные задачи аддитивны и `main` не ломают.
+- **Сборка.** T-12 и T-13 ломают вход до перевода compose: кабинет перестаёт быть приложением, а `ui` в compose ещё на нём. Поэтому они идут группой через фича-ветку `spec/014-cabinet-remote` (implement-spec, «Связанные задачи»). Группа и причина записываются в журнал до T-12. До T-15 и T-16 администратор и супервизор видят пункты «Админка» и «Организации» с текстом «Раздел недоступен». Это ожидаемо, пометка — в журнал. Остальные задачи аддитивны и `main` не ломают.
 - **Исполнитель.** Задачи — субагенту Haiku, кроме T-1 и T-7. T-1 — проверка технологии с возможной блокировкой. T-7 — дизайн скиллом. Обе отдаются Sonnet, отклонение от правила 9 `CLAUDE.md` записывается в журнал.
 
-- [ ] **T-1.** Проверка федерации на Angular 22.2 и `@angular-architects/native-federation` 22.2.x. Временный каталог вне репозитория или ветка без слияния: каркас и один remote, оба импортируют `@swag/ui-angular`-заглушку с `InjectionToken` и `@swag/ui-core`. Проверить:
+- [ ] **T-1.** Проверка федерации на Angular 22.2 и `@angular-architects/native-federation` 22.2.x. Ветка `spec/014-t1`, которая не сливается: каркас и один remote, оба импортируют `@swag/ui-angular`-заглушку с `InjectionToken` и `@swag/ui-core`. Проверить:
   - `initFederation({})` и `loadRemoteModule({ remoteEntry, exposedModule })` — до перехода нет запросов к remote;
   - один экземпляр токена и пакета в каркасе и remote (сравнить объекты);
   - `servePath` remote за прокси dev-сервера каркаса с `changeOrigin: false`;
   - рабочий `federation.config.js` с workspace-пакетами (4.5).
 
-  Результат — журнал и README-заготовка каркаса с конфигом. Если что-то из 4.4–4.5 не работает — `blocked`, вопрос `Q-k` с вариантами. Закрывает: проверку 4.4–4.5. Готово, когда: журнал содержит конфиг и результаты четырёх проверок.
+  - команду проверки одного экземпляра пакета в консоли браузера (для AC-014-16).
+
+  Результат — в журнал спеки:
+  - рабочие `federation.config.js`;
+  - правки `tsconfig` и `angular.json`;
+  - итоги проверок;
+  - команда проверки экземпляра.
+
+  T-11 берёт конфиг оттуда. Если что-то из 4.4–4.5 не работает — `blocked`, вопрос `Q-k` с вариантами. Закрывает: проверку 4.4–4.5. Готово, когда: в журнале конфиг, итоги проверок и команда проверки.
 - [ ] **T-2.** `packages/ui-core/src/auth-session.ts`: дополнения 4.1, тип `AuthResult`. Тесты — `test/auth-session.test.ts`. Обновить README `ui-core` и глоссарий. Закрывает: REQ-014-7, REQ-014-8 (сессия), AC-014-1. Готово, когда: тесты пакета зелёные, AC-024-23 зелёный без правок.
 - [ ] **T-3.** `packages/ui-core/src/access-ui.ts`:
   - `UiArea`, `NavItem`, `canOpen`, `navigationFor`;
@@ -603,7 +622,7 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
   - `safeReturnTo`, `isLocalRemoteUrl`.
 
   Реэкспорт. Тесты — `test/access-ui.test.ts`. Закрывает: REQ-014-3…5, AC-014-2, AC-014-3, AC-014-5, AC-014-6. Готово, когда: тесты зелёные.
-- [ ] **T-4.** `packages/ui-core/src/auth-forms.ts`: `authErrorText`, тексты 4.6 константами, `FormIssue`, `validateConfirmForm`, `validateInviteForm`. Порты `UsersApi` и `OrganizationsApi` (4.3) — в `src/index.ts`. Тесты — `test/auth-forms.test.ts`. Закрывает: AC-014-4, AC-014-7. Готово, когда: тесты зелёные.
+- [ ] **T-4.** `packages/ui-core/src/auth-forms.ts`: `authErrorText`, тексты 4.6 константами, `validateConfirmForm`, `validateInviteForm`, `validateEmailForm` на существующем типе `FormIssue`. Порты `UsersApi` и `OrganizationsApi` (4.3) — в `src/index.ts`. Тесты — `test/auth-forms.test.ts`. Закрывает: AC-014-4, AC-014-7. Готово, когда: тесты зелёные.
 - [ ] **T-5.** Каркас пакета `packages/ui-angular`:
   - `package.json` с зависимостями 4.7, `tsconfig.json` по образцу кабинета, ссылка в корневом `tsconfig.json`;
   - README по правилу 7;
@@ -617,7 +636,16 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
   - `auth-api.ts` с методами 4.1 на `HttpError`;
   - `balance-api.ts`.
 
-  Плюс новые `users-api.ts`. Кабинет импортирует перенесённое из пакета, его `api.ts` использует `createRequest(session, '/api')`. Поведение кабинета не меняется. Закрывает: REQ-014-14, REQ-014-15 (код). Готово, когда: `npm run check` зелёный, в `npm run up` кабинет входит и показывает рои.
+  Плюс:
+  - новые `users-api.ts`;
+  - тест `packages/ui-angular/test/http.test.ts` (AC-014-19);
+  - `getMe` переезжает в `auth-api.ts` пакета.
+
+  `HttpError` заменяет `ApiError` кабинета: поля `status` и `code` те же, у отсутствующего кода — `'unknown'` вместо `null`. Проверка `402` в `apps/ui/cabinet/src/app/swarm-new.page.ts` переходит на `HttpError`.
+
+  Кабинет импортирует перенесённое из пакета, его `api.ts` использует `createRequest(session, '/api')`. Файлы кабинета:
+  - сокращаются или удаляются `api.ts`, `session.ts`, `auth-api.ts`;
+  - правятся импорты в `swarm-new.page.ts`, `balance.page.ts`, `ui.ts`, `app.config.ts`. Поведение кабинета не меняется. Закрывает: REQ-014-14, REQ-014-15 (код), AC-014-19. Готово, когда: `npm run check` зелёный, в `npm run up` кабинет входит и показывает рои.
 - [ ] **T-7.** *(Sonnet, скилл из Q-3)*
   - Поставить скиллы `frontend-design` и Impeccable в `.claude/skills/`, в README пакета записать коммит источника и лицензию.
   - Скиллом `frontend-design` выбрать значения токенов 4.8 для обеих тем, записать `packages/ui-angular/styles/tokens.css` и обоснование в README.
@@ -633,51 +661,54 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
   Тест литералов — вторая часть AC-014-10, пока только по кабинету и пакету. Закрывает: REQ-014-16. Готово, когда: тест зелёный, кабинет в `npm run up` выглядит как раньше в светлой теме.
 - [ ] **T-9.** `packages/ui-angular/src/components/`: `swag-button`, `swag-field`, `swag-card`, `swag-alert` (4.8), экспорт из `index.ts`. Закрывает: REQ-014-17 (часть), REQ-014-22. Готово, когда: пакет собирается в кабинете.
 - [ ] **T-10.** `components/`: `swag-table`, `swag-page`, `swag-confirm` (на `@angular/cdk/dialog`). `src/guards.ts`: `sessionGuard`, `areaGuard` (4.7). `src/balance-panel.ts` — вынос из `balance.page.ts` кабинета: страница кабинета становится обёрткой с `orgId` из `CurrentUser`. Закрывает: REQ-014-17, REQ-014-13 (панель). Готово, когда: `/balance` кабинета работает как раньше.
-- [ ] **T-11.** *(группа `spec/014-cabinet-remote`)* Каркас `apps/ui/shell` (`@swag/shell`):
-  - Angular-приложение с конфигом T-1;
-  - `main.ts`, `RemoteRegistry`, маршруты 4.4, `Layout` — шапка по REQ-014-10;
-  - страница `/login` — перенос из кабинета с `returnTo`;
+- [ ] **T-11.** Каркас `apps/ui/shell` (`@swag/shell`). Задача аддитивная, кабинет не трогается:
+  - Angular-приложение с конфигом из журнала T-1;
+  - в `angular.json` в `styles` — `@swag/ui-angular/styles/tokens.css` и `base.css`;
+  - `main.ts` (`initFederation({})`), `RemoteRegistry`, маршруты 4.4, `Layout` — шапка по REQ-014-10;
+  - страница `/login` с `returnTo` на компонентах 4.8, по образцу `login.page.ts` кабинета;
   - манифест с записью `cabinet`;
   - `proxy.conf.json` 4.9, `Dockerfile`, README.
 
-  `apps/ui/cabinet` становится remote:
-  - экспорт `./routes` с guard'ами 4.4;
-  - удалить `login.page.ts`, `auth.guard.ts`, шапку из `app.ts`, `app.routes.ts`;
+  Закрывает: REQ-014-1, REQ-014-3, REQ-014-5, REQ-014-10. Готово, когда: `ng build` каркаса и `npm run check` зелёные.
+- [ ] **T-12.** *(группа `spec/014-cabinet-remote`)* `apps/ui/cabinet` становится remote:
+  - `federation.config.js` с конфигом T-1, экспорт `./routes` с guard'ами 4.4;
+  - удалить `login.page.ts`, `auth.guard.ts`, шапку из `app.ts` и `app.routes.ts`;
+  - убрать `tokens.css` и `base.css` из `styles` своего `angular.json`: стили даёт каркас;
   - скрипт `start` и `Dockerfile` по 4.9, README.
 
-  Закрывает: REQ-014-1, REQ-014-2, REQ-014-3, REQ-014-5, REQ-014-10, REQ-014-11. Готово, когда: оба собираются (`ng build`).
-- [ ] **T-12.** *(группа, затем PR группы в `main`)*
+  Закрывает: REQ-014-2, REQ-014-11. Готово, когда: `ng build` кабинета зелёный и в сборке есть `remoteEntry.json`.
+- [ ] **T-13.** *(группа, затем PR группы в `main`)*
   - Compose 4.9: `ui` на каркасе, сервис `ui-cabinet`.
   - `infra:check` по 4.10.
   - Корневой README и `apps/ui/README.md`.
 
   Закрывает: REQ-014-2. Готово, когда: `npm run up`, вход в каркас и экраны кабинета работают, `npm run check` зелёный.
-- [ ] **T-13.** Страницы каркаса `/signup`, `/signup/confirm`, `/invite` по 4.11, 4.6, REQ-014-6…9 на компонентах 4.8. Закрывает: REQ-014-6…9. Готово, когда: регистрация проходит в `npm run up`.
-- [ ] **T-14.** `apps/ui/admin` (`@swag/admin`):
+- [ ] **T-14.** Страницы каркаса `/signup`, `/signup/confirm`, `/invite` по 4.11, 4.6, REQ-014-6…9 на компонентах 4.8. Закрывает: REQ-014-6…9. Готово, когда: регистрация проходит в `npm run up`.
+- [ ] **T-15.** `apps/ui/admin` (`@swag/admin`):
   - remote, `./routes`, страница REQ-014-12 на `createUsersApi`, `userActions`, `swag-confirm`;
   - `Dockerfile`, README;
-  - сервис `ui-admin` и запись `admin` в манифесте;
+  - сервис `ui-admin`, его `depends_on` у `ui` и запись `admin` в манифесте;
   - `infra:check`.
 
   Закрывает: REQ-014-12. Готово, когда: «Админка» работает у администратора в `npm run up`.
-- [ ] **T-15.** `apps/ui/supervisor` (`@swag/supervisor`):
+- [ ] **T-16.** `apps/ui/supervisor` (`@swag/supervisor`):
   - remote, `./routes`, страницы REQ-014-13 на `createOrganizationsApi`, `createUsersApi`, `swag-balance-panel` с `requireComment`;
   - `Dockerfile`, README;
-  - сервис `ui-supervisor` и запись в манифесте;
+  - сервис `ui-supervisor`, его `depends_on` у `ui` и запись в манифесте;
   - `infra:check`;
   - тест манифеста и импортов — AC-014-8 в `scripts/ui-config.test.ts`.
 
   Закрывает: REQ-014-13, AC-014-8. Готово, когда: «Организации» работают у супервизора, тест зелёный.
-- [ ] **T-16.** Экраны кабинета (`swarm-list.page.ts`, `swarm-new.page.ts`, `swarm.page.ts`) на компонентах 4.8 без изменения поведения. Ссылка «трейс» — только при `CurrentUser.role() === 'supervisor'`. Тест литералов AC-014-10 расширяется на все `apps/ui/*/src`. Закрывает: REQ-014-17, REQ-014-18, AC-014-10. Готово, когда: тест зелёный, AC-014-15 проходит.
-- [ ] **T-17.** env и конфиг по 4.10:
+- [ ] **T-17.** Экраны кабинета (`swarm-list.page.ts`, `swarm-new.page.ts`, `swarm.page.ts`) на компонентах 4.8 без изменения поведения. Ссылка «трейс» — только при `CurrentUser.role() === 'supervisor'`. Тест литералов AC-014-10 расширяется на все `apps/ui/*/src`. Закрывает: REQ-014-17, REQ-014-18, AC-014-10. Готово, когда: тест зелёный, AC-014-15 проходит.
+- [ ] **T-18.** env и конфиг по 4.10:
   - `.env.example` и `.env`;
   - `UiConfig`, комментарии в `packages/config/src/index.ts`;
   - README identity — новые адреса страниц;
   - проверки AC-014-9 в `scripts/ui-config.test.ts`.
 
   Закрывает: REQ-014-19, AC-014-9. Готово, когда: тест зелёный, письмо регистрации ведёт на `/signup/confirm`.
-- [ ] **T-18.** *(из N-6)* `scripts/ui-dev.ts` и скрипт `ui:dev` в корневом `package.json`, `apps/ui/shell/proxy.host.conf.mjs` по 4.9, раздел в корневом README и в README каркаса. Закрывает: REQ-014-20. Готово, когда: AC-014-18 пройден вручную.
-- [ ] **T-19.** Завершение:
+- [ ] **T-19.** *(из N-6)* `scripts/ui-dev.ts` и скрипт `ui:dev` в корневом `package.json`, `apps/ui/shell/proxy.host.conf.mjs` по 4.9, раздел в корневом README и в README каркаса, тест AC-014-20. Закрывает: REQ-014-20, AC-014-20. Готово, когда: тест зелёный, AC-014-18 пройден вручную.
+- [ ] **T-20.** Завершение:
   - ручные AC-014-11…18 с журналом;
   - замеры NFR-014-1 и NFR-014-2;
   - статус S-1 в `docs/spec/scenarios.md`;
@@ -726,7 +757,7 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
 
   **Рекомендация.**
   - Библиотека **(а)**. Экранов мало: формы, таблицы, диалог. Общая зависимость федерации получается маленькой, тема — только наши токены. CDK даёт доступный диалог без своего кода фокуса. (б) — запасной вариант.
-  - Скилл — `frontend-design` для токенов (T-7). Impeccable `audit` — на приёмке (AC-014-17).
+  - Скилл — `frontend-design` для токенов (T-7). Impeccable `audit` — на приёмке (AC-014-17). T-7 делает Sonnet, а не Haiku: нужен скилл и выбор по вкусу. Это отклонение от правила 9 `CLAUDE.md` подтверждается вместе с ответом на Q-3.
 - [ ] **Q-4.** *(из D-15)* Кто видит Grafana. *(Claude, 2026-11-01)*
   Сейчас прокси `/grafana` в dev-сервере пускает в Grafana любого, кто открыл UI на `127.0.0.1`. Входа у Grafana нет, а трейсы содержат промпты, ответы и данные всех организаций.
   - **(а)** В 014 ссылку видит только супервизор, прокси в dev остаётся. Вход и роли Grafana — спека эксплуатации (16), до выхода в прод.
@@ -757,7 +788,7 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
 
   Оценка Angular 22 с роутером и формами — порядка 100–150 КБ gzip. Это прикидка, а не замер.
 
-  **Рекомендация:** 250 КБ, после замера в T-19 при необходимости пересмотреть на приёмке.
+  **Рекомендация:** 250 КБ, после замера в T-20 при необходимости пересмотреть на приёмке.
 
 ## 10. Журнал реализации
 
