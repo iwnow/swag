@@ -1,0 +1,59 @@
+import '@angular/compiler';
+import {
+  createEnvironmentInjector,
+  effect,
+  Injector,
+  runInInjectionContext,
+  type EnvironmentInjector,
+} from '@angular/core';
+import { Router } from '@angular/router';
+import { signal } from '@preact/signals-core';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { redirectOnSignOut } from '../src/guards.ts';
+import { SESSION_USER } from '../src/stores.ts';
+
+// Без DOM эффект Angular не запускается сам: тест берёт его колбэк и вызывает вручную.
+vi.mock('@angular/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@angular/core')>();
+  return { ...actual, effect: vi.fn() };
+});
+
+// Роутер-заглушка: первая навигация уже завершена, текущий адрес — `url`.
+function signOutAt(url: string) {
+  const status = signal<'signed-in' | 'signed-out'>('signed-in');
+  const navigateByUrl = vi.fn();
+  const injector = createEnvironmentInjector(
+    [
+      { provide: Router, useValue: { navigated: true, url, navigateByUrl } },
+      { provide: SESSION_USER, useValue: { status } },
+    ],
+    Injector.create({ providers: [] }) as EnvironmentInjector,
+  );
+  runInInjectionContext(injector, () => redirectOnSignOut());
+  const onStatusChange = vi.mocked(effect).mock.calls[0]?.[0] as () => void;
+
+  status.value = 'signed-out';
+  onStatusChange();
+  return navigateByUrl;
+}
+
+afterEach(() => {
+  vi.mocked(effect).mockClear();
+});
+
+describe('redirectOnSignOut', () => {
+  it.each(['/signup', '/signup/confirm', '/invite', '/invite?token=abc', '/login?returnTo=%2Fx'])(
+    'REQ-014-9: выход на открытой странице %s — перехода на /login нет',
+    (url) => {
+      expect(signOutAt(url)).not.toHaveBeenCalled();
+    },
+  );
+
+  it('REQ-014-9: выход на закрытой странице — переход на /login', () => {
+    expect(signOutAt('/swarms/x')).toHaveBeenCalledWith('/login');
+  });
+
+  it('REQ-014-9: путь с открытым префиксом, но другим сегментом (/invitex) — переход на /login', () => {
+    expect(signOutAt('/invitex')).toHaveBeenCalledWith('/login');
+  });
+});
