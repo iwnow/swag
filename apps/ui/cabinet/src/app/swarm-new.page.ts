@@ -118,6 +118,10 @@ export class SwarmNewPageComponent {
   readonly maxTokens = signal('');
   readonly agents = signal<AgentInput[]>([newAgent()]);
 
+  constructor() {
+    this.cabinet.resetForm();
+  }
+
   setTask(event: Event): void {
     this.task.set((event.target as HTMLTextAreaElement).value);
   }

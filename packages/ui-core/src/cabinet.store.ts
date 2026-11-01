@@ -66,6 +66,7 @@ export interface CabinetStore {
   readonly balance: BalanceState;
   loadSwarms(): Promise<void>;
   createSwarm(input: SwarmDraft): Promise<string | null>;
+  resetForm(): void;
   openSwarm(id: string): void;
   closeSwarm(): void;
   stopSwarm(): Promise<void>;
@@ -167,6 +168,8 @@ export function createCabinetStore(deps: CabinetStoreDeps): CabinetStore {
 
     async loadSwarms() {
       const current = ++swarmsGeneration;
+      swarms.value = [];
+      swarmsLoaded.value = false;
       swarmsError.value = null;
       try {
         const list = await ui.listSwarms();
@@ -197,6 +200,10 @@ export function createCabinetStore(deps: CabinetStoreDeps): CabinetStore {
       } finally {
         patchForm({ busy: false });
       }
+    },
+
+    resetForm() {
+      patchForm({ issues: [], error: null });
     },
 
     openSwarm(id) {

@@ -155,30 +155,62 @@ describe('цветовые литералы (спека 014, REQ-014-16)', () =>
 });
 
 // Спека 014, REQ-014-23, AC-014-26: компоненты не ходят в API, не собирают адаптеры и не открывают сигналы ядра.
+const forbiddenSpec = (spec: string): boolean =>
+  spec === '@preact/signals-core' || spec.startsWith('@preact/signals-core/');
+const forbiddenName = (name: string): boolean =>
+  /^(createRequest|authApi|create\w*(Api|Store))$/.test(name);
+const globalObjects = new Set(['window', 'globalThis', 'self']);
+
 const frontendViolations = (file: string, text: string): string[] => {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
   const found: string[] = [];
+  const namespaces = new Set<string>();
+  for (const statement of source.statements) {
+    const bindings = ts.isImportDeclaration(statement)
+      ? statement.importClause?.namedBindings
+      : undefined;
+    if (bindings && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text);
+  }
+  const checkSpec = (spec: string, kind: string): void => {
+    if (forbiddenSpec(spec)) found.push(`${kind} из ${spec}`);
+  };
+  const checkNames = (
+    spec: string,
+    kind: string,
+    elements: readonly (ts.ImportSpecifier | ts.ExportSpecifier)[],
+  ): void => {
+    for (const element of elements) {
+      const name = (element.propertyName ?? element.name).text;
+      if (forbiddenName(name)) found.push(`${kind} ${name} из ${spec}`);
+    }
+  };
   const visit = (node: ts.Node): void => {
     if (ts.isImportDeclaration(node)) {
       const spec = (node.moduleSpecifier as ts.StringLiteral).text;
-      if (spec === '@preact/signals-core' || spec.startsWith('@preact/signals-core/')) {
-        found.push(`импорт из ${spec}`);
-      }
+      checkSpec(spec, 'импорт');
       const bindings = node.importClause?.namedBindings;
-      if (bindings && ts.isNamedImports(bindings)) {
-        for (const element of bindings.elements) {
-          const name = (element.propertyName ?? element.name).text;
-          if (/^(createRequest|authApi|create\w*(Api|Store))$/.test(name)) {
-            found.push(`импорт ${name} из ${spec}`);
-          }
-        }
+      if (bindings && ts.isNamedImports(bindings)) checkNames(spec, 'импорт', bindings.elements);
+    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier) {
+      const spec = (node.moduleSpecifier as ts.StringLiteral).text;
+      checkSpec(spec, 'реэкспорт');
+      if (node.exportClause && ts.isNamedExports(node.exportClause)) {
+        checkNames(spec, 'реэкспорт', node.exportClause.elements);
       }
-    } else if (
-      ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === 'fetch'
-    ) {
-      found.push('вызов fetch(');
+    } else if (ts.isCallExpression(node)) {
+      const [arg] = node.arguments;
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        if (arg && ts.isStringLiteral(arg)) checkSpec(arg.text, 'динамический импорт');
+      } else if (ts.isIdentifier(node.expression) && node.expression.text === 'fetch') {
+        found.push('вызов fetch(');
+      }
+    } else if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression)) {
+      const object = node.expression.text;
+      const member = node.name.text;
+      if (globalObjects.has(object) && member === 'fetch') {
+        found.push(`обращение ${object}.fetch`);
+      } else if (namespaces.has(object) && forbiddenName(member)) {
+        found.push(`обращение ${object}.${member}`);
+      }
     }
     ts.forEachChild(node, visit);
   };
@@ -207,7 +239,26 @@ describe('границы фронтендов (спека 014, REQ-014-23, AC-01
       "import { createUsersApi as users } from '@swag/ui-angular';",
       "import { signal } from '@preact/signals-core';",
       "fetch('/api/me');",
+      "export { createRequest } from '@swag/ui-angular';",
+      "export * from '@preact/signals-core';",
+      "await import('@preact/signals-core');",
+      "window.fetch('/x');",
+      "globalThis.fetch('/x');",
+      "import * as api from '@swag/ui-angular';",
+      'api.createSwarmsApi(s);',
     ].join('\n');
-    expect(frontendViolations('sample.ts', sample)).toHaveLength(4);
+    expect(frontendViolations('sample.ts', sample)).toHaveLength(10);
+  });
+
+  it('AC-014-26: проверка границ не находит нарушений в коде на мосте', () => {
+    const sample = [
+      "import { connectStore, toAngularSignal, provideCabinetStore, CABINET_STORE, SESSION_USER } from '@swag/ui-angular';",
+      "import * as ui from '@swag/ui-angular';",
+      'provideCabinetStore();',
+      'connectStore(CABINET_STORE);',
+      'toAngularSignal(SESSION_USER);',
+      'ui.connectStore(CABINET_STORE);',
+    ].join('\n');
+    expect(frontendViolations('ok.ts', sample)).toEqual([]);
   });
 });
