@@ -13,8 +13,8 @@ import {
 } from '@swag/config';
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
-const NG_CLI = fileURLToPath(new URL('../node_modules/@angular/cli/bin/ng.js', import.meta.url));
 const READY_TIMEOUT_MS = 180_000;
+const NG_CLI = fileURLToPath(new URL('../node_modules/@angular/cli/bin/ng.js', import.meta.url));
 const isWindows = process.platform === 'win32';
 
 function readConfig() {
@@ -48,9 +48,13 @@ function isPortBusy(port: number): Promise<boolean> {
 function stopProcess(child: ChildProcess): void {
   if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
   // На Windows kill() снимает только сам процесс, дерево (воркеры ng) — через taskkill /T.
-  if (isWindows)
-    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-  else process.kill(-child.pid, 'SIGTERM');
+  try {
+    if (isWindows)
+      spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    else process.kill(-child.pid, 'SIGTERM');
+  } catch {
+    // Процесс уже завершился (ESRCH): останавливать нечего.
+  }
 }
 
 function prefixLines(stream: NodeJS.ReadableStream, name: string): void {
@@ -126,6 +130,10 @@ function startApp({ name, dir, args }: (typeof apps)[number]): Promise<void> {
   });
   const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
   children.push({ name, child, exited });
+  child.once('error', (error) => {
+    console.error(`[${name}] не запустился: ${error.message}, останавливаю остальные`);
+    void shutdown(1);
+  });
   void exited.then(async () => {
     if (shuttingDown) return;
     const code = child.exitCode ?? 1;
@@ -133,17 +141,22 @@ function startApp({ name, dir, args }: (typeof apps)[number]): Promise<void> {
     await shutdown(code);
   });
 
-  let ready: () => void = () => {};
-  const started = new Promise<void>((resolve) => (ready = resolve));
-  const onOutput = (chunk: Buffer) => {
-    if (chunk.toString('utf8').includes('http://127.0.0.1:')) ready();
-  };
-  for (const stream of [child.stdout, child.stderr]) {
-    if (!stream) continue;
-    prefixLines(stream, name);
-    stream.on('data', onOutput);
-  }
-  return Promise.race([started, exited, new Promise<void>((r) => setTimeout(r, READY_TIMEOUT_MS))]);
+  const streams = [child.stdout, child.stderr].filter((stream) => stream !== null);
+  for (const stream of streams) prefixLines(stream, name);
+  let timer: NodeJS.Timeout | undefined;
+  const started = new Promise<void>((resolve) => {
+    const onOutput = (chunk: string) => {
+      if (!chunk.includes('http://127.0.0.1:')) return;
+      clearTimeout(timer);
+      for (const stream of streams) stream.off('data', onOutput);
+      resolve();
+    };
+    for (const stream of streams) stream.on('data', onOutput);
+  });
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, READY_TIMEOUT_MS);
+  });
+  return Promise.race([started, exited, timeout]);
 }
 
 process.on('SIGINT', () => void shutdown(0));
