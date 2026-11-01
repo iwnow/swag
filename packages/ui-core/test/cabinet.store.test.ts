@@ -44,6 +44,12 @@ const DRAFT = {
 };
 
 const summary = { id: SWARM, task: 'T' } as SwarmSummary;
+const other = { id: 'other', task: 'B' } as SwarmSummary;
+const MSG_1 = '00000000-0000-4000-8000-000000000001';
+const MSG_2 = '00000000-0000-4000-8000-000000000002';
+
+const insufficient = (): Error =>
+  Object.assign(new Error('insufficient'), { status: 402, code: 'insufficient_balance' });
 
 function fakeSession(role: Role | null, orgId: string | null = 'org-1') {
   return {
@@ -114,6 +120,7 @@ function fakeBalance(availableMicroUsd = 1234500) {
 function setup(
   options: {
     role?: Role | null;
+    orgId?: string | null;
     swarms?: ReturnType<typeof fakeSwarms>;
     balance?: ReturnType<typeof fakeBalance>;
   } = {},
@@ -123,7 +130,7 @@ function setup(
   const { stream, opened } = fakeStream();
   const clock = fakeTimers();
   const store = createCabinetStore({
-    session: fakeSession(options.role === undefined ? 'user' : options.role),
+    session: fakeSession(options.role === undefined ? 'user' : options.role, options.orgId),
     swarms,
     stream,
     timers: clock.timers,
@@ -267,5 +274,145 @@ describe('cabinet store', () => {
     clock.fireAll();
 
     expect(store.money.value).toContain('$0.0000 за минуту');
+  });
+
+  it('AC-014-23: ответ stopSwarm после closeSwarm не записывается', async () => {
+    let reject!: (failure: unknown) => void;
+    const swarms = fakeSwarms({
+      stop: vi.fn(() => new Promise<void>((_, rej) => (reject = rej))),
+    });
+    const { store } = setup({ swarms });
+    store.openSwarm(SWARM);
+
+    const pending = store.stopSwarm();
+    store.closeSwarm();
+    reject(new Error('отказ'));
+    await pending;
+
+    expect(store.swarmError.value).toBeNull();
+    expect(store.stopping.value).toBe(false);
+  });
+
+  it('AC-014-23: повторный stopSwarm, пока stopping, — stop вызван один раз', async () => {
+    let resolve!: () => void;
+    const swarms = fakeSwarms({
+      stop: vi.fn(() => new Promise<void>((res) => (resolve = res))),
+    });
+    const { store } = setup({ swarms });
+    store.openSwarm(SWARM);
+
+    const first = store.stopSwarm();
+    const second = store.stopSwarm();
+    resolve();
+    await Promise.all([first, second]);
+
+    expect(swarms.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('AC-014-23: loadSwarms — ответ устаревшего вызова не записывается', async () => {
+    const resolvers: ((list: SwarmSummary[]) => void)[] = [];
+    const swarms = fakeSwarms({
+      list: vi.fn(() => new Promise<SwarmSummary[]>((res) => resolvers.push(res))),
+    });
+    const { store } = setup({ swarms });
+
+    const first = store.loadSwarms();
+    const second = store.loadSwarms();
+    resolvers[1]!([other]);
+    await second;
+    resolvers[0]!([summary]);
+    await first;
+
+    expect(store.swarms.value).toEqual([other]);
+    expect(store.swarmsLoaded.value).toBe(true);
+  });
+
+  it('AC-014-23: stoppable — true в starting и running, false в stopped и completed', () => {
+    const { store, opened } = setup();
+    store.openSwarm(SWARM);
+    opened[0]!.handlers.onEvent(created);
+    expect(store.stoppable.value).toBe(true);
+
+    opened[0]!.handlers.onEvent(ev(2, { type: 'swarm.started', source: 'orchestrator', data: {} }));
+    expect(store.stoppable.value).toBe(true);
+
+    opened[0]!.handlers.onEvent(
+      ev(3, { type: 'swarm.stopped', source: 'api', data: { reason: 'user' } }),
+    );
+    expect(store.stoppable.value).toBe(false);
+
+    const completed = setup();
+    completed.store.openSwarm(SWARM);
+    completed.opened[0]!.handlers.onEvent(created);
+    completed.opened[0]!.handlers.onEvent(
+      ev(2, { type: 'swarm.completed', source: 'orchestrator', data: { result: 'ok' } }),
+    );
+    expect(completed.store.stoppable.value).toBe(false);
+  });
+
+  it('AC-014-23: unread — bus.message без agent.working только после финального статуса', () => {
+    const { store, opened } = setup();
+    const message = (seq: number, messageId: string) =>
+      ev(seq, {
+        type: 'bus.message',
+        source: 'agent',
+        agentId: 'agent-1',
+        data: { messageId, from: 'user', to: 'agent-1', text: 'привет' },
+      });
+    store.openSwarm(SWARM);
+    opened[0]!.handlers.onEvent(created);
+    opened[0]!.handlers.onEvent(message(2, MSG_1));
+    opened[0]!.handlers.onEvent(message(3, MSG_2));
+    opened[0]!.handlers.onEvent(
+      ev(4, {
+        type: 'agent.working',
+        source: 'agent',
+        agentId: 'agent-1',
+        data: { messageId: MSG_1 },
+      }),
+    );
+    expect(store.unread.value.size).toBe(0);
+
+    opened[0]!.handlers.onEvent(
+      ev(5, { type: 'swarm.completed', source: 'orchestrator', data: { result: 'ok' } }),
+    );
+
+    expect([...store.unread.value]).toEqual([ev(3, {}).id]);
+  });
+
+  it('AC-014-23: connected — true после события потока, false после обрыва', () => {
+    const { store, opened } = setup();
+    store.openSwarm(SWARM);
+    expect(store.swarm.value?.connected).toBe(false);
+
+    opened[0]!.handlers.onEvent(created);
+    expect(store.swarm.value?.connected).toBe(true);
+
+    opened[0]!.handlers.onError();
+    expect(store.swarm.value?.connected).toBe(false);
+  });
+
+  it('AC-014-23: 402 без orgId — form.error обычным текстом, getBalance не вызван', async () => {
+    const swarms = fakeSwarms({ create: vi.fn(async () => Promise.reject(insufficient())) });
+    const balance = fakeBalance();
+    const { store } = setup({ swarms, balance, orgId: null });
+
+    const id = await store.createSwarm(DRAFT);
+
+    expect(id).toBeNull();
+    expect(store.form.value.error).toBe('insufficient');
+    expect(balance.getBalance).not.toHaveBeenCalled();
+  });
+
+  it('AC-014-23: 402 и getBalance отклонён — form.error обычным текстом ошибки', async () => {
+    const swarms = fakeSwarms({ create: vi.fn(async () => Promise.reject(insufficient())) });
+    const balance = fakeBalance();
+    balance.getBalance.mockRejectedValueOnce(new Error('сеть баланса'));
+    const { store } = setup({ swarms, balance });
+
+    await store.createSwarm(DRAFT);
+
+    expect(balance.getBalance).toHaveBeenCalledWith('org-1');
+    expect(store.form.value.error).toBe('insufficient');
   });
 });

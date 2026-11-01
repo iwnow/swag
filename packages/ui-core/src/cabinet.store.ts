@@ -114,6 +114,8 @@ export function createCabinetStore(deps: CabinetStoreDeps): CabinetStore {
   let page: SwarmPage | null = null;
   let unsubscribe: (() => void) | null = null;
   let tick: unknown = null;
+  // Номер последнего loadSwarms: ответ от устаревшего вызова не записывается.
+  let swarmsGeneration = 0;
 
   function scheduleTick(): void {
     tick = timers.setTimeout(() => {
@@ -164,13 +166,15 @@ export function createCabinetStore(deps: CabinetStoreDeps): CabinetStore {
     closeSwarm,
 
     async loadSwarms() {
+      const current = ++swarmsGeneration;
       swarmsError.value = null;
       try {
-        swarms.value = await ui.listSwarms();
+        const list = await ui.listSwarms();
+        if (current === swarmsGeneration) swarms.value = list;
       } catch (failure) {
-        swarmsError.value = errorText(failure);
+        if (current === swarmsGeneration) swarmsError.value = errorText(failure);
       } finally {
-        swarmsLoaded.value = true;
+        if (current === swarmsGeneration) swarmsLoaded.value = true;
       }
     },
 
@@ -214,15 +218,15 @@ export function createCabinetStore(deps: CabinetStoreDeps): CabinetStore {
 
     async stopSwarm() {
       const current = page;
-      if (current === null) return;
+      if (current === null || stopping.value) return;
       stopping.value = true;
       swarmError.value = null;
       try {
         await current.stop();
       } catch (failure) {
-        swarmError.value = errorText(failure);
+        if (page === current) swarmError.value = errorText(failure);
       } finally {
-        stopping.value = false;
+        if (page === current) stopping.value = false;
       }
     },
 
