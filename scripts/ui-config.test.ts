@@ -152,7 +152,7 @@ describe('цветовые литералы (спека 014, REQ-014-16)', () =>
       .filter((file) => !/\.(test|spec)\.ts$/.test(file))
       .filter((file) => file !== tokensFile);
 
-  it('AC-014-10: в кабинете и пакете нет цветовых литералов вне tokens.css', () => {
+  it('AC-014-10: во всех apps/ui/*/src и packages/ui-angular/src нет цветовых литералов вне tokens.css', () => {
     const files = sourceDirs.flatMap(sourceFiles);
     expect(files.length).toBeGreaterThan(0);
     const found = files.flatMap((file) =>
@@ -313,7 +313,9 @@ describe('манифест и границы remote (спека 014, REQ-014-2, 
   });
 
   it('AC-014-8: исходники каркаса не импортируют микрофронтенды', () => {
-    const found = listFiles(shellSrc, /\.ts$/).flatMap((file) =>
+    const files = listFiles(shellSrc, /\.ts$/);
+    expect(files.length).toBeGreaterThan(0);
+    const found = files.flatMap((file) =>
       importSpecifiers(file, readFileSync(file, 'utf8'))
         .filter((spec) => remoteSources.some((source) => spec.includes(source)))
         .map((spec) => `${file}: ${spec}`),

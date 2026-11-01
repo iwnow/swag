@@ -45,12 +45,20 @@ export function createSupervisorStore({
   const orgId = signal<string | null>(null);
   const users = signal<ManagedUser[]>([]);
   const usersLoaded = signal(false);
-  const error = signal<string | null>(null);
+  // Ошибка загрузки списка организаций: держится до следующего loadOrganizations, не стирается заходом на страницу.
+  const listError = signal<string | null>(null);
+  // Ошибка действий над пользователями текущей организации.
+  const userError = signal<string | null>(null);
+  const error = computed(() => listError.value ?? userError.value);
   const organization = computed(
     () => organizations.value.find((item) => item.id === orgId.value) ?? null,
   );
   const notFound = computed(
-    () => loaded.value && orgId.value !== null && organization.value === null,
+    () =>
+      loaded.value &&
+      listError.value === null &&
+      orgId.value !== null &&
+      organization.value === null,
   );
   const rows = computed<UserRow[]>(() => userRows(session.me.value, users.value));
   const balance = createBalanceState({ session, balance: balanceApi });
@@ -66,7 +74,7 @@ export function createSupervisorStore({
       const list = await usersApi.list(id);
       if (current === generation) users.value = list.users;
     } catch (failure) {
-      if (current === generation) error.value = authErrorText(failureCode(failure));
+      if (current === generation) userError.value = authErrorText(failureCode(failure));
     } finally {
       if (current === generation) usersLoaded.value = true;
     }
@@ -89,13 +97,14 @@ export function createSupervisorStore({
       batch(() => {
         organizations.value = [];
         loaded.value = false;
-        error.value = null;
+        listError.value = null;
       });
       try {
         const list = await organizationsApi.list();
         if (current === organizationsGeneration) organizations.value = list.organizations;
       } catch (failure) {
-        if (current === organizationsGeneration) error.value = authErrorText(failureCode(failure));
+        if (current === organizationsGeneration)
+          listError.value = authErrorText(failureCode(failure));
       } finally {
         if (current === organizationsGeneration) loaded.value = true;
       }
@@ -108,7 +117,7 @@ export function createSupervisorStore({
         orgId.value = next;
         users.value = [];
         usersLoaded.value = false;
-        error.value = null;
+        userError.value = null;
       });
       await Promise.all([balance.open(next), fetchUsers(next, current)]);
     },
@@ -116,11 +125,11 @@ export function createSupervisorStore({
     async apply(userId, action) {
       const id = orgId.value;
       const current = generation;
-      error.value = null;
+      userError.value = null;
       try {
         await usersApi.update(userId, userActionBody(action));
       } catch (failure) {
-        error.value = authErrorText(failureCode(failure));
+        if (current === generation) userError.value = authErrorText(failureCode(failure));
         return;
       }
       if (id !== null) await fetchUsers(id, current);

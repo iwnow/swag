@@ -18,6 +18,7 @@ import {
   type SessionUserStore,
   type UsersApi,
 } from '../src/index.ts';
+import { failureCode } from '../src/error-code.ts';
 
 const ORG_A = '0b6f6d2e-6a4c-4c3e-9f5e-00000000000a';
 const ORG_B = '0b6f6d2e-6a4c-4c3e-9f5e-00000000000b';
@@ -217,6 +218,35 @@ describe('createSupervisorStore', () => {
     await store.apply(target.id, 'block');
 
     expect(store.error.value).toBe(authErrorText('forbidden'));
+  });
+
+  it('AC-014-25: список отклонён не 403 — openOrganization не даёт notFound, error — текст ошибки списка', async () => {
+    const organizations = fakeOrganizations();
+    const failure = Object.assign(new Error('boom'), { status: 500 });
+    organizations.list.mockRejectedValueOnce(failure);
+    const { store } = makeStore({ organizations });
+    await store.loadOrganizations();
+
+    await store.openOrganization(ORG_A);
+
+    expect(store.notFound.value).toBe(false);
+    expect(store.error.value).toBe(authErrorText(failureCode(failure)));
+  });
+
+  it('AC-014-25: apply отклонён после смены организации — error не пишется', async () => {
+    const target = user({});
+    const users = fakeUsers([target]);
+    let fail: (reason: unknown) => void = () => undefined;
+    users.update.mockImplementationOnce(() => new Promise((_, reject) => (fail = reject)));
+    const { store } = makeStore({ users });
+    await store.openOrganization(ORG_A);
+
+    const pending = store.apply(target.id, 'block');
+    await store.openOrganization(ORG_B);
+    fail(forbidden());
+    await pending;
+
+    expect(store.error.value).toBeNull();
   });
 
   it('AC-014-25: rows — действия userActions(me, user), без me — пусто', async () => {
