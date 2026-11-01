@@ -16,6 +16,8 @@
 - `ui-admin` — образ `apps/ui/admin/Dockerfile`, порт не публикуется; healthcheck — `remoteEntry.json` на порту 4202.
 - `ui-supervisor` — образ `apps/ui/supervisor/Dockerfile`, порт не публикуется; healthcheck — `remoteEntry.json` на порту 4203.
 
+Все четыре контейнера стартуют параллельно и запускают `ng serve` через [`serve.sh`](serve.sh): до трёх попыток, после третьей неудачи контейнер завершается с кодом 1 и `docker compose up` сообщает об ошибке. Повтор внутри контейнера, а не `restart: on-failure`: упавший контейнер Docker сразу помечает `unhealthy`, и compose по `depends_on: service_healthy` прерывает запуск, не дожидаясь перезапуска. Повод — плавающий SIGSEGV node при сборке federation-артефактов (журнал спеки 014). `serve.sh` пробрасывает `SIGTERM` в `npm`, `docker stop` не ждёт таймаута.
+
 ## Что будет
 
 - `landing` на Astro — вне MVP.
