@@ -148,4 +148,52 @@ describe('session user store', () => {
     expect(store.me.value).toBeNull();
     expect(store.status.value).toBe('signed-out');
   });
+
+  it('AC-014-21: MeApi.me бросил — ensureMe резолвится, status прежний; следующий ensureMe повторяет запрос', async () => {
+    const meApi: MeApi = {
+      me: vi
+        .fn<MeApi['me']>()
+        .mockRejectedValueOnce(new Error('5xx'))
+        .mockResolvedValue(meOf(USER_A)),
+    };
+    const store = createSessionUserStore({ auth: fakeAuth(), me: meApi });
+
+    await expect(store.restore()).resolves.toBe(true);
+    expect(meApi.me).toHaveBeenCalledTimes(1);
+    expect(store.status.value).toBe('unknown');
+
+    await expect(store.ensureMe()).resolves.toBeUndefined();
+    expect(meApi.me).toHaveBeenCalledTimes(2);
+    expect(store.status.value).toBe('signed-in');
+  });
+
+  it('AC-014-21: MeApi.me бросил — login возвращает ok и не бросает', async () => {
+    const meApi: MeApi = { me: vi.fn<MeApi['me']>().mockRejectedValue(new Error('5xx')) };
+    const store = createSessionUserStore({ auth: fakeAuth(), me: meApi });
+
+    await expect(store.login('u@example.test', 'pw')).resolves.toEqual({ ok: true });
+    expect(store.me.value).toBeNull();
+  });
+
+  it('AC-014-21: повторный me после renew снова null — logout хранителя, токен стёрт', async () => {
+    const auth = fakeAuth({ refresh: refreshing('t1') });
+    const store = createSessionUserStore({ auth, me: fakeMe(async () => null) });
+
+    await store.login('u@example.test', 'pw');
+    await store.ensureMe();
+    expect(store.status.value).toBe('signed-out');
+    expect(store.accessToken()).toBeNull();
+    expect(auth.logout).toHaveBeenCalledTimes(1);
+  });
+
+  it('AC-014-21: сигналы стора только для чтения', async () => {
+    const store = createSessionUserStore({ auth: fakeAuth(), me: fakeMe() });
+
+    const assignMe = () => {
+      // @ts-expect-error сигнал `me` доступен только для чтения
+      store.me.value = null;
+    };
+    expect(assignMe).toBeTypeOf('function');
+    expect(store.me.value).toBeNull();
+  });
 });

@@ -55,18 +55,23 @@ export function createSessionUserStore({
   }
 
   // Ответ для токена, который уже сменился, не записывается: актуален только текущий токен.
+  // Сбой me (сеть, 5xx) бросает исключение: его ловит ensureMe, me и status не меняются.
   async function loadMe(token: string): Promise<void> {
     let current = token;
     let user = await meApi.me(token);
+    let renewed = false;
     if (user === null && (await keeper.renew())) {
-      const renewed = keeper.accessToken();
-      if (renewed === null) return;
-      current = renewed;
-      loadedToken = renewed;
-      user = await meApi.me(renewed);
+      const next = keeper.accessToken();
+      if (next === null) return;
+      current = next;
+      loadedToken = next;
+      renewed = true;
+      user = await meApi.me(next);
     }
     if (keeper.accessToken() !== current) return;
     if (user === null) {
+      // Повторный null после renew: токен стирается у хранителя (D-148).
+      if (renewed) await keeper.logout().catch(() => undefined);
       signOut();
       return;
     }
@@ -84,7 +89,14 @@ export function createSessionUserStore({
     }
     if (token !== loadedToken || loading === null) {
       loadedToken = token;
-      loading = loadMe(token);
+      // Сбой загрузки (D-147): кэш сбрасывается, следующий ensureMe повторит запрос; ensureMe не отклоняется.
+      const started: Promise<void> = loadMe(token).catch(() => {
+        if (loading === started) {
+          loadedToken = null;
+          loading = null;
+        }
+      });
+      loading = started;
     }
     return loading;
   }
