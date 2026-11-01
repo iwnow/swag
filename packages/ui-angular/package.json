@@ -1,0 +1,20 @@
+{
+  "name": "@swag/ui-angular",
+  "version": "0.0.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles/*": "./styles/*"
+  },
+  "dependencies": {
+    "@angular/cdk": "22.2.3",
+    "@angular/common": "22.2.3",
+    "@angular/core": "22.2.3",
+    "@angular/forms": "22.2.3",
+    "@angular/router": "22.2.3",
+    "@swag/contracts": "0.0.0",
+    "@swag/ui-core": "0.0.0"
+  }
+}

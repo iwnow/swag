@@ -13,6 +13,7 @@
     { "path": "packages/orchestrator-core" },
     { "path": "packages/agent-core" },
     { "path": "packages/ui-core" },
+    { "path": "packages/ui-angular" },
     { "path": "packages/llm-gateway-core" },
     { "path": "packages/adapter-crypto" },
     { "path": "packages/adapter-jose" },
