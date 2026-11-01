@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseEnv } from 'node:util';
 import { isLocalRemoteUrl } from '@swag/ui-core';
 import ts from 'typescript';
@@ -368,5 +368,66 @@ describe('env, compose и прокси каркаса (спека 014, 4.9–4.1
 
   it('AC-014-9: в proxy.conf.json нет ключа, который начинается с /internal', () => {
     expect(Object.keys(proxy).filter((key) => key.startsWith('/internal'))).toEqual([]);
+  });
+});
+
+// Спека 014, 4.9, AC-014-20: адреса прокси запуска на хосте (`npm run ui:dev`) берутся из env.
+describe('прокси запуска на хосте (спека 014, 4.9, AC-014-20)', () => {
+  const hostKeys = {
+    API_PORT: '13000',
+    IDENTITY_PORT: '13003',
+    GRAFANA_PORT: '13300',
+    UI_CABINET_PORT: '14201',
+    UI_ADMIN_PORT: '14202',
+    UI_SUPERVISOR_PORT: '14203',
+  } as const;
+  const proxyFile = fileURLToPath(new URL('../apps/ui/shell/proxy.host.conf.mjs', import.meta.url));
+
+  async function loadHostProxy(env: Record<string, string | undefined>) {
+    const saved = Object.fromEntries(Object.keys(env).map((name) => [name, process.env[name]]));
+    for (const [name, value] of Object.entries(env)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    try {
+      const module = (await import(`${pathToFileURL(proxyFile).href}?t=${Math.random()}`)) as {
+        default: Record<string, { target: string; changeOrigin: boolean }>;
+      };
+      return module.default;
+    } finally {
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  }
+
+  it('AC-014-20: адреса 4.9 на 127.0.0.1 с заданными портами, ключи — ровно набор 4.9, без /internal', async () => {
+    const proxy = await loadHostProxy(hostKeys);
+    expect(Object.keys(proxy).sort()).toEqual(
+      ['/api', '/auth', '/grafana', '/mf/cabinet', '/mf/admin', '/mf/supervisor'].sort(),
+    );
+    const expected: Record<string, string> = {
+      '/api': hostKeys.API_PORT,
+      '/auth': hostKeys.IDENTITY_PORT,
+      '/grafana': hostKeys.GRAFANA_PORT,
+      '/mf/cabinet': hostKeys.UI_CABINET_PORT,
+      '/mf/admin': hostKeys.UI_ADMIN_PORT,
+      '/mf/supervisor': hostKeys.UI_SUPERVISOR_PORT,
+    };
+    for (const [key, port] of Object.entries(expected)) {
+      const url = new URL(proxy[key]?.target ?? '');
+      expect(url.hostname, key).toBe('127.0.0.1');
+      expect(url.port, key).toBe(port);
+    }
+    for (const key of ['/mf/cabinet', '/mf/admin', '/mf/supervisor']) {
+      expect(proxy[key]?.changeOrigin, key).toBe(false);
+    }
+  });
+
+  it('AC-014-20: без переменной прокси падает с её именем', async () => {
+    await expect(loadHostProxy({ ...hostKeys, IDENTITY_PORT: undefined })).rejects.toThrow(
+      'IDENTITY_PORT',
+    );
   });
 });

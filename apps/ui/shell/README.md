@@ -27,9 +27,12 @@
 ## Как запускать
 
 - `npm run start` в `apps/ui/shell` — `ng serve --configuration container`: host `0.0.0.0`, порт `4200`. Так работает образ `Dockerfile`.
+- `npm run ui:dev` в корне — четыре dev-сервера на хосте (каркас и три remote) на портах из `.env`; скрипт `scripts/ui-dev.ts`, спека 014, 4.9. Каркас идёт в конфигурации `host` (`proxy.host.conf.mjs`), без `npm run start`. Нужно `docker compose stop ui`, иначе `UI_PORT` занят.
 - `npx ng build` — сборка каркаса с `remoteEntry.json` и манифестом в `dist/shell/browser`.
 
 Compose поднимает `ui` (этот каркас, порт `UI_PORT`), `ui-cabinet`, `ui-admin` и `ui-supervisor` (remote, порты не публикуются). `ui` ждёт их (`service_healthy`), поэтому после `npm run up` вход и разделы кабинета доступны в браузере через `http://127.0.0.1:4200`.
+
+- **Запуск на хосте (D-143, T-19).** Builder федерации не принимает `--host`, поэтому хост задаётся конфигурацией `serve-original.host` (`127.0.0.1`, прокси `proxy.host.conf.mjs`), а `serve.host` ссылается на неё, как `container`. Порт приходит флагом `--port` из `ui-dev.ts`: проверено, что builder передаёт его в dev-сервер. Прокси `proxy.host.conf.mjs` берёт адреса из env на момент импорта и падает с именем переменной, если её нет. `/internal` не проксируется (тест AC-014-20).
 
 ## Ключевые решения
 

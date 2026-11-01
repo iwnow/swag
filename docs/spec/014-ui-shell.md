@@ -913,7 +913,7 @@ export interface Preferences {
   - проверки AC-014-9 в `scripts/ui-config.test.ts`.
 
   Закрывает: REQ-014-19, AC-014-9. Готово, когда: тест зелёный, письмо регистрации ведёт на `/signup/confirm`.
-- [ ] **T-19.** *(из N-6)* `scripts/ui-dev.ts` и скрипт `ui:dev` в корневом `package.json`, `apps/ui/shell/proxy.host.conf.mjs` по 4.9, раздел в корневом README и в README каркаса, тест AC-014-20. Закрывает: REQ-014-20, AC-014-20. Готово, когда: тест зелёный, AC-014-18 пройден вручную.
+- [x] **T-19.** *(из N-6)* `scripts/ui-dev.ts` и скрипт `ui:dev` в корневом `package.json`, `apps/ui/shell/proxy.host.conf.mjs` по 4.9, раздел в корневом README и в README каркаса, тест AC-014-20. Закрывает: REQ-014-20, AC-014-20. Готово, когда: тест зелёный, AC-014-18 пройден вручную.
 - [ ] **T-20.** Завершение:
   - ручные AC-014-11…18 с журналом;
   - замеры NFR-014-1 и NFR-014-2;
