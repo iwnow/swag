@@ -888,7 +888,7 @@ export interface Preferences {
 
   Закрывает: REQ-014-2. Готово, когда: `npm run up`, вход в каркас и экраны кабинета работают, `npm run check` зелёный.
 - [x] **T-14.** Страницы каркаса `/signup`, `/signup/confirm`, `/invite` по 4.11, 4.6, REQ-014-6…9 на компонентах 4.8. Сценарии — методы `ShellStore` (4.12), страницы только рисуют. Закрывает: REQ-014-6…9. Готово, когда: регистрация проходит в `npm run up`.
-- [ ] **T-15.** `apps/ui/admin` (`@swag/admin`):
+- [x] **T-15.** `apps/ui/admin` (`@swag/admin`):
   - remote, `./routes` с `providers: [AdminStore]`, страница REQ-014-12 на `AdminStore` (4.12) и `swag-confirm`;
   - `AdminStore` в `ui-core`, тест AC-014-24;
   - `Dockerfile`, README;

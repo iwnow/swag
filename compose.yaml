@@ -195,6 +195,8 @@ services:
         condition: service_healthy
       ui-cabinet:
         condition: service_healthy
+      ui-admin:
+        condition: service_healthy
       otel-collector:
         condition: service_started
     healthcheck:
@@ -211,6 +213,17 @@ services:
     healthcheck:
       test:
         ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:4201/mf/cabinet/remoteEntry.json" > /dev/null']
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  # Спека 014, 4.9: микрофронтенд администрирования (Native Federation remote). Порт не публикуется: к нему ходит только каркас через прокси /mf/admin.
+  ui-admin:
+    build:
+      context: .
+      dockerfile: apps/ui/admin/Dockerfile
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:4202/mf/admin/remoteEntry.json" > /dev/null']
       interval: 2s
       timeout: 3s
       retries: 60

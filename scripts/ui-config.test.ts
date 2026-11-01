@@ -135,6 +135,7 @@ describe('цветовые литералы (спека 014, REQ-014-16)', () =>
   );
   const sourceDirs = [
     '../apps/ui/cabinet/src',
+    '../apps/ui/admin/src',
     '../packages/ui-angular/src',
     '../packages/ui-angular/styles',
   ].map((dir) => fileURLToPath(new URL(dir, import.meta.url)));

@@ -1,0 +1,29 @@
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "experimentalDecorators": false,
+    "paths": {
+      "@swag/ui-angular": ["../../../packages/ui-angular/src/index.ts"],
+      "@swag/ui-core": ["../../../packages/ui-core/src/index.ts"],
+      "@swag/contracts": ["../../../packages/contracts/src/index.ts"]
+    },
+    "lib": ["ES2022", "dom"]
+  },
+  "angularCompilerOptions": {
+    "strictInjectionParameters": true,
+    "strictInputAccessModifiers": true,
+    "strictTemplates": true
+  }
+}

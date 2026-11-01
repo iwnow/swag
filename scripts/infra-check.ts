@@ -118,6 +118,7 @@ const checks: [string, () => Promise<void>][] = [
   ['orchestrator', () => checkHttpInContainer('orchestrator', config.ORCHESTRATOR_PORT, '/health')],
   ['ui', () => checkHttp(config.UI_PORT, '/')],
   ['cabinet remote', () => checkHttp(config.UI_PORT, '/mf/cabinet/remoteEntry.json')],
+  ['admin remote', () => checkHttp(config.UI_PORT, '/mf/admin/remoteEntry.json')],
   ['grafana', () => checkHttp(config.GRAFANA_PORT, '/api/health')],
   ['otel-collector', checkCollector],
   ['llm-gateway', () => checkLlmGateway(config.LLM_GATEWAY_PORT)],
