@@ -623,7 +623,7 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
   - `safeReturnTo`, `isLocalRemoteUrl`.
 
   Реэкспорт. Тесты — `test/access-ui.test.ts`. Закрывает: REQ-014-3…5, AC-014-2, AC-014-3, AC-014-5, AC-014-6. Готово, когда: тесты зелёные.
-- [ ] **T-4.** `packages/ui-core/src/auth-forms.ts`: `authErrorText`, тексты 4.6 константами, `validateConfirmForm`, `validateInviteForm`, `validateEmailForm` на существующем типе `FormIssue`. Порты `UsersApi` и `OrganizationsApi` (4.3) — в `src/index.ts`. Тесты — `test/auth-forms.test.ts`. Закрывает: AC-014-4, AC-014-7. Готово, когда: тесты зелёные.
+- [x] **T-4.** `packages/ui-core/src/auth-forms.ts`: `authErrorText`, тексты 4.6 константами, `validateConfirmForm`, `validateInviteForm`, `validateEmailForm` на существующем типе `FormIssue`. Порты `UsersApi` и `OrganizationsApi` (4.3) — в `src/index.ts`. Тесты — `test/auth-forms.test.ts`. Закрывает: AC-014-4, AC-014-7. Готово, когда: тесты зелёные.
 - [ ] **T-5.** Каркас пакета `packages/ui-angular`:
   - `package.json` с зависимостями 4.7, `tsconfig.json` по образцу кабинета, ссылка в корневом `tsconfig.json`;
   - README по правилу 7;

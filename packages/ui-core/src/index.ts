@@ -1,15 +1,21 @@
 import {
   SwarmCreateRequest,
+  type InvitationRequest,
   type LlmCallData,
+  type ManagedUser,
+  type OrganizationList,
   type PlatformEvent,
   type PlatformModel,
   type SwarmStatus,
   type SwarmSummary,
+  type UserList,
+  type UserUpdate,
 } from '@swag/contracts';
 import { applyEvent, type SwarmView } from '@swag/api-integration';
 
 export * from './auth-session.ts';
 export * from './access-ui.ts';
+export * from './auth-forms.ts';
 
 // Спека 001, 4.8. Логика UI: валидация формы, состояние роя из событий, переподключение потока.
 // Angular-компоненты только рисуют и передают действия сюда.
@@ -19,6 +25,17 @@ export interface SwarmsApi {
   create(request: SwarmCreateRequest): Promise<SwarmView>;
   get(id: string): Promise<SwarmView>;
   stop(id: string): Promise<void>;
+}
+
+// Спека 014, 4.3: порты админки и супервизора; отказ — reject с HttpError (014, 4.7).
+export interface UsersApi {
+  list(orgId: string | null): Promise<UserList>; // GET /auth/users[?orgId=]
+  invite(body: InvitationRequest): Promise<void>; // POST /auth/invitations, 202
+  update(id: string, body: UserUpdate): Promise<ManagedUser>; // PATCH /auth/users/:id
+}
+
+export interface OrganizationsApi {
+  list(): Promise<OrganizationList>; // GET /auth/organizations
 }
 
 export interface StreamHandlers {
