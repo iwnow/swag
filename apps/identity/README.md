@@ -5,6 +5,7 @@
 ## Задачи
 
 - Эндпоинты спеки 012, 4.4, под префиксом `/auth`: `POST /auth/registrations` (202, пустое тело), `POST /auth/registrations/confirm` (201 `AuthSession`), `POST /auth/login` (200), `POST /auth/refresh` (200 `AuthRefreshed`), `POST /auth/logout` (204), `GET /auth/me` (200 `AuthMe`), `GET /health` (`ServiceInfo`).
+- Адреса страниц в письмах (спека 014, 4.10): ссылка регистрации — `IDENTITY_CONFIRM_URL`, страница `/signup/confirm` каркаса; ссылка приглашения — `IDENTITY_INVITE_URL`, страница `/invite`. В dev оба на `http://127.0.0.1:4200` (`UI_PORT`); прежние `/auth/confirm` и `/auth/invite` не используются.
 - Cookie токена обновления `swag_refresh` по 4.5: `HttpOnly; SameSite=Strict; Path=/auth; Max-Age=<IDENTITY_REFRESH_TTL_S>`, `Secure` только при `IDENTITY_COOKIE_SECURE=true`. Стирание — та же cookie с `Max-Age=0`.
 - Старт по порядку: конфиг → миграции → пул → ядро → `ensureSupervisor` → `listen`. Занятый email супервизора или ошибка миграций — процесс не стартует с кодом 1.
 - Управление доступом по спеке 024, 4.7: `GET /auth/users?orgId=` (200 `UserList`), `POST /auth/invitations` (202, пустое тело), `POST /auth/invitations/accept` (201 `AuthSession` + cookie и `no-store`), `PATCH /auth/users/:id` (200 `ManagedUser`), `GET /auth/organizations` (200 `OrganizationList`). Все, кроме принятия приглашения, требуют `Authorization: Bearer <jwt>`.

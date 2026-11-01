@@ -66,8 +66,14 @@ export const OrchestratorConfig = BaseConfig.extend({
 });
 export type OrchestratorConfig = z.infer<typeof OrchestratorConfig>;
 
-// Порт UI на 127.0.0.1 — только для проверки инфраструктуры (infra:check); сам UI переменных не читает.
-export const UiConfig = z.object({ UI_PORT: Port });
+// Порты UI на 127.0.0.1 — только для проверки инфраструктуры (infra:check); сам UI переменных не читает.
+// Спека 014, 4.9–4.10: порты микрофронтендов кабинета, админки и супервизора (по умолчанию 4201, 4202, 4203).
+export const UiConfig = z.object({
+  UI_PORT: Port,
+  UI_CABINET_PORT: Port.default(4201),
+  UI_ADMIN_PORT: Port.default(4202),
+  UI_SUPERVISOR_PORT: Port.default(4203),
+});
 export type UiConfig = z.infer<typeof UiConfig>;
 
 // Спека 003, 4.7 и Q-5: срок хранения в часах; меньше 24 — нельзя (Loki удаляет суточными индексами). Без значения по умолчанию.
@@ -154,7 +160,7 @@ export const IdentityConfig = z
     LOG_LEVEL: LogLevel.default('info'),
     TELEMETRY_FLUSH_TIMEOUT_MS: FlushTimeoutMs,
     IDENTITY_PORT: Port,
-    IDENTITY_CONFIRM_URL: z.string().url(), // страница UI (014); в dev http://127.0.0.1:4200/auth/confirm
+    IDENTITY_CONFIRM_URL: z.string().url(), // страница UI (014, 4.10); в dev http://127.0.0.1:4200/signup/confirm
     IDENTITY_JWT_PRIVATE_KEY: z.string().min(1), // PKCS8 PEM Ed25519 в base64 одной строкой (Q-2)
     IDENTITY_JWT_KID: z.string().min(1),
     IDENTITY_ACCESS_TTL_S: z.coerce.number().int().min(60).default(900),
@@ -167,9 +173,9 @@ export const IdentityConfig = z
     SMTP_URL: z.string().url(), // dev: smtp://mailpit:1025
     SMTP_TIMEOUT_MS: z.coerce.number().int().min(1).default(10000),
     MAIL_FROM: z.string().min(3), // dev: Swag <no-reply@swag.local>
-    // Спека 024, 4.14: внутренний токен отзывов, страница приглашения в UI (014) и срок приглашения.
+    // Спека 024, 4.14: внутренний токен отзывов, страница приглашения в UI (014, 4.10) и срок приглашения.
     IDENTITY_INTERNAL_TOKEN: ServiceToken,
-    IDENTITY_INVITE_URL: z.string().url(), // dev: http://127.0.0.1:4200/auth/invite
+    IDENTITY_INVITE_URL: z.string().url(), // dev: http://127.0.0.1:4200/invite
     IDENTITY_INVITE_TTL_S: z.coerce.number().int().min(600).default(604800),
   })
   .superRefine((config, ctx) => {

@@ -1,8 +1,10 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseEnv } from 'node:util';
 import { isLocalRemoteUrl } from '@swag/ui-core';
 import ts from 'typescript';
+import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
 const listFiles = (dir: string, pattern: RegExp): string[] =>
@@ -321,5 +323,50 @@ describe('манифест и границы remote (спека 014, REQ-014-2, 
         .map((spec) => `${file}: ${spec}`),
     );
     expect(found).toEqual([]);
+  });
+});
+
+// Спека 014, 4.9–4.10, AC-014-9: адреса в `.env.example`, публикация портов в compose и ключи прокси каркаса.
+describe('env, compose и прокси каркаса (спека 014, 4.9–4.10, AC-014-9)', () => {
+  const root = new URL('../', import.meta.url);
+  const example = parseEnv(readFileSync(new URL('.env.example', root), 'utf8'));
+  const compose = parse(readFileSync(new URL('compose.yaml', root), 'utf8')) as {
+    services: Record<string, { ports?: string[] }>;
+  };
+  const proxy = JSON.parse(
+    readFileSync(new URL('apps/ui/shell/proxy.conf.json', root), 'utf8'),
+  ) as Record<string, unknown>;
+
+  it('AC-014-9: IDENTITY_CONFIRM_URL и IDENTITY_INVITE_URL — /signup/confirm и /invite на 127.0.0.1:UI_PORT', () => {
+    const cases = [
+      [example.IDENTITY_CONFIRM_URL, '/signup/confirm'],
+      [example.IDENTITY_INVITE_URL, '/invite'],
+    ] as const;
+    for (const [value, path] of cases) {
+      const url = new URL(value ?? '');
+      expect(url.hostname, path).toBe('127.0.0.1');
+      expect(url.port, path).toBe(example.UI_PORT);
+      expect(url.pathname, path).toBe(path);
+    }
+  });
+
+  it('AC-014-9: .env.example задаёт UI_CABINET_PORT, UI_ADMIN_PORT, UI_SUPERVISOR_PORT', () => {
+    expect(example.UI_CABINET_PORT).toBe('4201');
+    expect(example.UI_ADMIN_PORT).toBe('4202');
+    expect(example.UI_SUPERVISOR_PORT).toBe('4203');
+  });
+
+  it('AC-014-9: у ui-cabinet, ui-admin, ui-supervisor нет ports; ui публикует только 127.0.0.1:', () => {
+    for (const name of ['ui-cabinet', 'ui-admin', 'ui-supervisor']) {
+      expect(compose.services[name], name).toBeDefined();
+      expect(compose.services[name]?.ports, name).toBeUndefined();
+    }
+    const ports = compose.services.ui?.ports ?? [];
+    expect(ports.length).toBeGreaterThan(0);
+    for (const port of ports) expect(port.startsWith('127.0.0.1:'), port).toBe(true);
+  });
+
+  it('AC-014-9: в proxy.conf.json нет ключа, который начинается с /internal', () => {
+    expect(Object.keys(proxy).filter((key) => key.startsWith('/internal'))).toEqual([]);
   });
 });
