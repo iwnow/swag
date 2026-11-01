@@ -26,7 +26,7 @@
 
 ## Что внутри сейчас
 
-- `src/auth-session.ts` — `createAuthSessionKeeper`, порт `AuthApi`, интерфейс `AuthSessionKeeper` (реэкспорт из `src/index.ts`).
+- `src/auth-session.ts` — `createAuthSessionKeeper`, порт `AuthApi` (вход, обновление, выход, регистрация, подтверждение, приглашение — 024, 014 4.1), интерфейсы `AuthSessionKeeper`, тип `AuthResult` (реэкспорт из `src/index.ts`).
 - `src/index.ts` — `createUiCore`, порты `SwarmsApi`, `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функции `formatLlmCall`, `formatAgentStep`, `unreadMessageIds`, `formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney`, `agentBudgetMicro`, `maxTokensInput`, `swarmFormInput`, `failureReasonText`.
 - `test/ui-core.test.ts` — AC-001-23, AC-016-14, AC-022-23, AC-031-6 (проекция `swarm.created` без `maxTokens`).
 - `test/format-llm-call.test.ts` — AC-002-24, AC-004-27 (строки `formatLlmCall` из 4.8).
@@ -34,11 +34,12 @@
 - `test/money-input.test.ts` — перевод полей формы (`agentBudgetMicro`, `swarmFormInput`), проверка результата через `SwarmCreateRequest`, тексты причин `failureReasonText` (спека 004, 4.8; T-15); AC-031-5 — лимит ответа роя и агента, `abc` → `NaN` и ошибка `validateForm` (спека 031, T-5).
 - `test/format-agent-step.test.ts` — AC-022-23.
 - `test/unread-message-ids.test.ts` — AC-030-7.
-- `test/auth-session.test.ts` — AC-024-23 (восстановление, вход, один `refresh` на `renew`, один `refresh` на `restore` и `renew`, `onSignedOut`, `logout`, отписка, поздний `refresh` после `logout`/`login`).
+- `test/auth-session.test.ts` — AC-024-23 (восстановление, вход, один `refresh` на `renew`, один `refresh` на `restore` и `renew`, `onSignedOut`, `logout`, отписка, поздний `refresh` после `logout`/`login`); AC-014-1 (регистрация, подтверждение, приглашение, поколение при `register`/`confirmRegistration`).
 
 ## Ключевые решения
 
 - Порты, а не `fetch`/`WebSocket` в ядре: адаптеры живут в `apps/ui/cabinet/src/app/api.ts` (T-12, T-13) и в `apps/ui/cabinet/src/app/auth-api.ts` (024, T-16).
+- Регистрация и приглашение (014, 4.1): `confirmRegistration` и `acceptInvitation` устроены как `login` (общий `signIn`: поколение меняется до запроса, токен — из ответа); `register` не трогает ни токен, ни поколение. Код ошибки — тот же `error.code` или `'unknown'`.
 - Сессия входа (024, 4.15): токен доступа только в памяти; reject `refresh` в `restore()` и `renew()` — неудача, как `null`; код ошибки входа — `error.code`, иначе `'unknown'`; `logout()` не вызывает `onSignedOut` (выход инициирует вызывающий код), ошибка `api.logout` пробрасывается, токен стирается в любом случае. Поколение сессии (`epoch`) увеличивается в `login`, `logout` и при выходе по неудачному `renew`: `refresh`, начатый до этого, при ответе не пишет токен и считается устаревшим; `renew` в этом случае не вызывает `onSignedOut`. `restore` делит общий `refresh` с `renew`, но при неудаче `onSignedOut` не вызывает.
 - Переподключение: `onError` от потока → `Timers.setTimeout` → `open(id, lastSeq)`; защита от повторов — проверкой `event.seq <= view.lastSeq` до `applyEvent`; событие, не подходящее к состоянию, пропускается.
 - Модель формы роя не дублируется: список моделей UI берёт из `PlatformModel.options` контракта, форма валидируется `SwarmCreateRequest`, значение по умолчанию — из схемы (`chat-small`).
@@ -60,7 +61,7 @@
 
 - 001 — 4.8, REQ-001-13.
 - 016 — 4.10, REQ-016-13, AC-016-14.
-- 014 — деление `ui-core` по фронтендам (D-11).
+- 014 — деление `ui-core` по фронтендам (D-11), 4.1, AC-014-1 (регистрация и приглашение в сессии).
 - 024 — 4.15, REQ-024-13 (ядро), AC-024-23.
 - 002 — 4.11, REQ-002-15, AC-002-24.
 - 022 — 4.1 (`PlatformModel`, `AgentDraft.model`), 4.10, REQ-022-15, AC-022-23.

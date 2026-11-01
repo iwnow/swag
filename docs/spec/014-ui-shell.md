@@ -616,7 +616,7 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
   - команда проверки экземпляра.
 
   T-11 берёт конфиг оттуда. Если что-то из 4.4–4.5 не работает — `blocked`, вопрос `Q-k` с вариантами. Закрывает: проверку 4.4–4.5. Готово, когда: в журнале конфиг, итоги проверок и команда проверки.
-- [ ] **T-2.** `packages/ui-core/src/auth-session.ts`: дополнения 4.1, тип `AuthResult`. Тесты — `test/auth-session.test.ts`. Обновить README `ui-core` и глоссарий. Закрывает: REQ-014-7, REQ-014-8 (сессия), AC-014-1. Готово, когда: тесты пакета зелёные, AC-024-23 зелёный без правок.
+- [x] **T-2.** `packages/ui-core/src/auth-session.ts`: дополнения 4.1, тип `AuthResult`. Тесты — `test/auth-session.test.ts`. Обновить README `ui-core` и глоссарий. Закрывает: REQ-014-7, REQ-014-8 (сессия), AC-014-1. Готово, когда: тесты пакета зелёные, AC-024-23 зелёный без правок.
 - [ ] **T-3.** `packages/ui-core/src/access-ui.ts`:
   - `UiArea`, `NavItem`, `canOpen`, `navigationFor`;
   - `UserAction`, `userActions`, `userActionBody`;
