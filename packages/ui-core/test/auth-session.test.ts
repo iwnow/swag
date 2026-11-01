@@ -202,6 +202,7 @@ describe('auth session keeper', () => {
     await keeper.login('u@example.test', 'pw');
 
     await expect(keeper.register('new@example.test')).resolves.toEqual({ ok: true });
+    expect(keeper.accessToken()).toBe('login-token');
 
     const limited = createAuthSessionKeeper(
       fakeApi({ register: async () => Promise.reject({ code: 'rate_limited' }) }),
@@ -240,6 +241,18 @@ describe('auth session keeper', () => {
 
     await expect(renewed).resolves.toBe(true);
     expect(keeper.accessToken()).toBe('late-token');
+  });
+
+  it('AC-014-1: reject acceptInvitation при уже выданном токене оставляет прежний токен', async () => {
+    const keeper = createAuthSessionKeeper(
+      fakeApi({ acceptInvitation: async () => Promise.reject({ code: 'invalid_token' }) }),
+    );
+    await keeper.login('u@example.test', 'pw');
+
+    await expect(
+      keeper.acceptInvitation({ token: 'bad', password: 'password-10' }),
+    ).resolves.toEqual({ ok: false, code: 'invalid_token' });
+    expect(keeper.accessToken()).toBe('login-token');
   });
 });
 

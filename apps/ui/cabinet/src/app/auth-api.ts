@@ -32,7 +32,7 @@ async function failure(response: Response): Promise<AuthRequestError> {
 
 async function signIn(
   path: string,
-  body: RegistrationConfirmRequest | InvitationAcceptRequest,
+  body: { email: string; password: string } | RegistrationConfirmRequest | InvitationAcceptRequest,
 ): Promise<AuthSession> {
   const response = await post(path, body);
   if (!response.ok) throw await failure(response);
@@ -48,11 +48,7 @@ export function getMe(token: string): Promise<Response> {
 }
 
 export const authApi: AuthApi = {
-  async login(email, password) {
-    const response = await post('/login', { email, password });
-    if (!response.ok) throw await failure(response);
-    return (await response.json()) as AuthSession;
-  },
+  login: (email, password) => signIn('/login', { email, password }),
   async refresh() {
     const response = await post('/refresh');
     if (response.status === 401) return null;

@@ -144,6 +144,29 @@ describe('auth forms', () => {
     if (result.ok) expect(InvitationAcceptRequest.safeParse(result.body).success).toBe(true);
   });
 
+  it('AC-014-7: token длиннее 200 символов даёт ошибку token в обеих формах', () => {
+    const longToken = 'x'.repeat(201);
+    expect(validateConfirmForm({ ...good, token: longToken })).toEqual({
+      ok: false,
+      issues: [{ path: 'token', message: TOKEN_TEXT }],
+    });
+    expect(
+      validateInviteForm({ token: longToken, password: 'correct-horse', repeat: 'correct-horse' }),
+    ).toEqual({ ok: false, issues: [{ path: 'token', message: TOKEN_TEXT }] });
+  });
+
+  it('AC-014-7: validateInviteForm — ошибки token, password, repeat идут в этом порядке', () => {
+    const result = validateInviteForm({ token: '', password: '123456789', repeat: 'other' });
+    expect(result).toEqual({
+      ok: false,
+      issues: [
+        { path: 'token', message: TOKEN_TEXT },
+        { path: 'password', message: PASSWORD_TEXT },
+        { path: 'repeat', message: REPEAT_TEXT },
+      ],
+    });
+  });
+
   it('AC-014-7: validateEmailForm — a@b не проходит, ` A@B.example ` даёт a@b.example', () => {
     expect(validateEmailForm({ email: 'a@b' })).toEqual({
       ok: false,

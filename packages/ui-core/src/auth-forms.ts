@@ -63,7 +63,6 @@ const FIELD_TEXT = new Map<string, string>([
   ['password', FORM_TEXT.password],
   ['repeat', FORM_TEXT.repeat],
   ['organizationName', FORM_TEXT.organizationName],
-  ['email', FORM_TEXT.email],
 ]);
 
 const CONFIRM_ORDER = ['token', 'password', 'repeat', 'organizationName'];
