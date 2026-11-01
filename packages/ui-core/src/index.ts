@@ -16,6 +16,8 @@ import { applyEvent, type SwarmView } from '@swag/api-integration';
 export * from './auth-session.ts';
 export * from './access-ui.ts';
 export * from './auth-forms.ts';
+export * from './ports.ts';
+export * from './session-user.store.ts';
 
 // Спека 001, 4.8. Логика UI: валидация формы, состояние роя из событий, переподключение потока.
 // Angular-компоненты только рисуют и передают действия сюда.

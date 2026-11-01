@@ -10,6 +10,7 @@
 - `openSwarm(id)` — страница роя: `view` строится через `applyEvent` из `@swag/api-integration`, `feed` — список принятых событий; при обрыве потока переподключение с `after = lastSeq` через паузу (1 с по умолчанию); повторные события не попадают в ленту.
 - `SwarmPage.stop()` — остановка через `SwarmsApi.stop`; `close()` — закрыть поток и отменить переподключение.
 - `createAuthSessionKeeper(api)` — сессия входа кабинета (спека 024, 4.15): `restore()` по cookie, `login`, `logout`, токен доступа в памяти (`accessToken()`), `renew()` с одним общим `refresh` на все одновременные вызовы (он же делит `restore()`), `onSignedOut(listener)` — при неудаче обновления токен стирается и слушатели вызываются. Порт `AuthApi` — адаптер на `fetch` в `@swag/ui-angular` (`auth-api.ts`).
+- `createSessionUserStore({ auth, me })` — сессионный пользователь страницы (спека 014, 4.12): сигналы `me`, `status`, `role`, `orgId`, `navigation`; `restore()` и `ensureMe()` — загрузка `AuthMe` по токену; `login`, `register`, `confirmRegistration`, `acceptInvitation`, `logout`; результат входа — `AuthResult`. Стор подходит как `RequestSession` адаптеров.
 - `traceUrl(traceId)` — адрес трейса события в Grafana по шаблону из зависимостей; без `traceId` — `null` (спека 016, 4.10).
 - `formatLlmCall(data)` — строка события `llm.call` для ленты роя: модель, токены с кэшем, стоимость в долларах (6 знаков), статус `прерван` или `ошибка <код>`; при `usage: null` — `без usage`, при оценке из `charge` (`basis: estimate`) — `≈$…` (спека 002, 4.11; изменено 004, 4.8). Сумма — `charge.microUsd`, без `charge` — `costMicroUsd`. Чистая функция вне `createUiCore`: фронтенд вызывает её напрямую.
 - `formatUsd(microUsd)` — сумма в долларах, 4 знака, округление вверх (`$0.0124`); целочисленная арифметика (спека 004, 4.8).
@@ -28,6 +29,8 @@
 
 - `src/access-ui.ts` — `UiArea`, `NavItem`, `canOpen`, `navigationFor` (разделы по `ROLE_PERMISSIONS` и `can`), `UserAction`, `userActions`, `userActionBody` (зеркало `PATCH /auth/users/:id`), `safeReturnTo`, `isLocalRemoteUrl` (014, 4.2). Реэкспорт из `src/index.ts`.
 - `src/auth-session.ts` — `createAuthSessionKeeper`, порт `AuthApi` (вход, обновление, выход, регистрация, подтверждение, приглашение — 024, 014 4.1), интерфейсы `AuthSessionKeeper`, тип `AuthResult` (реэкспорт из `src/index.ts`).
+- `src/session-user.store.ts` — `createSessionUserStore`, тип `SessionUserStore`, `SessionStatus` (014, 4.12). Внутри один `createAuthSessionKeeper`; сигналы `ReadonlySignal`, менять состояние можно только методами стора.
+- `src/ports.ts` — порты сторов `BalanceApi`, `MeApi`, `Preferences` (014, 4.12). `BalanceApi` и `Preferences` пока без потребителей: их использует `balance.state` и `ShellStore` (T-22).
 - `src/auth-forms.ts` — `authErrorText` (таблица 4.6, текст по умолчанию), тексты форм и сообщений 4.6 (`FORM_TEXT`, `REGISTRATION_SENT_TEXT`, `INVITATION_INVALID_TEXT`, `invitationSentText`, `blockConfirmText`, `USER_ACTION_LABEL`), `validateEmailForm`, `validateConfirmForm`, `validateInviteForm` (014, 4.2, 4.6). Ошибки — `FormIssue` из `src/index.ts`.
 - `src/index.ts` — `createUiCore`, порты `SwarmsApi`, `UsersApi`, `OrganizationsApi` (014, 4.3), `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функции `formatLlmCall`, `formatAgentStep`, `unreadMessageIds`, `formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney`, `agentBudgetMicro`, `maxTokensInput`, `swarmFormInput`, `failureReasonText`.
 - `test/ui-core.test.ts` — AC-001-23, AC-016-14, AC-022-23, AC-031-6 (проекция `swarm.created` без `maxTokens`).
@@ -38,6 +41,7 @@
 - `test/unread-message-ids.test.ts` — AC-030-7.
 - `test/auth-forms.test.ts` — AC-014-4 (`authErrorText`, тексты 4.6), AC-014-7 (проверки форм регистрации, приглашения и email, порядок ошибок).
 - `test/access-ui.test.ts` — AC-014-2, AC-014-3, AC-014-5, AC-014-6 (разделы, действия над пользователями, адреса remote и возврата).
+- `test/session-user.store.test.ts` — AC-014-21 (одна загрузка на токен, `restore` и `renew`, отброшенный стейл-ответ, `onSignedOut`, `logout`).
 - `test/auth-session.test.ts` — AC-024-23 (восстановление, вход, один `refresh` на `renew`, один `refresh` на `restore` и `renew`, `onSignedOut`, `logout`, отписка, поздний `refresh` после `logout`/`login`); AC-014-1 (регистрация, подтверждение, приглашение, поколение при `register`/`confirmRegistration`).
 
 ## Ключевые решения
@@ -48,7 +52,12 @@
 - Сессия входа (024, 4.15): токен доступа только в памяти; reject `refresh` в `restore()` и `renew()` — неудача, как `null`; код ошибки входа — `error.code`, иначе `'unknown'`; `logout()` не вызывает `onSignedOut` (выход инициирует вызывающий код), ошибка `api.logout` пробрасывается, токен стирается в любом случае. Поколение сессии (`epoch`) увеличивается в `login`, `logout` и при выходе по неудачному `renew`: `refresh`, начатый до этого, при ответе не пишет токен и считается устаревшим; `renew` в этом случае не вызывает `onSignedOut`. `restore` делит общий `refresh` с `renew`, но при неудаче `onSignedOut` не вызывает.
 - Переподключение: `onError` от потока → `Timers.setTimeout` → `open(id, lastSeq)`; защита от повторов — проверкой `event.seq <= view.lastSeq` до `applyEvent`; событие, не подходящее к состоянию, пропускается.
 - Модель формы роя не дублируется: список моделей UI берёт из `PlatformModel.options` контракта, форма валидируется `SwarmCreateRequest`, значение по умолчанию — из схемы (`chat-small`).
-- Зависимости (`package.json`): `@swag/contracts`, `@swag/api-integration`, `zod`; `zod` в исходниках — только в `src/access-ui.ts` (схема `UiArea` по 014, 4.2). Белый список ядра — REQ-001-18.
+- Зависимости (`package.json`): `@swag/contracts`, `@swag/api-integration`, `zod`, `@preact/signals-core` 1.14.5 (точная версия, как у каркаса и remote). `zod` в исходниках — только в `src/access-ui.ts` (схема `UiArea` по 014, 4.2). Белый список ядра — REQ-001-18; исключение для `@preact/signals-core` — только главная точка входа, без подпутей (`arch:check`, REQ-014-25, Q-9).
+- Сигналы сторов (014, 4.12, Q-9): `@preact/signals-core` — потому что сторы UI должны работать без фреймворка и без DOM, а мост `connectStore` подключает их к Angular отдельно. Пакет не тянет Angular: компоненты только читают сигналы.
+- `SessionUserStore.restore()` — кэш промиса на стор: повторные вызовы получают тот же промис, один `refresh` и один `me`.
+- `SessionUserStore.ensureMe()` — одна загрузка `me` на токен доступа: повторные вызовы с тем же токеном получают тот же промис. Токен сменился во время запроса — ответ для старого токена не записывается (стейл-ответ отбрасывается). Без токена — `me = null`, `signed-out`.
+- Сбой `MeApi.me` (сеть, 5xx) — исключение: `ensureMe` резолвится, `me` и `status` не меняются, кэш загрузки сбрасывается, следующий `ensureMe` повторяет запрос; вход возвращает `ok` (014, 4.12, D-147).
+- `me` снова `null` после `renew` — стор вызывает `logout` хранителя: токен стирается, `status = signed-out` (014, 4.12, D-148).
 - Непрочитанное (030) вычисляется из уже существующих событий: `bus.message` и `agent.working` с тем же `messageId`; новых событий платформы нет, проекция роя не меняется.
 - Деньги: целые micro-USD, без `Number`-деления там, где важна точность. `formatUsd` округляет вверх до 4 знаков, остаток в `formatSwarmMoney` — вниз до 4 знаков (остаток не завышается). `formatLlmCall` — 6 знаков, точно, без округления. Окно `spentLastMinute`: `ts > nowMs − 60000` и `ts ≤ nowMs` (событие ровно на `nowMs − 60000` не входит) (спека 004, 4.8).
 - `traceUrl`: шаблон с подстановкой `{traceId}` приходит от фронтенда (`traces.urlTemplate`, обязательная зависимость), ядро не знает адреса Grafana. `traceId` подставляется через `encodeURIComponent` (для hex — без изменений), заменяются все вхождения `{traceId}`.
@@ -60,13 +69,13 @@
 ## Связи
 
 - Фронтенд: `apps/ui/cabinet` (`@swag/cabinet`).
-- Использует: `@swag/contracts`, `@swag/api-integration`.
+- Использует: `@swag/contracts`, `@swag/api-integration`, `@preact/signals-core` (только главная точка входа). Из `@swag/ui-angular` ядро не импортирует: мост `connectStore` подключается снаружи (T-24).
 
 ## Спеки
 
 - 001 — 4.8, REQ-001-13.
 - 016 — 4.10, REQ-016-13, AC-016-14.
-- 014 — деление `ui-core` по фронтендам (D-11), 4.1, AC-014-1 (регистрация и приглашение в сессии); 4.2, REQ-014-3…5, AC-014-2, AC-014-3, AC-014-5, AC-014-6 (доступ, навигация, проверки адресов); 4.3, 4.6, AC-014-4, AC-014-7 (тексты и формы).
+- 014 — деление `ui-core` по фронтендам (D-11), 4.1, AC-014-1 (регистрация и приглашение в сессии); 4.2, REQ-014-3…5, AC-014-2, AC-014-3, AC-014-5, AC-014-6 (доступ, навигация, проверки адресов); 4.3, 4.6, AC-014-4, AC-014-7 (тексты и формы); 4.12 (Q-9), REQ-014-23…25, AC-014-21 (`SessionUserStore`), AC-014-26 (часть: белый список `arch:check`).
 - 024 — 4.15, REQ-024-13 (ядро), AC-024-23.
 - 002 — 4.11, REQ-002-15, AC-002-24.
 - 022 — 4.1 (`PlatformModel`, `AgentDraft.model`), 4.10, REQ-022-15, AC-022-23.
