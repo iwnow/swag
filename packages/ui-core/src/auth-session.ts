@@ -4,6 +4,7 @@ import type {
   InvitationAcceptRequest,
   RegistrationConfirmRequest,
 } from '@swag/contracts';
+import { errorCode } from './error-code.ts';
 
 // Спека 024, 4.15: сессия входа кабинета. Токен доступа — только в памяти; обновление — по cookie через AuthApi.
 // Спека 014, 4.1: регистрация и приглашение в той же сессии.
@@ -29,12 +30,6 @@ export interface AuthSessionKeeper {
   register(email: string): Promise<AuthResult>;
   confirmRegistration(body: RegistrationConfirmRequest): Promise<AuthResult>;
   acceptInvitation(body: InvitationAcceptRequest): Promise<AuthResult>;
-}
-
-// Трактовка: код берётся из `error.code` (строка), иначе `'unknown'`.
-function errorCode(error: unknown): string {
-  const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === 'string' ? code : 'unknown';
 }
 
 async function attempt(run: () => Promise<void>): Promise<AuthResult> {

@@ -9,7 +9,7 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { BalanceEntry } from '@swag/contracts';
-import { formatUsd, type BalanceState } from '@swag/ui-core';
+import { formatDateTime, formatUsd, type BalanceState } from '@swag/ui-core';
 import { AlertComponent } from './components/alert.ts';
 import { ButtonDirective } from './components/button.ts';
 import { FieldComponent } from './components/field.ts';
@@ -20,13 +20,6 @@ const KIND_LABEL: Record<BalanceEntry['kind'], string> = { topup: 'Пополн�
 
 const signedUsd = (micro: number): string =>
   micro < 0 ? `−${formatUsd(-micro)}` : `${micro > 0 ? '+' : ''}${formatUsd(micro)}`;
-
-const formatDate = (ts: string): string =>
-  new Date(ts).toLocaleString('ru-RU', {
-    timeZone: 'Europe/Moscow',
-    dateStyle: 'short',
-    timeStyle: 'short',
-  });
 
 // Спека 013, 4.11 и 014, 4.12: панель баланса без своего состояния. Данные, проверки и запросы — в сторе
 // (`state`, BalanceState из ui-core). Панель рисует сигналы и отдаёт ввод формы наружу через `topup` и `more`.
@@ -149,7 +142,7 @@ export class BalancePanelComponent {
 
   readonly usd = formatUsd;
   readonly signed = signedUsd;
-  readonly date = formatDate;
+  readonly date = formatDateTime;
   readonly kind = (value: BalanceEntry['kind']): string => KIND_LABEL[value];
 
   constructor() {

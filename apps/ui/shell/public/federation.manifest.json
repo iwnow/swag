@@ -1,3 +1,4 @@
 {
-  "cabinet": "/mf/cabinet/remoteEntry.json"
+  "cabinet": "/mf/cabinet/remoteEntry.json",
+  "admin": "/mf/admin/remoteEntry.json"
 }
