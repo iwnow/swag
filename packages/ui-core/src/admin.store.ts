@@ -1,17 +1,14 @@
 import { computed, signal, type ReadonlySignal } from '@preact/signals-core';
 import type { InvitationRequest, ManagedUser } from '@swag/contracts';
-import { userActionBody, userActions, type UserAction } from './access-ui.ts';
+import { userActionBody, userRows, type UserAction, type UserRow } from './access-ui.ts';
 import { authErrorText, invitationSentText, validateEmailForm } from './auth-forms.ts';
-import { errorCode } from './error-code.ts';
+import { failureCode } from './error-code.ts';
 import type { SessionUserStore } from './session-user.store.ts';
 import type { FormIssue, UsersApi } from './swarm-ui.ts';
 
 // Спека 014, 4.12 (AdminStore, REQ-014-12, REQ-014-23): страница пользователей админки поверх UsersApi.
 
-export interface AdminRow {
-  user: ManagedUser;
-  actions: UserAction[];
-}
+export type AdminRow = UserRow;
 
 export interface AdminInvite {
   busy: boolean;
@@ -38,12 +35,6 @@ export interface AdminStore {
   apply(userId: string, action: UserAction): Promise<void>;
 }
 
-// Трактовка: 403 — код forbidden независимо от тела ответа (4.6); остальное — код из error.code.
-function failureCode(failure: unknown): string {
-  const { status } = (failure ?? {}) as { status?: unknown };
-  return status === 403 ? 'forbidden' : errorCode(failure);
-}
-
 const initialInvite = (): AdminInvite => ({ busy: false, issues: [], error: null, sent: null });
 
 export function createAdminStore({ session, users: api }: AdminStoreDeps): AdminStore {
@@ -51,10 +42,7 @@ export function createAdminStore({ session, users: api }: AdminStoreDeps): Admin
   const loaded = signal(false);
   const error = signal<string | null>(null);
   const invite = signal<AdminInvite>(initialInvite());
-  const rows = computed<AdminRow[]>(() => {
-    const me = session.me.value;
-    return users.value.map((user) => ({ user, actions: me ? userActions(me, user) : [] }));
-  });
+  const rows = computed<AdminRow[]>(() => userRows(session.me.value, users.value));
 
   const patchInvite = (change: Partial<AdminInvite>): void => {
     invite.value = { ...invite.value, ...change };

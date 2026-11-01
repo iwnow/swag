@@ -13,17 +13,19 @@ import {
   createCabinetStore,
   createSessionUserStore,
   createShellStore,
+  createSupervisorStore,
   type AdminStore,
   type CabinetStore,
   type SessionUserStore,
   type ShellStore,
+  type SupervisorStore,
   type Timers,
 } from '@swag/ui-core';
 import { authApi, meApi } from './auth-api.ts';
 import { createBalanceApi } from './balance-api.ts';
 import { preferences } from './preferences.ts';
 import { createSwarmsApi, createSwarmStream } from './swarms-api.ts';
-import { createUsersApi } from './users-api.ts';
+import { createOrganizationsApi, createUsersApi } from './users-api.ts';
 
 // Спека 014, 4.12 «Мост в Angular»: сторы ui-core (preact signals) → Angular-сигналы.
 
@@ -119,6 +121,7 @@ export const SESSION_USER = new InjectionToken<SessionUserStore>('session-user-s
 export const SHELL_STORE = new InjectionToken<Connected<ShellStore>>('shell-store');
 export const CABINET_STORE = new InjectionToken<Connected<CabinetStore>>('cabinet-store');
 export const ADMIN_STORE = new InjectionToken<Connected<AdminStore>>('admin-store');
+export const SUPERVISOR_STORE = new InjectionToken<Connected<SupervisorStore>>('supervisor-store');
 
 export function provideShellStore(): Provider[] {
   return [
@@ -163,6 +166,25 @@ export function provideAdminStore(): Provider[] {
             users: createUsersApi(inject(SESSION_USER)),
           }),
         ),
+    },
+  ];
+}
+
+export function provideSupervisorStore(): Provider[] {
+  return [
+    {
+      provide: SUPERVISOR_STORE,
+      useFactory: () => {
+        const session = inject(SESSION_USER);
+        return connectStore(
+          createSupervisorStore({
+            session,
+            users: createUsersApi(session),
+            organizations: createOrganizationsApi(session),
+            balance: createBalanceApi(session),
+          }),
+        );
+      },
     },
   ];
 }
