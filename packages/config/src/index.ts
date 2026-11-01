@@ -66,7 +66,7 @@ export const OrchestratorConfig = BaseConfig.extend({
 });
 export type OrchestratorConfig = z.infer<typeof OrchestratorConfig>;
 
-// Порты UI на 127.0.0.1 — только для проверки инфраструктуры (infra:check); сам UI переменных не читает.
+// Порты UI на 127.0.0.1 — только для проверки инфраструктуры (infra:check) и запуска на хосте (ui:dev); сам UI переменных не читает.
 // Спека 014, 4.9–4.10: порты микрофронтендов кабинета, админки и супервизора (по умолчанию 4201, 4202, 4203).
 export const UiConfig = z.object({
   UI_PORT: Port,

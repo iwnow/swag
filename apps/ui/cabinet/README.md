@@ -5,6 +5,7 @@
 ## Запуск и сборка
 
 - `npm run start` — `ng serve --configuration container`: host `0.0.0.0`, порт `4201`, `servePath` `/mf/cabinet/` (спека 014, 4.9). Так работает образ `Dockerfile`.
+- Запуск на хосте — `npm run ui:dev` в корне: порт из `UI_<ИМЯ>_PORT` в `.env`, каркас проксирует `/mf/<имя>` на него (спека 014, 4.9, D-143).
 - `npx ng build` — `dist/cabinet/browser/remoteEntry.json` и `routes-*.js` (экспорт `./routes`).
 - Адрес remote в каркасе — `apps/ui/shell/public/federation.manifest.json`: `"cabinet": "/mf/cabinet/remoteEntry.json"`.
 

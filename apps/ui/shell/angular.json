@@ -39,6 +39,9 @@
           "configurations": {
             "container": {
               "target": "shell:serve-original:container"
+            },
+            "host": {
+              "target": "shell:serve-original:host"
             }
           }
         },
@@ -87,6 +90,10 @@
             "container": {
               "buildTarget": "shell:esbuild:development",
               "host": "0.0.0.0"
+            },
+            "host": {
+              "buildTarget": "shell:esbuild:development",
+              "proxyConfig": "proxy.host.conf.mjs"
             }
           },
           "defaultConfiguration": "development"
