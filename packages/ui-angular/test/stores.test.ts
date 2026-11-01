@@ -1,18 +1,26 @@
+import '@angular/compiler';
 import {
   computed,
   createEnvironmentInjector,
+  inject,
   Injector,
   runInInjectionContext,
   type EnvironmentInjector,
 } from '@angular/core';
 import { effect, signal } from '@preact/signals-core';
+import { createCabinetStore } from '@swag/ui-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { connectStore } from '../src/stores.ts';
+import { CABINET_STORE, connectStore, provideCabinetStore, SESSION_USER } from '../src/stores.ts';
 import { preferences } from '../src/preferences.ts';
 
 vi.mock('@preact/signals-core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@preact/signals-core')>();
   return { ...actual, effect: vi.fn(actual.effect) };
+});
+
+vi.mock('@swag/ui-core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@swag/ui-core')>();
+  return { ...actual, createCabinetStore: vi.fn(actual.createCabinetStore) };
 });
 
 function makeStore() {
@@ -177,5 +185,24 @@ describe('preferences', () => {
     preferences.set('swag.theme', 'light');
 
     expect(preferences.get('swag.theme')).toBe('light');
+  });
+});
+
+describe('provideCabinetStore', () => {
+  it('AC-014-26: уничтожение инжектора маршрута вызывает dispose стора', () => {
+    const dispose = vi.fn();
+    vi.mocked(createCabinetStore).mockReturnValueOnce({ dispose } as unknown as ReturnType<
+      typeof createCabinetStore
+    >);
+    const injector = createEnvironmentInjector(
+      [{ provide: SESSION_USER, useValue: {} }, ...provideCabinetStore()],
+      Injector.create({ providers: [] }) as EnvironmentInjector,
+    );
+    runInInjectionContext(injector, () => inject(CABINET_STORE));
+    expect(dispose).not.toHaveBeenCalled();
+
+    injector.destroy();
+
+    expect(dispose).toHaveBeenCalledTimes(1);
   });
 });

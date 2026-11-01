@@ -14,6 +14,11 @@
     "allowImportingTsExtensions": true,
     "rewriteRelativeImportExtensions": true,
     "experimentalDecorators": false,
+    "paths": {
+      "@swag/ui-angular": ["../../../packages/ui-angular/src/index.ts"],
+      "@swag/ui-core": ["../../../packages/ui-core/src/index.ts"],
+      "@swag/contracts": ["../../../packages/contracts/src/index.ts"]
+    },
     "lib": ["ES2022", "dom"]
   },
   "angularCompilerOptions": {

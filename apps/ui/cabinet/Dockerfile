@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Dev-образ личного кабинета: `ng serve` с прокси /api (Q-4). Продакшен-сборки в спеке 001 нет.
+# Dev-образ микрофронтенда кабинета: `ng serve` на порту 4201 с --serve-path /mf/cabinet/ (спека 014, 4.9).
 FROM node:24.22.1-alpine3.23
 WORKDIR /repo
 COPY package.json package-lock.json .npmrc ./

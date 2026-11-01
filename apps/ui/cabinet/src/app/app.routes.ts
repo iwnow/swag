@@ -1,25 +1,23 @@
 import type { Routes } from '@angular/router';
-import { sessionGuard } from '@swag/ui-angular';
+import { areaGuard, provideCabinetStore } from '@swag/ui-angular';
 import { BalancePageComponent } from './balance.page.ts';
-import { LoginPageComponent } from './login.page.ts';
 import { SwarmListPageComponent } from './swarm-list.page.ts';
 import { SwarmNewPageComponent } from './swarm-new.page.ts';
 import { SwarmPageComponent } from './swarm.page.ts';
 
+// Спека 014, 4.4 и REQ-014-11: экспорт `./routes` для каркаса. Префикс `''`, без `**` — неизвестный путь уходит к каркасу.
 // Спека 001, 4.8: `/` — список, `/swarms/new` — форма, `/swarms/:id` — страница роя.
 // Спека 013, 4.11: `/balance` — баланс организации.
-// Спека 024, 4.15: `/login` — вход; маршруты роёв защищены guard.
+// Спека 014, 4.12 и T-25: `CABINET_STORE` собирается здесь, а не в корне приложения.
 export const routes: Routes = [
-  { path: 'login', component: LoginPageComponent },
   {
     path: '',
-    canMatch: [sessionGuard],
+    providers: [provideCabinetStore()],
     children: [
-      { path: '', component: SwarmListPageComponent },
-      { path: 'swarms/new', component: SwarmNewPageComponent },
-      { path: 'swarms/:id', component: SwarmPageComponent },
-      { path: 'balance', component: BalancePageComponent },
+      { path: '', canMatch: [areaGuard('swarms')], component: SwarmListPageComponent },
+      { path: 'swarms/new', canMatch: [areaGuard('swarms')], component: SwarmNewPageComponent },
+      { path: 'swarms/:id', canMatch: [areaGuard('swarms')], component: SwarmPageComponent },
+      { path: 'balance', canMatch: [areaGuard('balance')], component: BalancePageComponent },
     ],
   },
-  { path: '**', redirectTo: '' },
 ];
