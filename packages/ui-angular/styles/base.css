@@ -177,3 +177,76 @@ svg {
   max-width: 100%;
   height: auto;
 }
+
+/* Спека 014, REQ-014-22: видимый фокус у всех интерактивных элементов. */
+:focus-visible {
+  outline: 2px solid var(--swag-color-focus);
+  outline-offset: 2px;
+}
+
+/* Спека 014, 4.8: варианты `swag-button` (директива `button[swag-button]`). Primary — базовый `button` выше. */
+.swag-button--secondary {
+  background: var(--swag-color-surface-2);
+  color: var(--swag-color-text);
+}
+
+.swag-button--danger {
+  background: var(--swag-color-danger);
+  color: var(--swag-color-danger-text);
+}
+
+/* Спека 014, 4.8: disabled и busy одинаковы для всех вариантов. Селектор (0,2,0) перебивает варианты и `button:disabled`. */
+.swag-button:disabled {
+  background: var(--swag-color-surface-2);
+  color: var(--swag-color-text-muted);
+  cursor: default;
+}
+
+/* Спека 014, 4.8: пустота swag-table — только CSS. Без строк таблица скрыта, виден текст `empty`. */
+.swag-table:has(tbody tr) .swag-table__empty {
+  display: none;
+}
+
+.swag-table:not(:has(tbody tr)) table {
+  display: none;
+}
+
+/* Спека 014, 4.8: диалог swag-confirm на @angular/cdk/dialog — оверлей и затемнение на токенах. */
+.cdk-overlay-container {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.cdk-global-overlay-wrapper {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.cdk-overlay-pane {
+  position: absolute;
+  pointer-events: auto;
+  max-width: 90vw;
+  max-height: 90vh;
+  box-sizing: border-box;
+}
+
+.cdk-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  opacity: 0;
+}
+
+.cdk-overlay-backdrop.cdk-overlay-backdrop-showing {
+  opacity: 1;
+}
+
+.cdk-overlay-dark-backdrop {
+  background: color-mix(in srgb, var(--swag-color-text) 45%, transparent);
+}
