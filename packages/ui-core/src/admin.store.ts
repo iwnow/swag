@@ -2,7 +2,7 @@ import { computed, signal, type ReadonlySignal } from '@preact/signals-core';
 import type { InvitationRequest, ManagedUser } from '@swag/contracts';
 import { userActionBody, userActions, type UserAction } from './access-ui.ts';
 import { authErrorText, invitationSentText, validateEmailForm } from './auth-forms.ts';
-import { errorCode } from './auth-session.ts';
+import { errorCode } from './error-code.ts';
 import type { SessionUserStore } from './session-user.store.ts';
 import type { FormIssue, UsersApi } from './swarm-ui.ts';
 
@@ -17,7 +17,7 @@ export interface AdminInvite {
   busy: boolean;
   issues: FormIssue[];
   error: string | null;
-  // Текст «Приглашение отправлено на …» или null; форма показывает его вместо формы.
+  // Текст «Приглашение отправлено на …» или null; страница показывает его над формой, форма остаётся.
   sent: string | null;
 }
 
@@ -60,14 +60,12 @@ export function createAdminStore({ session, users: api }: AdminStoreDeps): Admin
     invite.value = { ...invite.value, ...change };
   };
 
-  // Номер последнего load: ответ от устаревшего вызова не записывается.
+  // Номер последнего запроса списка: ответ от устаревшего вызова не записывается.
   let generation = 0;
 
-  async function load(): Promise<void> {
+  // Перечитывание списка без сброса users и loaded: таблица не мигает между запросами.
+  async function fetchList(): Promise<void> {
     const current = ++generation;
-    users.value = [];
-    loaded.value = false;
-    error.value = null;
     try {
       const list = await api.list(null);
       if (current === generation) users.value = list.users;
@@ -76,6 +74,14 @@ export function createAdminStore({ session, users: api }: AdminStoreDeps): Admin
     } finally {
       if (current === generation) loaded.value = true;
     }
+  }
+
+  // Заход на экран: список сбрасывается и загружается заново.
+  async function load(): Promise<void> {
+    users.value = [];
+    loaded.value = false;
+    error.value = null;
+    await fetchList();
   }
 
   return {
@@ -116,7 +122,7 @@ export function createAdminStore({ session, users: api }: AdminStoreDeps): Admin
         error.value = authErrorText(failureCode(failure));
         return;
       }
-      await load();
+      await fetchList();
     },
   };
 }

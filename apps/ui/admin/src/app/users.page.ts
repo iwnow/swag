@@ -10,22 +10,15 @@ import {
   PageComponent,
   TableComponent,
 } from '@swag/ui-angular';
-import { blockConfirmText, USER_ACTION_LABEL, type UserAction } from '@swag/ui-core';
+import {
+  blockConfirmText,
+  formatDateTime,
+  USER_ACTION_LABEL,
+  USER_ROLE_LABEL,
+  type UserAction,
+} from '@swag/ui-core';
 
 // Спека 014, REQ-014-12 и 4.6: страница пользователей организации. Логика — в `AdminStore`, страница только рисует.
-const ROLE_LABEL: Record<ManagedUser['role'], string> = {
-  user: 'Пользователь',
-  admin: 'Администратор',
-  supervisor: 'Супервизор',
-};
-
-// Дата — как в панели баланса (`balance-panel`): московское время, короткий формат.
-const formatDate = (ts: string): string =>
-  new Date(ts).toLocaleString('ru-RU', {
-    timeZone: 'Europe/Moscow',
-    dateStyle: 'short',
-    timeStyle: 'short',
-  });
 
 @Component({
   selector: 'app-users-page',
@@ -44,7 +37,7 @@ const formatDate = (ts: string): string =>
       @if (store.error(); as message) {
         <swag-alert kind="error">{{ message }}</swag-alert>
       }
-      <swag-table empty="Пользователей пока нет.">
+      <swag-table [empty]="store.loaded() ? 'Пользователей пока нет.' : ''">
         <table>
           <thead>
             <tr>
@@ -116,9 +109,9 @@ export class UsersPageComponent {
   protected readonly store = inject(ADMIN_STORE);
   protected readonly pending = signal<ManagedUser | null>(null);
   protected readonly roles: InvitationRequest['role'][] = ['user', 'admin'];
-  protected readonly roleLabel = ROLE_LABEL;
+  protected readonly roleLabel = USER_ROLE_LABEL;
   protected readonly actionLabel = USER_ACTION_LABEL;
-  protected readonly formatDate = formatDate;
+  protected readonly formatDate = formatDateTime;
   protected readonly confirmText = (user: ManagedUser): string => blockConfirmText(user.email);
 
   constructor() {

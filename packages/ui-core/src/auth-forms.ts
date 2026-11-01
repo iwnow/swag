@@ -1,4 +1,9 @@
-import { Email, InvitationAcceptRequest, RegistrationConfirmRequest } from '@swag/contracts';
+import {
+  Email,
+  InvitationAcceptRequest,
+  RegistrationConfirmRequest,
+  type ManagedUser,
+} from '@swag/contracts';
 import type { ZodError } from 'zod';
 import type { UserAction } from './access-ui.ts';
 import type { FormIssue } from './index.ts';
@@ -56,6 +61,12 @@ export const USER_ACTION_LABEL: Record<UserAction, string> = {
   make_user: 'Сделать пользователем',
   block: 'Заблокировать',
   unblock: 'Разблокировать',
+};
+
+export const USER_ROLE_LABEL: Record<ManagedUser['role'], string> = {
+  user: 'Пользователь',
+  admin: 'Администратор',
+  supervisor: 'Супервизор',
 };
 
 const FIELD_TEXT = new Map<string, string>([

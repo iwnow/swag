@@ -41,13 +41,8 @@ function fakeUsers(list: ManagedUser[] = []) {
   return api satisfies UsersApi & Record<string, unknown>;
 }
 
-function fakeSession(value: AuthMe | null = me) {
-  return {
-    me: signal<AuthMe | null>(value),
-    status: signal<'unknown' | 'signed-in' | 'signed-out'>('signed-in'),
-  } as Pick<SessionUserStore, 'me'> & {
-    status: ReturnType<typeof signal<'unknown' | 'signed-in' | 'signed-out'>>;
-  };
+function fakeSession(value: AuthMe | null = me): Pick<SessionUserStore, 'me'> {
+  return { me: signal<AuthMe | null>(value) };
 }
 
 describe('createAdminStore', () => {
@@ -94,18 +89,35 @@ describe('createAdminStore', () => {
     expect(api.list).toHaveBeenCalledTimes(before + 1);
   });
 
-  it('AC-014-24: apply отклонён 403 — error = forbidden, статус сессии не меняется', async () => {
+  it('AC-014-24: во время перечитывания после apply users не пустеет и loaded не сбрасывается', async () => {
+    const target = user({});
+    const api = fakeUsers([target]);
+    const store = createAdminStore({ session: fakeSession(), users: api });
+    await store.load();
+
+    let release: (value: UserList) => void = () => undefined;
+    api.list.mockReturnValueOnce(new Promise<UserList>((resolve) => (release = resolve)));
+    const pending = store.apply(target.id, 'block');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(store.users.value).toEqual([target]);
+    expect(store.loaded.value).toBe(true);
+
+    release({ users: [target] });
+    await pending;
+  });
+
+  // Стор не получает статус сессии, поэтому выйти из сессии по 403 не может.
+  it('AC-014-24: apply отклонён 403 — error = forbidden', async () => {
     const target = user({});
     const api = fakeUsers([target]);
     api.update.mockRejectedValueOnce(forbidden());
-    const session = fakeSession();
-    const store = createAdminStore({ session, users: api });
+    const store = createAdminStore({ session: fakeSession(), users: api });
     await store.load();
 
     await store.apply(target.id, 'block');
 
     expect(store.error.value).toBe(authErrorText('forbidden'));
-    expect(session.status.value).toBe('signed-in');
   });
 
   it('AC-014-24: повторный load() сбрасывает users, loaded и error до ответа', async () => {
