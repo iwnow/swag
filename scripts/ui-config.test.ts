@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const css = readFileSync(
@@ -100,5 +102,34 @@ describe('токены дизайн-системы (спека 014, 4.8)', () =>
         expect(ratio, `${themeName}: ${fg}/${bg}`).toBeGreaterThanOrEqual(4.5);
       }
     }
+  });
+});
+
+describe('цветовые литералы (спека 014, REQ-014-16)', () => {
+  const colorLiteral =
+    /(?<![\w&/-])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?![\w-])|\b(?:rgba?|hsla?)\(/gi;
+  const sourceDirs = [
+    '../apps/ui/cabinet/src',
+    '../packages/ui-angular/src',
+    '../packages/ui-angular/styles',
+  ].map((dir) => fileURLToPath(new URL(dir, import.meta.url)));
+
+  const sourceFiles = (dir: string): string[] =>
+    readdirSync(dir, { recursive: true })
+      .map(String)
+      .filter((name) => /\.(ts|html|css)$/.test(name))
+      .filter((name) => !/\.(test|spec)\.ts$/.test(name))
+      .filter((name) => name !== join('styles', 'tokens.css') && name !== 'tokens.css')
+      .map((name) => join(dir, name));
+
+  it('AC-014-10: в кабинете и пакете нет цветовых литералов вне tokens.css', () => {
+    const found = sourceDirs
+      .flatMap(sourceFiles)
+      .flatMap((file) =>
+        [...readFileSync(file, 'utf8').matchAll(colorLiteral)].map(
+          (match) => `${file}: ${match[0]}`,
+        ),
+      );
+    expect(found).toEqual([]);
   });
 });

@@ -14,7 +14,8 @@
             "browser": "src/main.ts",
             "index": "src/index.html",
             "outputPath": "dist/cabinet",
-            "tsConfig": "tsconfig.app.json"
+            "tsConfig": "tsconfig.app.json",
+            "styles": ["@swag/ui-angular/styles/tokens.css", "@swag/ui-angular/styles/base.css"]
           },
           "configurations": {
             "production": {

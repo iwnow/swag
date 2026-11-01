@@ -30,10 +30,11 @@ import { CurrentUser, SESSION } from '@swag/ui-angular';
       align-items: center;
       justify-content: space-between;
       padding: 12px 24px;
-      background: #111827;
+      background: var(--swag-color-text);
+      color: var(--swag-color-bg);
     }
     .brand {
-      color: #f9fafb;
+      color: var(--swag-color-bg);
       font:
         600 16px system-ui,
         sans-serif;
@@ -45,7 +46,7 @@ import { CurrentUser, SESSION } from '@swag/ui-angular';
       gap: 16px;
     }
     .nav-link {
-      color: #f9fafb;
+      color: var(--swag-color-bg);
     }
   `,
 })

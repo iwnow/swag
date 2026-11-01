@@ -139,14 +139,14 @@ function quadPoint(start: Point, control: Point, end: Point, t = 0.5): Point {
           markerHeight="8"
           orient="auto-start-reverse"
         >
-          <path d="M 0 0 L 10 5 L 0 10 z" fill="#5b6472" />
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--swag-color-text-muted)" />
         </marker>
       </defs>
       @for (edge of edges(); track edge.key) {
         <path
           [attr.d]="edge.d"
           fill="none"
-          stroke="#5b6472"
+          stroke="var(--swag-color-text-muted)"
           stroke-width="2"
           marker-end="url(#arrow)"
         />
@@ -169,7 +169,7 @@ function quadPoint(start: Point, control: Point, end: Point, t = 0.5): Point {
             [attr.height]="nodeH"
             rx="10"
             [attr.fill]="node.fill"
-            stroke="#2b3240"
+            stroke="var(--swag-color-text)"
             stroke-width="1.5"
           />
           <text [attr.x]="nodeW / 2" y="24" text-anchor="middle" class="node-name">
@@ -190,21 +190,21 @@ function quadPoint(start: Point, control: Point, end: Point, t = 0.5): Point {
       font:
         600 14px system-ui,
         sans-serif;
-      fill: #111827;
+      fill: var(--swag-color-text);
     }
     .node-status {
       font:
         12px system-ui,
         sans-serif;
-      fill: #374151;
+      fill: var(--swag-color-text-muted);
     }
     .edge-label {
       font:
         12px system-ui,
         sans-serif;
-      fill: #374151;
+      fill: var(--swag-color-text-muted);
       paint-order: stroke;
-      stroke: #fff;
+      stroke: var(--swag-color-surface);
       stroke-width: 4px;
     }
   `,
@@ -262,10 +262,10 @@ const STATUS_TEXT: Record<string, string> = {
 };
 
 const STATUS_FILL: Record<string, string> = {
-  starting: '#e5e7eb',
-  idle: '#dbeafe',
-  working: '#fde68a',
-  done: '#bbf7d0',
-  stopped: '#f3f4f6',
-  failed: '#fecaca',
+  starting: 'var(--swag-color-surface-2)',
+  idle: 'color-mix(in srgb, var(--swag-color-primary) 20%, var(--swag-color-surface))',
+  working: 'color-mix(in srgb, var(--swag-color-warning) 35%, var(--swag-color-surface))',
+  done: 'color-mix(in srgb, var(--swag-color-success) 30%, var(--swag-color-surface))',
+  stopped: 'var(--swag-color-bg)',
+  failed: 'color-mix(in srgb, var(--swag-color-danger) 25%, var(--swag-color-surface))',
 };

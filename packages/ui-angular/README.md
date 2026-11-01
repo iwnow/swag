@@ -10,8 +10,10 @@
 - `createBalanceApi(session)` — баланс организации по `/api` (013, 4.11).
 - `createUsersApi(session)`, `createOrganizationsApi(session)` — порты админки и супервизора (014, 4.3) по `/auth` (024, 4.7).
 - `styles/tokens.css` — дизайн-токены 4.8 для светлой и тёмной темы (REQ-014-16, REQ-014-21).
+- `styles/base.css` — глобальные стили фронтендов (элементы, раскладка, классы кабинета `.feed`, `.agent-row`, `.toolbar`) только на токенах (REQ-014-16); перенесено из `<style>` кабинета (014, 4.7).
+- `ThemeService` — режим темы `system` | `light` | `dark`, атрибут `data-theme` на `<html>`, выбор в `localStorage` под `swag.theme` (014, 4.7, REQ-014-16).
 
-Guard'ы, компоненты, переключатель темы и `base.css` — в задачах T-8…T-11 (4.7, 4.8).
+Guard'ы и компоненты — в T-9…T-10, переключатель темы в шапке каркаса — в T-11 (4.7, 4.8).
 
 ## Что внутри сейчас
 
@@ -21,6 +23,8 @@ Guard'ы, компоненты, переключатель темы и `base.css
 - `src/balance-api.ts` — `createBalanceApi`, тип `BalanceApi`.
 - `src/users-api.ts` — `createUsersApi`, `createOrganizationsApi`.
 - `styles/tokens.css` — токены: светлая тема в `:root`, тёмная в `:root[data-theme='dark']` и в `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) }`. Проверяет `scripts/ui-config.test.ts` (AC-014-10, контраст).
+- `src/theme.ts` — `ThemeService` (`providedIn: 'root'`): `mode` — signal только для чтения, `setMode(mode)`; `ThemeMode`.
+- `styles/base.css` — глобальные стили; цвета, шрифты, отступы и радиусы только `var(--swag-…)`.
 - `src/index.ts` — реэкспорт всего перечисленного.
 - `test/http.test.ts` — AC-014-19 (403 без `renew`, `401` → `renew` → повтор, два одновременных `401` → один `renew`).
 - `package.json` — `exports`: `.` → `./src/index.ts`, `./styles/*` → `./styles/*`.
@@ -38,6 +42,9 @@ Guard'ы, компоненты, переключатель темы и `base.css
 - `@angular/forms` 22.2.3 — явная зависимость. Без неё `npm install` не сходится: `@angular/cdk@22.2.3` требует `@angular/forms` в диапазоне `^22`, и npm берёт `22.2.4`, у которого peer `@angular/common` 22.2.4. Тот же приём, что в T-1 для `@angular/compiler-cli`.
 - Версия `@angular/cdk` — 22.2.3: есть в npm (`npm view @angular/cdk@22.2.3 version`), совпадает с остальными `@angular/*`.
 - Пакет подключается по workspace (`packages/*` в `package.json` корня), без `paths`: `node_modules/@swag/ui-angular` ведёт сюда.
+- Стили подключаются в `apps/ui/cabinet/angular.json` (`build.options.styles`) по имени пакета: `@swag/ui-angular/styles/tokens.css`, затем `base.css`. Сборка `ng build` резолвит `exports` без путей `../../../packages/...`; `<style>` из `index.html` кабинета удалён.
+- `ThemeService`: «system» — атрибут `data-theme` снимается, тему выбирает `prefers-color-scheme` через `tokens.css`; «light» и «dark» — атрибут на `<html>`, перекрывает системную тему. `localStorage` и его ошибки (приватный режим) — в `try/catch`, при недоступности выбор живёт до перезагрузки. Трактовка API (`mode` signal, `setMode`) — D-133.
+- `base.css` задаёт `color-scheme: light dark` на `:root`, с `data-theme` — `light` или `dark` соответственно: нативные контролы браузера совпадают с темой.
 
 ## Дизайн-токены (T-7)
 
@@ -82,6 +89,6 @@ Guard'ы, компоненты, переключатель темы и `base.css
 
 ## Спеки
 
-- 014 — 4.7, 4.8 (токены), 4.1, 4.3, AC-014-10 (контраст), AC-014-19, REQ-014-16, REQ-014-21, T-5, T-6, T-7.
+- 014 — 4.7, 4.8 (токены), 4.1, 4.3, AC-014-10 (контраст и литералы, тест в `scripts/ui-config.test.ts`), AC-014-19, REQ-014-16, REQ-014-21, T-5, T-6, T-7, T-8. Открытые: D-133 (`ThemeService`), D-134 (цвета статусов графа).
 - 024 — 4.15 (сессия, `/auth`).
 - 013 — 4.11 (баланс, `/auth/me`, D-130).
