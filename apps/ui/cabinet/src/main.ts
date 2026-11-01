@@ -1,5 +1,2 @@
-import { bootstrapApplication } from '@angular/platform-browser';
-import { appConfig } from './app/app.config.ts';
-import { App } from './app/app.ts';
-
-bootstrapApplication(App, appConfig).catch((error: unknown) => console.error(error));
+// Кабинет — remote: каркас загружает `./routes` (спека 014, 4.4). Отдельного запуска приложения нет.
+export {};

@@ -29,7 +29,7 @@
 - `src/swarms-api.ts` — `createSwarmsApi(session)` (REST, basePath `/api`), `createSwarmStream(session)` (WebSocket, подпротокол `swag.bearer.<token>`, `4401` → `renew`). Принимают `RequestSession`.
 - `src/preferences.ts` — `preferences` (`Preferences`).
 - `src/stores.ts` — мост: `toAngularSignal`, `connectStore`, тип `Connected<S>`; токены `SESSION_USER` (фабрика — `createSessionUserStore` на `authApi` и `meApi`), `SHELL_STORE`, `CABINET_STORE`; `provideShellStore()`, `provideCabinetStore()`; `TRACE_URL_TEMPLATE`.
-- `test/stores.test.ts` — AC-014-26 (мост на Angular injection context из `@angular/core`, без TestBed) и тест `preferences`.
+- `test/stores.test.ts` — AC-014-26 (мост на Angular injection context из `@angular/core`, без TestBed; `dispose` стора при уничтожении инжектора маршрута) и тест `preferences`.
 - `src/users-api.ts` — `createUsersApi`, `createOrganizationsApi`.
 - `styles/tokens.css` — токены: светлая тема в `:root`, тёмная в `:root[data-theme='dark']` и в `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) }`. Проверяет `scripts/ui-config.test.ts` (AC-014-10, контраст).
 - `styles/base.css` — глобальные стили; цвета, шрифты, отступы и радиусы только `var(--swag-…)`.
@@ -46,10 +46,10 @@
 
 - `createRequest` не зависит от Angular: принимает `RequestSession` (`accessToken`, `renew`), тесты идут в Node без TestBed.
 - Мост (014, 4.12): кэш по ключу поля — `effect` создаётся при первом чтении, повторное чтение отдаёт тот же объект (`Map`). Записи в `connectStore` — `TypeError` (`set`, `defineProperty`, `deleteProperty`): менять состояние можно только методами стора. Примитивы читаются из стора каждый раз, не кэшируются.
-- `connectStore` берёт `DestroyRef` синхронно (`inject(DestroyRef)`), поэтому вызывается в injection context. `dispose()` стора и снятие `effect` вешаются на тот же `DestroyRef` инжектора провайдера.
+- `connectStore` берёт `DestroyRef` синхронно (`inject(DestroyRef)`), поэтому вызывается в injection context. `dispose()` стора и снятие `effect` вешаются на `DestroyRef` инжектора, где стор предоставлен (например, `provideCabinetStore()` в `providers` маршрута раздела). Этот инжектор уничтожается при уничтожении своего контекста; каркас инжекторы маршрутов при уходе из раздела не уничтожает, поэтому стор раздела живёт до закрытия вкладки (решение человека 2026-11-01, журнал T-13).
 - Адаптеры роёв переехали из `apps/ui/cabinet/src/app/api.ts` в пакет без правки логики: приложения не строят адаптеры сами (REQ-014-23). `timers` для `CabinetStore` — `window.setTimeout`/`clearTimeout`, как в `ui.ts` кабинета.
 - `@preact/signals-core` 1.14.5 — точная версия, как в `ui-core` (одна копия на страницу, 4.12).
-- Отклонение: `ADMIN_STORE` и `SUPERVISOR_STORE` и их провайдеры не созданы — сторов `AdminStore`/`SupervisorStore` ещё нет (T-12/T-13).
+- Отклонение: `ADMIN_STORE` и `SUPERVISOR_STORE` и их провайдеры не созданы — сторов `AdminStore`/`SupervisorStore` ещё нет (T-15/T-16).
 - Тест моста: `effect` подменяется `vi.fn` через `vi.mock` ради проверки «один `effect` на поле» — без внутренностей preact.
 - Одновременные `401` делят один `renew()` внутри `createRequest` (промис хранится до завершения). Keeper из `ui-core` делит refresh ещё раз — это его собственная гарантия.
 - Неудача `renew()` — ошибка `401` уходит вызывающему; выход из сессии выполняет keeper и вызывает `onSignedOut`. `createRequest` на `onSignedOut` не подписан и сам его не вызывает.
@@ -59,7 +59,7 @@
 - `@angular/forms` 22.2.3 — явная зависимость. Без неё `npm install` не сходится: `@angular/cdk@22.2.3` требует `@angular/forms` в диапазоне `^22`, и npm берёт `22.2.4`, у которого peer `@angular/common` 22.2.4. Тот же приём, что в T-1 для `@angular/compiler-cli`.
 - Версия `@angular/cdk` — 22.2.3: есть в npm (`npm view @angular/cdk@22.2.3 version`), совпадает с остальными `@angular/*`.
 - Пакет подключается по workspace (`packages/*` в `package.json` корня), без `paths`: `node_modules/@swag/ui-angular` ведёт сюда.
-- Стили подключаются в `apps/ui/cabinet/angular.json` (`build.options.styles`) по имени пакета: `@swag/ui-angular/styles/tokens.css`, затем `base.css`. Сборка `ng build` резолвит `exports` без путей `../../../packages/...`; `<style>` из `index.html` кабинета удалён.
+- Стили подключаются в `apps/ui/shell/angular.json` (`build.options.styles`) каркасом, кабинет их не подключает, по имени пакета: `@swag/ui-angular/styles/tokens.css`, затем `base.css`. Сборка `ng build` резолвит `exports` без путей `../../../packages/...`; `<style>` из `index.html` кабинета удалён.
 - Тема: «system» — атрибут `data-theme` снимается, тему выбирает `prefers-color-scheme` через `tokens.css`; «light» и «dark» — атрибут на `<html>`, перекрывает системную тему. Хранение — `preferences` в `try/catch`; при недоступности выбор живёт до перезагрузки. `ThemeService` удалён (014, 4.12), вопрос D-133 о его API снят.
 - `base.css` задаёт `color-scheme: light dark` на `:root`, с `data-theme` — `light` или `dark` соответственно: нативные контролы браузера совпадают с темой.
 - `button[swag-button]` — директива на нативной кнопке, а не элемент `swag-button`: `type` остаётся нативным, submit внутри форм работает без нового входа. `busy` ставит нативный `disabled` и `aria-busy="true"` (D-135). Вид disabled один для всех вариантов: `.swag-button:disabled` в `base.css` с селектором (0,2,0) перебивает варианты.
