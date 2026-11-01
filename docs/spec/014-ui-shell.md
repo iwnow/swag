@@ -855,7 +855,7 @@ export interface Preferences {
 
   Закрывает: REQ-014-24 (часть), REQ-014-25, AC-014-21, AC-014-26 (часть). Готово, когда: `npm run check` зелёный.
 - [x] **T-22.** `packages/ui-core`: `src/balance.state.ts` и `src/shell.store.ts` по 4.12, тесты AC-014-27 и AC-014-22. README, глоссарий. Закрывает: AC-014-22, AC-014-27. Готово, когда: тесты зелёные.
-- [ ] **T-23.** `packages/ui-core/src/cabinet.store.ts` поверх `createUiCore` и `createBalanceState`, тест AC-014-23. README, глоссарий. Закрывает: AC-014-23. Готово, когда: тесты зелёные.
+- [x] **T-23.** `packages/ui-core/src/cabinet.store.ts` поверх `createUiCore` и `createBalanceState`, тест AC-014-23. README, глоссарий. Закрывает: AC-014-23. Готово, когда: тесты зелёные.
 - [ ] **T-24.** `packages/ui-angular`: мост и переход каркаса на сторы.
   - `src/stores.ts`: `toAngularSignal`, `connectStore`, `Connected`, токены, `provideShellStore`, `provideCabinetStore`. Тест — AC-014-26, часть `stores.test.ts`.
   - Адаптеры `MeApi` и `Preferences`.
