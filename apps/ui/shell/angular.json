@@ -70,7 +70,15 @@
           "options": {
             "proxyConfig": "proxy.conf.json",
             "host": "127.0.0.1",
-            "port": 4200
+            "port": 4200,
+            "prebundle": {
+              "exclude": [
+                "@swag/api-integration",
+                "@swag/contracts",
+                "@swag/ui-angular",
+                "@swag/ui-core"
+              ]
+            }
           },
           "configurations": {
             "development": {
