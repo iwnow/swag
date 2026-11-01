@@ -1,0 +1,179 @@
+/* Глобальные стили фронтендов (спека 014, 4.7). Цвета, шрифты, отступы и радиусы — только токены tokens.css. */
+
+:root {
+  color-scheme: light dark;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  font: var(--swag-text-md) / 1.45 var(--swag-font-sans);
+  background: var(--swag-color-bg);
+  color: var(--swag-color-text);
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--swag-space-4);
+}
+
+h1 {
+  font-size: var(--swag-text-xl);
+  margin: var(--swag-space-4) 0;
+}
+
+h2 {
+  font-size: var(--swag-text-lg);
+  margin: var(--swag-space-4) 0 var(--swag-space-2);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--swag-color-surface);
+}
+
+th,
+td {
+  text-align: left;
+  padding: var(--swag-space-2);
+  border-bottom: 1px solid var(--swag-color-surface-2);
+}
+
+a {
+  color: var(--swag-color-primary);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--swag-space-3);
+}
+
+.button,
+button {
+  background: var(--swag-color-primary);
+  color: var(--swag-color-primary-text);
+  border: 0;
+  border-radius: var(--swag-radius-md);
+  padding: var(--swag-space-2) var(--swag-space-3);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+button:disabled {
+  background: var(--swag-color-border);
+  cursor: default;
+}
+
+button.secondary {
+  background: var(--swag-color-surface-2);
+  color: var(--swag-color-text);
+}
+
+input,
+textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--swag-space-2);
+  border: 1px solid var(--swag-color-border);
+  border-radius: var(--swag-radius-md);
+  font: inherit;
+}
+
+form label {
+  display: block;
+  margin: var(--swag-space-3) 0;
+}
+
+.agent-row {
+  display: grid;
+  grid-template-columns: 24px 1fr 2fr 8rem 8rem auto auto;
+  gap: var(--swag-space-2);
+  align-items: center;
+  margin: var(--swag-space-2) 0;
+}
+
+.agent-row .index {
+  color: var(--swag-color-text-muted);
+  text-align: center;
+}
+
+.actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: var(--swag-space-4);
+}
+
+.hint {
+  color: var(--swag-color-text-muted);
+  font-size: var(--swag-text-sm);
+}
+
+.error {
+  color: var(--swag-color-danger);
+}
+
+pre {
+  background: var(--swag-color-surface);
+  padding: var(--swag-space-3);
+  border-radius: var(--swag-radius-md);
+  white-space: pre-wrap;
+  border: 1px solid var(--swag-color-surface-2);
+}
+
+.feed {
+  list-style: none;
+  padding: 0;
+  background: var(--swag-color-surface);
+  border-radius: var(--swag-radius-md);
+  border: 1px solid var(--swag-color-surface-2);
+}
+
+.feed li {
+  padding: var(--swag-space-2) var(--swag-space-3);
+  border-bottom: 1px solid var(--swag-color-bg);
+  display: flex;
+  gap: var(--swag-space-2);
+  flex-wrap: wrap;
+}
+
+.feed .seq {
+  color: var(--swag-color-text-muted);
+  min-width: 40px;
+}
+
+.feed .type {
+  font-weight: 600;
+}
+
+.feed .agent {
+  color: var(--swag-color-primary);
+}
+
+.feed .detail {
+  color: var(--swag-color-text-muted);
+  word-break: break-word;
+}
+
+.feed .unread {
+  color: var(--swag-color-text-muted);
+}
+
+svg {
+  background: var(--swag-color-surface);
+  border: 1px solid var(--swag-color-surface-2);
+  border-radius: var(--swag-radius-md);
+  max-width: 100%;
+  height: auto;
+}

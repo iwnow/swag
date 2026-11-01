@@ -255,3 +255,4 @@
 | Секреты апстрима | `upstreamSecrets` | Значения, которые адаптер LiteLLM заменяет на `***`: мастер-ключ и непустые `*_API_KEY` из env (002, 4.9). |
 | Каталог моделей (файл) | `readCatalog` | Чтение `infra/llm/<профиль>/models.json` по `LLM_CATALOG_PATH` и проверка схемой `ModelCatalog` в оболочке шлюза (002, 4.7). |
 | Опции Fastify телеметрии | `telemetryAppOptions` | Опции Fastify оболочки `apps/llm-gateway`: логгер телеметрии и серверный спан на запрос, кроме `/health`; общие для `main.ts` и тестов (002, 4.10, REQ-002-14). |
+| Дизайн-токены | `--swag-color-*`, `--swag-font-*`, `--swag-text-*`, `--swag-space-*`, `--swag-radius-*`, `--swag-shadow-1`, `styles/tokens.css`, `styles/base.css`, `ThemeMode`, `data-theme`, `swag.theme` | CSS custom properties `@swag/ui-angular`: светлая тема в `:root`, тёмная в `:root[data-theme='dark']` и по `prefers-color-scheme`; цвета — `#rrggbb`, пары текста с контрастом ≥ 4.5:1 (014, 4.8, REQ-014-16, REQ-014-21). |
