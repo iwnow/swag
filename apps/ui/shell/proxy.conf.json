@@ -1,0 +1,35 @@
+{
+  "/api": {
+    "target": "http://api:3000",
+    "secure": false,
+    "ws": true,
+    "changeOrigin": true,
+    "pathRewrite": { "^/api": "" }
+  },
+  "/auth": {
+    "target": "http://identity:3003",
+    "secure": false,
+    "changeOrigin": true
+  },
+  "/grafana": {
+    "target": "http://lgtm:3000",
+    "secure": false,
+    "ws": true,
+    "changeOrigin": true
+  },
+  "/mf/cabinet": {
+    "target": "http://ui-cabinet:4201",
+    "secure": false,
+    "changeOrigin": false
+  },
+  "/mf/admin": {
+    "target": "http://ui-admin:4202",
+    "secure": false,
+    "changeOrigin": false
+  },
+  "/mf/supervisor": {
+    "target": "http://ui-supervisor:4203",
+    "secure": false,
+    "changeOrigin": false
+  }
+}
