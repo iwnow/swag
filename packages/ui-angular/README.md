@@ -13,7 +13,7 @@
 - `styles/base.css` — глобальные стили фронтендов (элементы, раскладка, классы кабинета `.feed`, `.agent-row`, `.toolbar`) только на токенах (REQ-014-16); перенесено из `<style>` кабинета (014, 4.7).
 - `ThemeService` — режим темы `system` | `light` | `dark`, атрибут `data-theme` на `<html>`, выбор в `localStorage` под `swag.theme` (014, 4.7, REQ-014-16).
 
-Guard'ы и компоненты — в T-9…T-10, переключатель темы в шапке каркаса — в T-11 (4.7, 4.8).
+Guard'ы и `swag-table`, `swag-page`, `swag-confirm`, `swag-balance-panel` — в T-10, переключатель темы в шапке каркаса — в T-11 (4.7, 4.8).
 
 ## Что внутри сейчас
 
@@ -25,6 +25,8 @@ Guard'ы и компоненты — в T-9…T-10, переключатель �
 - `styles/tokens.css` — токены: светлая тема в `:root`, тёмная в `:root[data-theme='dark']` и в `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) }`. Проверяет `scripts/ui-config.test.ts` (AC-014-10, контраст).
 - `src/theme.ts` — `ThemeService` (`providedIn: 'root'`): `mode` — signal только для чтения, `setMode(mode)`; `ThemeMode`.
 - `styles/base.css` — глобальные стили; цвета, шрифты, отступы и радиусы только `var(--swag-…)`.
+- `src/components/button.ts` — директива `button[swag-button]` (`variant`, `disabled`, `busy`), `ButtonVariant`.
+- `src/components/field.ts` — `swag-field` (`label`, `error`), `src/components/card.ts` — `swag-card` (`title`), `src/components/alert.ts` — `swag-alert` (`kind`).
 - `src/index.ts` — реэкспорт всего перечисленного.
 - `test/http.test.ts` — AC-014-19 (403 без `renew`, `401` → `renew` → повтор, два одновременных `401` → один `renew`).
 - `package.json` — `exports`: `.` → `./src/index.ts`, `./styles/*` → `./styles/*`.
@@ -92,3 +94,11 @@ Guard'ы и компоненты — в T-9…T-10, переключатель �
 - 014 — 4.7, 4.8 (токены), 4.1, 4.3, AC-014-10 (контраст и литералы, тест в `scripts/ui-config.test.ts`), AC-014-19, REQ-014-16, REQ-014-21, T-5, T-6, T-7, T-8. Открытые: D-133 (`ThemeService`), D-134 (цвета статусов графа).
 - 024 — 4.15 (сессия, `/auth`).
 - 013 — 4.11 (баланс, `/auth/me`, D-130).
+
+## Базовые компоненты (T-9, спека 014, 4.8, REQ-014-17, REQ-014-22)
+
+- `button[swag-button]` — директива на нативной `<button>`, а не компонент `<swag-button>`: `type` остаётся нативным, поэтому submit внутри формы работает без нового входа. `busy` ставит нативный `disabled` и `aria-busy="true"`. Варианты `.swag-button--*` стилизуются в `styles/base.css`, рядом с общими правилами `button`.
+- `swag-field` — подпись оборачивает проецируемый контрол в `<label>`, ошибка выводится `<p>` с id. Директивы нет: после каждого рендера компонент находит первый `input`, `select` или `textarea` внутри себя и выставляет ему `aria-describedby` (id ошибки) и `aria-invalid`. При пустой ошибке атрибуты снимаются. Трактовка — ради 4.8 без лишнего входа.
+- `swag-card` — `<section>` с заголовком `h2`. `swag-alert` — `role="alert"` для `kind="error"`, иначе `role="status"`; вид выставляется атрибутом `data-kind` на хосте.
+- Видимый фокус (REQ-014-22) — глобальное правило `:focus-visible` в `styles/base.css`, обводка `--swag-color-focus`.
+- Проверка: пакет собирается тайпчеком; `ng build` кабинета пока не использует компоненты, их шаблоны проверятся в T-10 (панель баланса).

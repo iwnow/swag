@@ -177,3 +177,20 @@ svg {
   max-width: 100%;
   height: auto;
 }
+
+/* Спека 014, REQ-014-22: видимый фокус у всех интерактивных элементов. */
+:focus-visible {
+  outline: 2px solid var(--swag-color-focus);
+  outline-offset: 2px;
+}
+
+/* Спека 014, 4.8: варианты `swag-button` (директива `button[swag-button]`). Primary — базовый `button` выше. */
+.swag-button--secondary {
+  background: var(--swag-color-surface-2);
+  color: var(--swag-color-text);
+}
+
+.swag-button--danger {
+  background: var(--swag-color-danger);
+  color: var(--swag-color-danger-text);
+}
