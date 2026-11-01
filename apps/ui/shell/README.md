@@ -6,10 +6,15 @@
 
 Каркас — Angular-приложение, которое хозяин сессии: восстанавливает её по cookie, показывает страницы входа и шапку, а разделы `cabinet`, `admin`, `supervisor` подгружает как Native Federation remote во время работы. Раздел без прав не загружается вовсе (REQ-014-3). Права в интерфейсе считает `@swag/ui-core` по `GET /auth/me`; доступ проверяет API.
 
-## Что внутри сейчас (T-24)
+## Что внутри сейчас (T-14, T-24)
 
 - `src/main.ts` — `initFederation({})` без remote, затем `bootstrap.ts` (динамический импорт нужен, чтобы общие модули уже были в import map).
 - `src/app/app.ts` — корень: тема (`SHELL_STORE.theme` → атрибут `data-theme` на `<html>`) применяется и на `/login`; выход — переход на `/login` при любом переходе `SESSION_USER.status` в «вышел» после первой навигации роутера (`redirectOnSignOut()` из `@swag/ui-angular`, та же логика в кабинете; до первой навигации уводит `sessionGuard`); на `NavigationEnd` — `SESSION_USER.ensureMe()` (смена токена); alert «Раздел недоступен» (4.6) — `SHELL_STORE.sectionUnavailable`: на `NavigationError` ставится, на `NavigationEnd` сбрасывается; alert здесь, вне Layout.
+- `src/app/signup.page.ts` — `/signup`: email, после `form.sent` вместо формы — `REGISTRATION_SENT_TEXT`; ссылка «Уже есть аккаунт»; при открытой сессии — на `/`.
+- `src/app/signup-confirm.page.ts` — `/signup/confirm?token=`: пароль, повтор, название организации; без токена — `authErrorText('invalid_token')` и ссылка «Зарегистрироваться заново»; открытая сессия — «Вы вошли как …» и «Выйти и продолжить».
+- `src/app/invite.page.ts` — `/invite?token=`: пароль и повтор; без токена — `INVITATION_INVALID_TEXT`; открытая сессия — как на `/signup/confirm`.
+- `src/app/auth-page.ts` — общее для страниц входа и регистрации: `takeToken` (токен из query один раз, `Location.replaceState` без query; пустой — как отсутствующий), `restoreSession` (`restore()` с `finally` — страница показывается и при отказе; переход после восстановления — только пока страница жива), `issueText` (текст ошибки поля), `inputValue`.
+- `src/app/signed-in-notice.ts` — `app-signed-in-notice` (вход `email`): «Вы вошли как …» и «Выйти и продолжить» (`SHELL_STORE.logout`) на `/signup/confirm` и `/invite` при открытой сессии.
 - `src/app/app.config.ts` — маршрутизатор (`withComponentInputBinding()`) и `provideShellStore()` (мост `ShellStore`, 014, 4.12).
 - `src/app/app.routes.ts` — `/login` и раздел под `sessionGuard` с `LayoutComponent`; `admin` и `supervisor` — под `areaGuard`; `cabinet` — `''`; `**` → `''`.
 - `src/app/remote-registry.ts` — сервис `RemoteRegistry`: чтение `/federation.manifest.json`, отбрасывание адресов вне `isLocalRemoteUrl` с `console.warn('remote_rejected', name)`, `loadRoutes(name)` — `loadRemoteModule` на `./routes`.
@@ -40,7 +45,6 @@ Compose поднимает `ui` (этот каркас, порт `UI_PORT`) и `
 
 ## Ограничения
 
-- Маршруты `/signup`, `/signup/confirm`, `/invite` и их страницы добавит T-14 (D-144).
 - Стили `tokens.css` и `base.css` подключаются через `angular.json` (`styles`), remote работают в документе каркаса.
 - Dev-серверы только для разработки, продакшен-сборка и деплой — вне 014.
 
@@ -52,4 +56,4 @@ Compose поднимает `ui` (этот каркас, порт `UI_PORT`) и `
 
 ## Спеки
 
-- 014 — разделы 4.4, 4.5, 4.9 и 4.11 (задача T-11); 4.12 и REQ-014-23 (каркас на сторах, задача T-24).
+- 014 — разделы 4.4, 4.5, 4.9 и 4.11 (задача T-11); страницы регистрации и приглашения, REQ-014-6…9 (задача T-14); 4.12 и REQ-014-23 (каркас на сторах, задача T-24).

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthResult, SessionUserStore } from '../src/index.ts';
-import { authErrorText, createShellStore } from '../src/index.ts';
+import { authErrorText, createShellStore, INVITATION_INVALID_TEXT } from '../src/index.ts';
 
 type ShellSession = Pick<
   SessionUserStore,
@@ -30,6 +30,7 @@ const CONFIRM_INPUT = {
   repeat: 'пароль-два',
   organizationName: 'Org',
 };
+const VALID_CONFIRM = { ...CONFIRM_INPUT, repeat: CONFIRM_INPUT.password };
 
 describe('shell store', () => {
   it('AC-014-22: register с неверным email — issues, запроса нет', async () => {
@@ -83,6 +84,89 @@ describe('shell store', () => {
     expect(result).toBeNull();
     expect(store.form.value.issues.map((issue) => issue.path)).toContain('repeat');
     expect(session.confirmRegistration).not.toHaveBeenCalled();
+  });
+
+  it('AC-014-22: confirmRegistration с invalid_token — текст authErrorText, invalidToken = true', async () => {
+    const session = fakeSession({
+      confirmRegistration: vi.fn(async (): Promise<AuthResult> => ({
+        ok: false,
+        code: 'invalid_token',
+      })),
+    });
+    const store = createShellStore({ session, preferences: fakePreferences() });
+
+    const result = await store.confirmRegistration(VALID_CONFIRM);
+
+    expect(result).toBeNull();
+    expect(store.form.value.error).toBe(authErrorText('invalid_token'));
+    expect(store.form.value.invalidToken).toBe(true);
+  });
+
+  it('AC-014-22: acceptInvitation с invalid_token — INVITATION_INVALID_TEXT, invalidToken = true', async () => {
+    const session = fakeSession({
+      acceptInvitation: vi.fn(async (): Promise<AuthResult> => ({
+        ok: false,
+        code: 'invalid_token',
+      })),
+    });
+    const store = createShellStore({ session, preferences: fakePreferences() });
+
+    const result = await store.acceptInvitation({
+      token: 'token-1',
+      password: 'пароль-один',
+      repeat: 'пароль-один',
+    });
+
+    expect(result).toBeNull();
+    expect(store.form.value.error).toBe(INVITATION_INVALID_TEXT);
+    expect(store.form.value.invalidToken).toBe(true);
+  });
+
+  it('AC-014-22: confirmRegistration с токеном длиннее 200 — invalidToken, текст authErrorText, API не вызван', async () => {
+    const session = fakeSession();
+    const store = createShellStore({ session, preferences: fakePreferences() });
+
+    const result = await store.confirmRegistration({ ...VALID_CONFIRM, token: 'т'.repeat(201) });
+
+    expect(result).toBeNull();
+    expect(store.form.value.invalidToken).toBe(true);
+    expect(store.form.value.error).toBe(authErrorText('invalid_token'));
+    expect(store.form.value.issues).toEqual([]);
+    expect(session.confirmRegistration).not.toHaveBeenCalled();
+  });
+
+  it('AC-014-22: acceptInvitation с токеном длиннее 200 — invalidToken, INVITATION_INVALID_TEXT, API не вызван', async () => {
+    const session = fakeSession();
+    const store = createShellStore({ session, preferences: fakePreferences() });
+
+    const result = await store.acceptInvitation({
+      token: 'т'.repeat(201),
+      password: 'пароль-один',
+      repeat: 'пароль-один',
+    });
+
+    expect(result).toBeNull();
+    expect(store.form.value.invalidToken).toBe(true);
+    expect(store.form.value.error).toBe(INVITATION_INVALID_TEXT);
+    expect(store.form.value.issues).toEqual([]);
+    expect(session.acceptInvitation).not.toHaveBeenCalled();
+  });
+
+  it('AC-014-22: следующая команда сбрасывает invalidToken', async () => {
+    const session = fakeSession({
+      confirmRegistration: vi.fn(async (): Promise<AuthResult> => ({
+        ok: false,
+        code: 'invalid_token',
+      })),
+    });
+    const store = createShellStore({ session, preferences: fakePreferences() });
+    await store.confirmRegistration(VALID_CONFIRM);
+    expect(store.form.value.invalidToken).toBe(true);
+
+    await store.confirmRegistration(CONFIRM_INPUT);
+
+    expect(store.form.value.invalidToken).toBe(false);
+    expect(store.form.value.error).toBeNull();
   });
 
   it('AC-014-22: theme из preferences — dark; неизвестное значение — system', () => {

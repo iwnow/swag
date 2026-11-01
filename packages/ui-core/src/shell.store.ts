@@ -2,6 +2,7 @@ import { signal, type ReadonlySignal } from '@preact/signals-core';
 import type { AuthResult } from './auth-session.ts';
 import {
   authErrorText,
+  INVITATION_INVALID_TEXT,
   validateConfirmForm,
   validateEmailForm,
   validateInviteForm,
@@ -21,6 +22,8 @@ const THEME_MODES: readonly ThemeMode[] = ['system', 'light', 'dark'];
 export interface ShellForm {
   busy: boolean;
   error: string | null;
+  // Отказ invalid_token на подтверждении или приглашении: страница предлагает регистрацию заново (отклонение от 4.12, D-152).
+  invalidToken: boolean;
   issues: FormIssue[];
   sent: boolean;
 }
@@ -39,7 +42,13 @@ export interface ShellStore {
   resetForm(): void;
 }
 
-const initialForm = (): ShellForm => ({ busy: false, error: null, issues: [], sent: false });
+const initialForm = (): ShellForm => ({
+  busy: false,
+  error: null,
+  invalidToken: false,
+  issues: [],
+  sent: false,
+});
 
 export function createShellStore({
   session,
@@ -59,23 +68,28 @@ export function createShellStore({
   const patch = (change: Partial<ShellForm>): void => {
     form.value = { ...form.value, ...change };
   };
-  const clearErrors = (): void => patch({ error: null, issues: [] });
+  const clearErrors = (): void => patch({ error: null, invalidToken: false, issues: [] });
 
-  // Запрос с busy; отказ пишет текст по коду ошибки, исключение — общий текст 'unknown'; busy сбрасывается всегда.
-  async function attempt(request: () => Promise<AuthResult>): Promise<boolean> {
+  // Проверка формы не прошла, запроса нет. Токен не прошёл схему (например, длиннее 200) — отказ invalid_token, как от сервера; остальные issues не показываем.
+  const formRejected = (issues: FormIssue[], invalidTokenText: string): void => {
+    if (issues.some((issue) => issue.path === 'token')) {
+      patch({ error: invalidTokenText, invalidToken: true, issues: [] });
+    } else {
+      patch({ issues });
+    }
+  };
+
+  // Запрос с busy; возвращает код отказа или null при успехе; исключение — код 'unknown'; busy сбрасывается всегда.
+  async function attempt(request: () => Promise<AuthResult>): Promise<string | null> {
     patch({ busy: true });
-    let result: AuthResult;
     try {
-      result = await request();
+      const result = await request();
+      return result.ok ? null : result.code;
     } catch {
-      patch({ error: authErrorText('unknown') });
-      return false;
+      return 'unknown';
     } finally {
       patch({ busy: false });
     }
-    if (result.ok) return true;
-    patch({ error: authErrorText(result.code) });
-    return false;
   }
 
   return {
@@ -85,7 +99,10 @@ export function createShellStore({
 
     async login(email, password, returnTo) {
       clearErrors();
-      return (await attempt(() => session.login(email, password))) ? safeReturnTo(returnTo) : null;
+      const failure = await attempt(() => session.login(email, password));
+      if (failure === null) return safeReturnTo(returnTo);
+      patch({ error: authErrorText(failure) });
+      return null;
     },
 
     async register(email) {
@@ -95,27 +112,38 @@ export function createShellStore({
         patch({ issues: checked.issues });
         return;
       }
-      if (await attempt(() => session.register(checked.email))) patch({ sent: true });
+      const failure = await attempt(() => session.register(checked.email));
+      if (failure === null) patch({ sent: true });
+      else patch({ error: authErrorText(failure) });
     },
 
     async confirmRegistration(input) {
       clearErrors();
       const checked = validateConfirmForm(input);
       if (!checked.ok) {
-        patch({ issues: checked.issues });
+        formRejected(checked.issues, authErrorText('invalid_token'));
         return null;
       }
-      return (await attempt(() => session.confirmRegistration(checked.body))) ? '/' : null;
+      const failure = await attempt(() => session.confirmRegistration(checked.body));
+      if (failure === null) return '/';
+      patch({ error: authErrorText(failure), invalidToken: failure === 'invalid_token' });
+      return null;
     },
 
     async acceptInvitation(input) {
       clearErrors();
       const checked = validateInviteForm(input);
       if (!checked.ok) {
-        patch({ issues: checked.issues });
+        formRejected(checked.issues, INVITATION_INVALID_TEXT);
         return null;
       }
-      return (await attempt(() => session.acceptInvitation(checked.body))) ? '/' : null;
+      const failure = await attempt(() => session.acceptInvitation(checked.body));
+      if (failure === null) return '/';
+      patch({
+        error: failure === 'invalid_token' ? INVITATION_INVALID_TEXT : authErrorText(failure),
+        invalidToken: failure === 'invalid_token',
+      });
+      return null;
     },
 
     async logout() {
