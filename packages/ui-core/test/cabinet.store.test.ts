@@ -155,6 +155,46 @@ describe('cabinet store', () => {
     expect(swarms.create).not.toHaveBeenCalled();
   });
 
+  it('AC-014-23: fieldErrors — ошибка поля роя и поля агента по пути, formIssues без них', async () => {
+    const { store } = setup();
+
+    await store.createSwarm({
+      ...DRAFT,
+      task: '',
+      agents: [
+        { name: '', role: 'r', model: 'chat-small', budget: '', maxTokens: '' },
+        { name: 'B', role: '', model: 'chat-small', budget: '', maxTokens: '' },
+      ],
+    });
+
+    expect(Object.keys(store.fieldErrors.value).sort()).toEqual([
+      'agents.0.name',
+      'agents.1.role',
+      'task',
+    ]);
+    expect(store.fieldErrors.value['task']).toBeTruthy();
+    expect(store.formIssues.value).toEqual([]);
+  });
+
+  it('AC-014-23: formIssues — ошибка без известного поля (agents пуст), fieldErrors пуст', async () => {
+    const { store } = setup();
+
+    await store.createSwarm({ ...DRAFT, agents: [] });
+
+    expect(store.fieldErrors.value).toEqual({});
+    expect(store.formIssues.value.map((issue) => issue.path)).toEqual(['agents']);
+  });
+
+  it('AC-014-23: resetForm очищает fieldErrors и formIssues', async () => {
+    const { store } = setup();
+    await store.createSwarm({ ...DRAFT, task: '', agents: [] });
+
+    store.resetForm();
+
+    expect(store.fieldErrors.value).toEqual({});
+    expect(store.formIssues.value).toEqual([]);
+  });
+
   it('AC-014-23: create отклонён 402 insufficient_balance — null, form.error с остатком как в кабинете', async () => {
     const swarms = fakeSwarms({
       create: vi.fn(async () => {

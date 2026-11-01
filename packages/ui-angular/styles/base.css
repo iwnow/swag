@@ -99,7 +99,7 @@ form label {
   display: grid;
   grid-template-columns: 24px 1fr 2fr 8rem 8rem auto auto;
   gap: var(--swag-space-2);
-  align-items: center;
+  align-items: end;
   margin: var(--swag-space-2) 0;
 }
 
