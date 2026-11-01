@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import {
   BalancePanelComponent,
   CABINET_STORE,
+  connectStore,
   PageComponent,
   SESSION_USER,
 } from '@swag/ui-angular';
@@ -25,9 +26,10 @@ import {
 })
 export class BalancePageComponent {
   protected readonly cabinet = inject(CABINET_STORE);
+  private readonly session = connectStore(inject(SESSION_USER));
 
   constructor() {
-    void this.cabinet.balance.open(inject(SESSION_USER).orgId.value);
+    void this.cabinet.balance.open(this.session.orgId());
   }
 
   protected onTopup(input: { amountUsd: string; comment: string }): void {

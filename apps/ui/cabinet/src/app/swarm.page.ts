@@ -22,7 +22,7 @@ const STATUS_LABEL: Record<string, string> = {
   template: `
     @let state = cabinet.swarm();
     @let feed = state?.feed ?? [];
-    <swag-page [title]="state?.view?.task ?? ''">
+    <swag-page [title]="state?.view?.task ?? 'Рой'">
       <p><a routerLink="/">← Все рои</a></p>
       @if (state?.view; as swarm) {
         @if (cabinet.stoppable()) {

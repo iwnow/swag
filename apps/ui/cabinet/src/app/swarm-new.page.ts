@@ -14,10 +14,6 @@ const DEFAULT_MODEL: PlatformModel = 'chat-small';
 // Спека 004, Q-5: бюджет роя по умолчанию — $0.50.
 const DEFAULT_BUDGET_USD = '0.50';
 
-// Пути ошибок `SwarmCreateRequest` (ui-core, `validateForm`): поля роя и поля агентов по индексу.
-const SWARM_FIELDS = ['task', 'budgetMicroUsd', 'maxTokens'];
-const AGENT_FIELDS = ['name', 'role', 'model', 'budgetMicroUsd', 'maxTokens'];
-
 const newAgent = (): AgentInput => ({
   name: '',
   role: '',
@@ -118,7 +114,7 @@ const newAgent = (): AgentInput => ({
           Добавить агента
         </button>
 
-        @for (issue of unmatchedIssues(); track $index) {
+        @for (issue of cabinet.formIssues(); track $index) {
           <swag-alert kind="error">{{ issue.path || 'форма' }}: {{ issue.message }}</swag-alert>
         }
         @if (cabinet.form().error; as message) {
@@ -148,15 +144,11 @@ export class SwarmNewPageComponent {
   }
 
   fieldError(path: string): string | null {
-    return this.cabinet.form().issues.find((issue) => issue.path === path)?.message ?? null;
+    return this.cabinet.fieldErrors()[path] ?? null;
   }
 
   agentError(index: number, field: string): string | null {
     return this.fieldError(`agents.${index}.${field}`);
-  }
-
-  unmatchedIssues() {
-    return this.cabinet.form().issues.filter((issue) => !this.isFieldPath(issue.path));
   }
 
   setTask(event: Event): void {
@@ -189,7 +181,9 @@ export class SwarmNewPageComponent {
     this.agents.update((list) => [...list, newAgent()]);
   }
 
+  // Удаление сдвигает индексы агентов, поэтому ошибки формы сбрасываются, а не остаются на чужих строках.
   removeAgent(index: number): void {
+    this.cabinet.resetForm();
     this.agents.update((list) => list.filter((_, i) => i !== index));
   }
 
@@ -201,17 +195,5 @@ export class SwarmNewPageComponent {
       agents: this.agents(),
     });
     if (id !== null) await this.router.navigate(['/swarms', id]);
-  }
-
-  private isFieldPath(path: string): boolean {
-    const parts = path.split('.');
-    if (parts.length === 1) return SWARM_FIELDS.includes(path);
-    const [head, index, field] = parts;
-    return (
-      parts.length === 3 &&
-      head === 'agents' &&
-      Number(index) < this.agents().length &&
-      AGENT_FIELDS.includes(field)
-    );
   }
 }

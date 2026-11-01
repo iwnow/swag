@@ -63,6 +63,10 @@ export interface CabinetStore {
   readonly unread: ReadonlySignal<ReadonlySet<string>>;
   readonly money: ReadonlySignal<string | null>;
   readonly form: ReadonlySignal<CabinetForm>;
+  // Путь поля → первое сообщение; только известные пути (`task`, `budgetMicroUsd`, `maxTokens`, `agents.<i>.<поле>`).
+  readonly fieldErrors: ReadonlySignal<Record<string, string>>;
+  // Ошибки без известного поля, например `agents` (пусто или больше 8 агентов).
+  readonly formIssues: ReadonlySignal<FormIssue[]>;
   readonly balance: BalanceState;
   loadSwarms(): Promise<void>;
   createSwarm(input: SwarmDraft): Promise<string | null>;
@@ -78,6 +82,17 @@ export interface CabinetStore {
 function isInsufficientBalance(failure: unknown): boolean {
   const { status, code } = (failure ?? {}) as { status?: unknown; code?: unknown };
   return status === 402 && code === 'insufficient_balance';
+}
+
+// Спека 014, REQ-014-23: пути ошибок `SwarmCreateRequest` — поля роя и поля агентов по индексу.
+const SWARM_FIELDS: readonly string[] = ['task', 'budgetMicroUsd', 'maxTokens'];
+const AGENT_FIELDS: readonly string[] = ['name', 'role', 'model', 'budgetMicroUsd', 'maxTokens'];
+
+function isFieldPath(path: string): boolean {
+  const parts = path.split('.');
+  if (parts.length === 1) return SWARM_FIELDS.includes(path);
+  const [head, , field = ''] = parts;
+  return parts.length === 3 && head === 'agents' && AGENT_FIELDS.includes(field);
 }
 
 export function createCabinetStore(deps: CabinetStoreDeps): CabinetStore {
@@ -107,6 +122,15 @@ export function createCabinetStore(deps: CabinetStoreDeps): CabinetStore {
     if (!state?.view) return null;
     return formatSwarmMoney(state.view, spentLastMinute(state.feed, now.value));
   });
+
+  const fieldErrors = computed(() => {
+    const errors: Record<string, string> = {};
+    for (const issue of form.value.issues) {
+      if (isFieldPath(issue.path)) errors[issue.path] ??= issue.message;
+    }
+    return errors;
+  });
+  const formIssues = computed(() => form.value.issues.filter((issue) => !isFieldPath(issue.path)));
 
   const patchForm = (change: Partial<CabinetForm>): void => {
     form.value = { ...form.value, ...change };
@@ -163,6 +187,8 @@ export function createCabinetStore(deps: CabinetStoreDeps): CabinetStore {
     unread,
     money,
     form,
+    fieldErrors,
+    formIssues,
     balance,
     closeSwarm,
 
