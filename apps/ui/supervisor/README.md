@@ -32,7 +32,7 @@ Host и порт задаются в конфигурации `serve-original` (
 ## Ключевые решения
 
 - Remote, а не отдельное приложение: вход, шапка и сессия — каркас (REQ-014-2, REQ-014-11). Конфиг федерации и `shareAll` — как у админки.
-- Порт 4203, `serve-path` `/mf/supervisor/` (4.9). `prebundle.exclude` для `@swag/*` в `angular.json` — как у админки (журнал T-25).
+- Порт 4203, `serve-path` `/mf/supervisor/` (4.9). `prebundle.exclude` в `angular.json` — `@swag/api-integration`, `@swag/contracts`, `@swag/ui-angular`, `@swag/ui-core` — как у админки (журнал T-25).
 - Стор `SUPERVISOR_STORE` собирается в `./routes` через `provideSupervisorStore()` и живёт всю сессию вкладки; уничтожаются только компоненты (решение человека 2026-11-01, одинаково для всех разделов).
 - `orgId` приходит входом маршрута (`withComponentInputBinding()` каркаса). Сеттер `@Input() set orgId` вызывает `openOrganization(id)`: загрузка идёт при заходе и при смене id без подписок и `effect`.
 - Актуальность данных — перезагрузка на каждом заходе: список организаций перечитывается в конструкторе каждой страницы, пользователи и баланс — в `openOrganization`.

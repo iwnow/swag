@@ -9,7 +9,7 @@
 - `authApi`, `getMe` — адаптер `AuthApi` из `ui-core` на `fetch` по `/auth` (024, 4.15).
 - `meApi` — порт `MeApi` поверх `getMe`: `401` → `null`, прочая ошибка — исключение (014, 4.12).
 - `preferences` — порт `Preferences` на `localStorage` в `try/catch` (014, 4.12).
-- `createSwarmsApi(session)`, `createSwarmStream(session)`, `TRACE_URL_TEMPLATE` — адаптеры роёв для `CabinetStore` и ссылка на трейс; переехали из `apps/ui/cabinet` (014, REQ-014-23).
+- `createSwarmsApi(session)`, `createSwarmStream(session)`, `TRACE_URL_TEMPLATE` — адаптеры роёв для `CabinetStore` и ссылка на трейс; вынесены из кабинета (014, REQ-014-23).
 - `connectStore(store)`, `toAngularSignal(source, destroyRef)`, тип `Connected<S>` — мост сторов `ui-core` в Angular-сигналы (014, 4.12 «Мост в Angular»).
 - `SESSION_USER`, `SHELL_STORE`, `CABINET_STORE`, `ADMIN_STORE`, `SUPERVISOR_STORE` — токены сторов; `provideShellStore()`, `provideCabinetStore()`, `provideAdminStore()`, `provideSupervisorStore()` — провайдеры (014, 4.12).
 - `createBalanceApi(session)` — баланс организации по `/api` (013, 4.11).
@@ -49,26 +49,26 @@
 - `createRequest` не зависит от Angular: принимает `RequestSession` (`accessToken`, `renew`), тесты идут в Node без TestBed.
 - Мост (014, 4.12): кэш по ключу поля — `effect` создаётся при первом чтении, повторное чтение отдаёт тот же объект (`Map`). Записи в `connectStore` — `TypeError` (`set`, `defineProperty`, `deleteProperty`): менять состояние можно только методами стора. Примитивы читаются из стора каждый раз, не кэшируются.
 - `connectStore` берёт `DestroyRef` синхронно (`inject(DestroyRef)`), поэтому вызывается в injection context. `dispose()` стора и снятие `effect` вешаются на `DestroyRef` инжектора, где стор предоставлен. Сторы разделов — `provideCabinetStore()`, `provideAdminStore()` и `provideSupervisorStore()` — провайдеры в `providers` корневого маршрута `./routes` remote: стор создаётся при первом заходе в раздел и живёт всю сессию вкладки, потому что каркас инжекторы маршрутов не уничтожает; уничтожаются только компоненты. Актуальность данных — перезагрузка на каждом заходе на экран: страница вызывает загрузку (`loadSwarms`, `openSwarm`, `balance.open`, `load()`) и сбрасывает форму (`resetForm`, `resetInvite`). Решение человека 2026-11-01, одинаково для всех разделов (журнал T-13).
-- Адаптеры роёв переехали из `apps/ui/cabinet/src/app/api.ts` в пакет без правки логики: приложения не строят адаптеры сами (REQ-014-23). `timers` для `CabinetStore` — `window.setTimeout`/`clearTimeout`, как в `ui.ts` кабинета.
+- Адаптеры роёв (`swarms-api.ts`) в пакете, логика не менялась: приложения не строят адаптеры сами (REQ-014-23). `timers` для `CabinetStore` — `window.setTimeout`/`clearTimeout`, как в `ui.ts` кабинета.
 - `@preact/signals-core` 1.14.5 — точная версия, как в `ui-core` (одна копия на страницу, 4.12).
 - Тест моста: `effect` подменяется `vi.fn` через `vi.mock` ради проверки «один `effect` на поле» — без внутренностей preact.
 - Одновременные `401` делят один `renew()` внутри `createRequest` (промис хранится до завершения). Keeper из `ui-core` делит refresh ещё раз — это его собственная гарантия.
 - Неудача `renew()` — ошибка `401` уходит вызывающему; выход из сессии выполняет keeper и вызывает `onSignedOut`. `createRequest` на `onSignedOut` не подписан и сам его не вызывает.
 - `authApi` не использует `createRequest`: у входа и обновления нет Bearer, а `refresh` сам вызывается keeper'ом (иначе цикл).
 - `HttpError` из `@swag/ui-angular` и `HttpError` из `@swag/helpers/server` (повтор с задержкой, 004) — разные классы с разными конструкторами. Импортировать каждый из своего пакета.
-- Тело ошибки, которое не JSON, даёт `HttpError` с кодом `'unknown'` (раньше в кабинете это был `SyntaxError`).
+- Тело ошибки, которое не JSON, даёт `HttpError` с кодом `'unknown'`.
 - `@angular/forms` 22.2.3 — явная зависимость. Без неё `npm install` не сходится: `@angular/cdk@22.2.3` требует `@angular/forms` в диапазоне `^22`, и npm берёт `22.2.4`, у которого peer `@angular/common` 22.2.4. Тот же приём, что в T-1 для `@angular/compiler-cli`.
 - Версия `@angular/cdk` — 22.2.3: есть в npm (`npm view @angular/cdk@22.2.3 version`), совпадает с остальными `@angular/*`.
 - Пакет подключается по workspace (`packages/*` в `package.json` корня), без `paths`: `node_modules/@swag/ui-angular` ведёт сюда.
 - Стили подключаются в `apps/ui/shell/angular.json` (`build.options.styles`) каркасом, кабинет их не подключает, по имени пакета: `@swag/ui-angular/styles/tokens.css`, затем `base.css`. Сборка `ng build` резолвит `exports` без путей `../../../packages/...`; `<style>` из `index.html` кабинета удалён.
-- Тема: «system» — атрибут `data-theme` снимается, тему выбирает `prefers-color-scheme` через `tokens.css`; «light» и «dark» — атрибут на `<html>`, перекрывает системную тему. Хранение — `preferences` в `try/catch`; при недоступности выбор живёт до перезагрузки. `ThemeService` удалён (014, 4.12), вопрос D-133 о его API снят.
+- Тема: «system» — атрибут `data-theme` снимается, тему выбирает `prefers-color-scheme` через `tokens.css`; «light» и «dark» — атрибут на `<html>`, перекрывает системную тему. Хранение — `preferences` в `try/catch`; при недоступности выбор живёт до перезагрузки.
 - `base.css` задаёт `color-scheme: light dark` на `:root`, с `data-theme` — `light` или `dark` соответственно: нативные контролы браузера совпадают с темой.
 - `button[swag-button]` — директива на нативной кнопке, а не элемент `swag-button`: `type` остаётся нативным, submit внутри форм работает без нового входа. `busy` ставит нативный `disabled` и `aria-busy="true"` (D-135). Вид disabled один для всех вариантов: `.swag-button:disabled` в `base.css` с селектором (0,2,0) перебивает варианты.
 - `swag-field` без директивы: после каждого рендера ставит `aria-describedby` (id ошибки) и `aria-invalid` первому проецируемому `input`, `select` или `textarea`. Чужие id в `aria-describedby` сохраняются, снимается только свой. Ошибка выводится с `role="alert"` (D-136).
 - Пустота `swag-table` определяется CSS `:has(tbody tr)` в `base.css`; входа строк нет (D-137).
 - `swag-user-table` выносит разметку пользователей из админки, чтобы супервизор не дублировал её (REQ-014-17, REQ-014-23). Компонент держит только открытое подтверждение блокировки, данные и действия — в сторе (`AdminStore`, `SupervisorStore`).
 - `swag-confirm` открывает диалог в `ngAfterViewInit` и закрывает в `ngOnDestroy`: потребитель показывает компонент через `@if`. Esc и клик по фону — `cancelled`, `confirmed` только по кнопке «Подтвердить». `aria-describedby` диалога указывает на абзац текста, id уникален на экземпляр (D-138).
-- `sessionGuard` вызывает `SESSION_USER.restore()`: один `restore` на стор, повторные вызовы получают тот же промис (014, 4.12). После него без токена уводит на `/login`. `ensureRestored` удалён.
+- `sessionGuard` вызывает `SESSION_USER.restore()`: один `restore` на стор, повторные вызовы получают тот же промис (014, 4.12). После него без токена уводит на `/login`.
 - `sessionGuard` — `canMatch`, а не `canActivate`: проверка до загрузки remote (014, 4.4).
 - `swag-balance-panel` без состояния (014, 4.12): данные, проверки формы, запросы и тексты ошибок — в `BalanceState` (`createBalanceState`, `ui-core`). Панель рисует сигналы и отдаёт ввод. Дата в истории — `formatDateTime` из `ui-core`. Поля суммы и комментария — локальные поля ввода, очищаются после отправки без ошибки формы. `requireComment` задаёт вызывающий: `balance.topup(input, requireComment)`.
 - Мост `connectStore` вкладывается только в простой объект (`Object.prototype` или `null` в прототипе); массивы, `Date` и прочее отдаются как есть, без кэша. `effect` моста создаётся в `untracked`, потому что мост создаётся лениво, в том числе внутри `computed` и шаблона, где запись в сигнал запрещена (NG0600) (014, 4.12, AC-014-26).
@@ -95,7 +95,7 @@
 
 - Значения тёмной темы повторены в двух селекторах (атрибут и системная настройка): CSS не позволяет переиспользовать блок, тест сверяет, что они совпадают. Селекторы с одинарными кавычками: так форматирует prettier, для CSS это тот же селектор, что в 4.8.
 - Цвета только `#rrggbb`, тень — `#rrggbbaa`: так тест считает контраст и находит литералы (AC-014-10).
-- `exports` пакета уже содержит `./styles/*`, поэтому файл доступен как `@swag/ui-angular/styles/tokens.css` для T-8 и T-11.
+- `exports` пакета уже содержит `./styles/*`, поэтому файл доступен как `@swag/ui-angular/styles/tokens.css` .
 
 ## Скиллы дизайна (T-7, Q-3)
 
@@ -117,6 +117,6 @@
 
 ## Спеки
 
-- 014 — 4.4, 4.7, 4.8 (токены и компоненты), 4.1, 4.3, 4.12 (мост, сторы, guard's, панель без состояния; T-24), AC-014-10 (контраст и литералы, тест в `scripts/ui-config.test.ts`), AC-014-19, AC-014-26 (часть), REQ-014-13, REQ-014-16, REQ-014-17, REQ-014-21, REQ-014-22, T-5 — T-10. Открытые: D-134 (цвета статусов графа), D-135 — D-138 (компоненты, приёмка 014). D-133 и D-139 касались удалённых `ThemeService` и `ensureRestored`.
+- 014 — 4.4, 4.7, 4.8 (токены и компоненты), 4.1, 4.3, 4.12 (мост, сторы, guard's, панель без состояния; T-24), AC-014-10 (контраст и литералы, тест в `scripts/ui-config.test.ts`), AC-014-19, AC-014-26 (часть), REQ-014-13, REQ-014-16, REQ-014-17, REQ-014-21, REQ-014-22, T-5 — T-10. Открытые: D-134 (цвета статусов графа), D-135 — D-138 (компоненты, приёмка 014).
 - 024 — 4.15 (сессия, `/auth`).
 - 013 — 4.11 (баланс, `/auth/me`, D-130).

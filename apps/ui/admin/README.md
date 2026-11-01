@@ -30,7 +30,7 @@ Host и порт задаются в конфигурации `serve-original` (
 ## Ключевые решения
 
 - Remote, а не отдельное приложение: вход, шапка и сессия — каркас (REQ-014-2, REQ-014-11). `shareAll` и `sharedMappings` — как у кабинета, чтобы `@swag/*` и Angular были общими экземплярами.
-- Порт 4202, `serve-path` `/mf/admin/` (4.9). `prebundle.exclude` для `@swag/*` в `angular.json` — иначе декораторы `@swag/ui-angular` не компилируются при `ng serve` (журнал T-25).
+- Порт 4202, `serve-path` `/mf/admin/` (4.9). `prebundle.exclude` в `angular.json` — `@swag/api-integration`, `@swag/contracts`, `@swag/ui-angular`, `@swag/ui-core` — иначе декораторы `@swag/ui-angular` не компилируются при `ng serve` (журнал T-25).
 - Стор `ADMIN_STORE` собирается в `./routes` через `provideAdminStore()` и живёт всю сессию вкладки; уничтожаются только компоненты (решение человека 2026-11-01, одинаково для всех разделов).
 - Актуальность данных — перезагрузка на каждом заходе на страницу: `load()` и `resetInvite()` в конструкторе страницы.
 - Подтверждение нужно только для блокировки (4.6): диалог `swag-confirm` живёт внутри `swag-user-table`, текст — `blockConfirmText(email)` из `ui-core`; после подтверждения таблица отдаёт `action`, страница вызывает `apply(id, 'block')`; по отмене ничего не происходит.

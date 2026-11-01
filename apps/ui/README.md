@@ -23,7 +23,7 @@
 ## Связи
 
 - Workspaces npm: `apps/ui/*`.
-- Логика: `@swag/ui-core`, `@swag/api-integration`, `@swag/contracts`.
+- Логика: `@swag/ui-core`; общий Angular-код `@swag/ui-angular`; типы `@swag/contracts`, `@swag/api-integration`.
 
 ## Ключевые решения
 
