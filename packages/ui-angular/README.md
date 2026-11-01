@@ -7,6 +7,11 @@
 - `SESSION` и `CurrentUser` — один `AuthSessionKeeper` на приложение; роль и организация из `GET /auth/me` (спека 013, D-130).
 - `createRequest(session, basePath)` — REST с `Authorization: Bearer`, на `401` один `renew()` и повтор, ошибка — `HttpError`.
 - `authApi`, `getMe` — адаптер `AuthApi` из `ui-core` на `fetch` по `/auth` (024, 4.15).
+- `meApi` — порт `MeApi` поверх `getMe`: `401` → `null`, прочая ошибка — исключение (014, 4.12).
+- `preferences` — порт `Preferences` на `localStorage` в `try/catch` (014, 4.12).
+- `createSwarmsApi(session)`, `createSwarmStream(session)`, `TRACE_URL_TEMPLATE` — адаптеры роёв для `CabinetStore` и ссылка на трейс; переехали из `apps/ui/cabinet` (014, REQ-014-23).
+- `connectStore(store)`, `toAngularSignal(source, destroyRef)`, тип `Connected<S>` — мост сторов `ui-core` в Angular-сигналы (014, 4.12 «Мост в Angular»).
+- `SESSION_USER`, `SHELL_STORE`, `CABINET_STORE` — токены сторов; `provideShellStore()`, `provideCabinetStore()` — провайдеры (014, 4.12).
 - `createBalanceApi(session)` — баланс организации по `/api` (013, 4.11).
 - `createUsersApi(session)`, `createOrganizationsApi(session)` — порты админки и супервизора (014, 4.3) по `/auth` (024, 4.7).
 - `styles/tokens.css` — дизайн-токены 4.8 для светлой и тёмной темы (REQ-014-16, REQ-014-21).
@@ -24,6 +29,10 @@
 - `src/session.ts` — `SESSION` и `CurrentUser`: `role`, `orgId`, публичный `me: Signal<AuthMe | null>` (только чтение), `ensure()`, `clear()`.
 - `src/auth-api.ts` — `authApi`, `getMe(token)`.
 - `src/balance-api.ts` — `createBalanceApi`, тип `BalanceApi`.
+- `src/swarms-api.ts` — `createSwarmsApi(session)` (REST, basePath `/api`), `createSwarmStream(session)` (WebSocket, подпротокол `swag.bearer.<token>`, `4401` → `renew`). Принимают `RequestSession`.
+- `src/preferences.ts` — `preferences` (`Preferences`).
+- `src/stores.ts` — мост: `toAngularSignal`, `connectStore`, тип `Connected<S>`; токены `SESSION_USER` (фабрика — `createSessionUserStore` на `authApi` и `meApi`), `SHELL_STORE`, `CABINET_STORE`; `provideShellStore()`, `provideCabinetStore()`; `TRACE_URL_TEMPLATE`.
+- `test/stores.test.ts` — AC-014-26 (мост на Angular injection context из `@angular/core`, без TestBed) и тест `preferences`.
 - `src/users-api.ts` — `createUsersApi`, `createOrganizationsApi`.
 - `styles/tokens.css` — токены: светлая тема в `:root`, тёмная в `:root[data-theme='dark']` и в `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) }`. Проверяет `scripts/ui-config.test.ts` (AC-014-10, контраст).
 - `src/theme.ts` — `ThemeService` (`providedIn: 'root'`): `mode` — signal только для чтения, `setMode(mode)`; `ThemeMode`.
@@ -39,6 +48,12 @@
 ## Ключевые решения
 
 - `createRequest` не зависит от Angular: принимает `RequestSession` (`accessToken`, `renew`), тесты идут в Node без TestBed.
+- Мост (014, 4.12): кэш по ключу поля — `effect` создаётся при первом чтении, повторное чтение отдаёт тот же объект (`Map`). Записи в `connectStore` — `TypeError` (`set`, `defineProperty`, `deleteProperty`): менять состояние можно только методами стора. Примитивы читаются из стора каждый раз, не кэшируются.
+- `connectStore` берёт `DestroyRef` синхронно (`inject(DestroyRef)`), поэтому вызывается в injection context. `dispose()` стора и снятие `effect` вешаются на тот же `DestroyRef` инжектора провайдера.
+- Адаптеры роёв переехали из `apps/ui/cabinet/src/app/api.ts` в пакет без правки логики: приложения не строят адаптеры сами (REQ-014-23). `timers` для `CabinetStore` — `window.setTimeout`/`clearTimeout`, как в `ui.ts` кабинета.
+- `@preact/signals-core` 1.14.5 — точная версия, как в `ui-core` (одна копия на страницу, 4.12).
+- Отклонение: `ADMIN_STORE` и `SUPERVISOR_STORE` и их провайдеры не созданы — сторов `AdminStore`/`SupervisorStore` ещё нет (T-12/T-13).
+- Тест моста: `effect` подменяется `vi.fn` через `vi.mock` ради проверки «один `effect` на поле» — без внутренностей preact.
 - Одновременные `401` делят один `renew()` внутри `createRequest` (промис хранится до завершения). Keeper из `ui-core` делит refresh ещё раз — это его собственная гарантия.
 - Неудача `renew()` — ошибка `401` уходит вызывающему; выход из сессии выполняет keeper и вызывает `onSignedOut`. `createRequest` на `onSignedOut` не подписан и сам его не вызывает.
 - `authApi` не использует `createRequest`: у входа и обновления нет Bearer, а `refresh` сам вызывается keeper'ом (иначе цикл).
@@ -99,7 +114,7 @@
 ## Связи
 
 - Потребители: `apps/ui/cabinet` (`@swag/cabinet`); каркас и remote-приложения (014, 4.7).
-- Использует: `@swag/ui-core` (порты, `createAuthSessionKeeper`), `@swag/contracts`.
+- Использует: `@swag/ui-core` (порты, сторы, `createAuthSessionKeeper`), `@swag/contracts`, `@swag/api-integration` (тип `SwarmView`), `@preact/signals-core` (мост).
 
 ## Спеки
 

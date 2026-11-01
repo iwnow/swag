@@ -11,5 +11,9 @@
     "types": []
   },
   "include": ["src"],
-  "references": [{ "path": "../contracts" }, { "path": "../ui-core" }]
+  "references": [
+    { "path": "../contracts" },
+    { "path": "../api-integration" },
+    { "path": "../ui-core" }
+  ]
 }

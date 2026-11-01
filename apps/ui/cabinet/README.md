@@ -11,13 +11,12 @@
 
 ## Что внутри сейчас
 
-- `src/app/api.ts` — адаптеры портов `ui-core` для роёв: `createSwarmsApi(session)` (REST через `createRequest` из `@swag/ui-angular`, basePath `/api`) и `createSwarmStream(session)` (WebSocket: подпротокол `swag.bearer.<token>`; на закрытие `4401` — `renew()`, переподключение (`onError` ui-core) только после удачного обновления; без токена поток не открывается и не переподключается).
 - Из `@swag/ui-angular` (спека 014, 4.7): `SESSION` и `CurrentUser` (роль и `orgId` из `GET /auth/me`), `authApi` и `getMe`, `createBalanceApi` (баланс, 013, 4.11), `HttpError` (ошибка ответа с полями `status` и `code`; ветка `402` в форме роя). Подробности — `packages/ui-angular/README.md`.
 - `src/app/balance.page.ts` — страница `/balance` (спека 013, 4.11; 014, 4.11): обёртка `swag-page` + `swag-balance-panel` с `orgId` из `CurrentUser`, `requireComment` = false.
 - Guard маршрутов роёв — `sessionGuard` из `@swag/ui-angular` (`canMatch` на родительском маршруте, 014, 4.4). Старый `auth.guard.ts` удалён.
 - `src/app/login.page.ts` — страница `/login`: email, пароль, текст ошибки по коду (русский).
 - `src/app/app.ts` — шапка с пунктом «Баланс» (только у сессии с организацией) и кнопкой «Выйти» (вне `/login`): `logout()` и переход на `/login`; `onSignedOut` → `/login`.
-- `src/app/ui.ts` — `ui-core` в DI-токене `UI`; `TRACE_URL_TEMPLATE` — шаблон ссылки на трейс в Grafana Explore.
+- `src/app/ui.ts` — `ui-core` в DI-токене `UI`. Адаптеры роёв `createSwarmsApi`, `createSwarmStream` и `TRACE_URL_TEMPLATE` (ссылка на трейс в Grafana Explore) — из `@swag/ui-angular` (спека 014, REQ-014-23: приложения не строят адаптеры сами).
 - `src/app/swarm-graph.ts` — граф роя, чистый SVG без библиотеки (Q-4). Геометрия — чистые функции `layoutNodes` (узлы по кругу) и `edgePath` (путь ребра, дуга, петля). Цвета — `var(--swag-…)`, заливка статусов — `color-mix` от токенов (D-134).
 - `src/index.html` — без `<style>`: стили в `@swag/ui-angular` (`styles/tokens.css`, `styles/base.css`), подключены в `angular.json` (`build.options.styles`).
 - Страницы: `swarm-list.page.ts`, `swarm-new.page.ts`, `swarm.page.ts`.
