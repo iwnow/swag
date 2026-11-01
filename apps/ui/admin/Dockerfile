@@ -8,8 +8,9 @@ RUN npm ci --ignore-scripts && npm cache clean --force
 COPY tsconfig.base.json ./
 COPY packages packages
 COPY apps/ui/admin apps/ui/admin
+COPY apps/ui/serve.sh /usr/local/bin/serve.sh
 WORKDIR /repo/apps/ui/admin
 # `ng serve` под node пишет кэш сборки в apps/ui/admin/.angular.
 RUN chown node:node /repo/apps/ui/admin
 USER node
-CMD ["npm", "run", "start"]
+CMD ["sh", "/usr/local/bin/serve.sh"]
