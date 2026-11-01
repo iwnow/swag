@@ -13,6 +13,7 @@ import {
   LlmGatewayConfig,
   ObservabilityConfig,
   OrchestratorConfig,
+  UiConfig,
   loadConfig,
 } from '../src/index.ts';
 
@@ -101,6 +102,28 @@ describe('loadConfig', () => {
   it('порт сервиса приводится к числу и проверяется', () => {
     expect(loadConfig(ApiConfig, { ...apiEnv, API_PORT: '3000' }).API_PORT).toBe(3000);
     expect(() => loadConfig(ApiConfig, { ...apiEnv, API_PORT: 'abc' })).toThrow(/API_PORT/);
+  });
+
+  it('спека 014, 4.10: UiConfig — порты remote по умолчанию 4201, 4202, 4203, значения из env', () => {
+    const defaults = loadConfig(UiConfig, { UI_PORT: '4200' });
+    expect(defaults).toEqual({
+      UI_PORT: 4200,
+      UI_CABINET_PORT: 4201,
+      UI_ADMIN_PORT: 4202,
+      UI_SUPERVISOR_PORT: 4203,
+    });
+    const custom = loadConfig(UiConfig, {
+      UI_PORT: '4200',
+      UI_CABINET_PORT: '5001',
+      UI_ADMIN_PORT: '5002',
+      UI_SUPERVISOR_PORT: '5003',
+    });
+    expect([custom.UI_CABINET_PORT, custom.UI_ADMIN_PORT, custom.UI_SUPERVISOR_PORT]).toEqual([
+      5001, 5002, 5003,
+    ]);
+    expect(() => loadConfig(UiConfig, { UI_PORT: '4200', UI_ADMIN_PORT: 'abc' })).toThrow(
+      /UI_ADMIN_PORT/,
+    );
   });
 
   it('спека 004, 4.11: SWARM_MAX_BUDGET_MICRO_USD — целое не меньше 1', () => {
