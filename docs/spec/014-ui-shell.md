@@ -11,124 +11,124 @@ updated: 2026-11-01
 # 014. UI: каркас с регистрацией и входом, микрофронтенды кабинета, админки и супервизора
 
 > **Коротко.**
-> - **Каркас `apps/ui/shell`.** Компания регистрируется в браузере: email → письмо → пароль и название → кабинет. Приглашённый пользователь задаёт пароль по ссылке из письма. Вход, выход и навигация живут в каркасе. Каркас подгружает микрофронтенды по правам пользователя из `GET /auth/me`.
+> - **Каркас `apps/ui/shell`.** Регистрация компании проходит в браузере: email → письмо → пароль и название → кабинет. Приглашённый задаёт пароль по ссылке из письма. Вход, выход и навигация — в каркасе. Каркас подгружает микрофронтенды по правам из `GET /auth/me`.
 > - **Три микрофронтенда.**
->   - `cabinet` — нынешние рои и баланс, без своей страницы входа.
+>   - `cabinet` — нынешние рои и баланс без своей страницы входа.
 >   - `admin` — пользователи организации: приглашение, смена роли, блокировка.
->   - `supervisor` — организации платформы, их пользователи, их баланс с пополнением.
-> - **Права в интерфейсе** вычисляет `ui-core` одной функцией. Микрофронтенд, на который у пользователя нет прав, не загружается вовсе. Доступ по-прежнему проверяет API, интерфейс только прячет.
-> - **Новое API не нужно.** Все экраны работают на эндпоинтах 012, 024 и 013. Меняются только адреса страниц в письмах: `/signup/confirm` и `/invite` вместо `/auth/confirm` и `/auth/invite`, потому что `/auth/*` прокси отдаёт identity.
-> - **Общий стиль.** У всех фронтендов одни дизайн-токены и базовые компоненты, светлая и тёмная тема.
+>   - `supervisor` — организации платформы, их пользователи, баланс и пополнение.
+> - **Права в интерфейсе** считает `ui-core`. Код микрофронтенда без прав не загружается. Доступ, как и раньше, проверяет API.
+> - **Нового API нет.** Экраны работают на эндпоинтах 012, 024 и 013. Меняются только адреса страниц в письмах: `/signup/confirm` и `/invite` вместо `/auth/confirm` и `/auth/invite`. Причина — путь `/auth/*` прокси отдаёт в identity.
+> - **Общий стиль.** Одни дизайн-токены и базовые компоненты, светлая и тёмная тема. Контраст проверяет автотест.
+> - **Первая задача — проверка федерации на Angular 22** (T-1). Если Native Federation ведёт себя не как в 4.4–4.5, спека блокируется до реализации экранов.
 > - **Решить человеку (раздел 9):**
->   - чем собирать микрофронтенды (Q-1, из D-11);
->   - где живёт общий Angular-код (Q-2);
+>   - сборка микрофронтендов (Q-1, из D-11);
+>   - общий фронтендовый код (Q-2, из D-11);
 >   - дизайн-система и скилл дизайна (Q-3, из D-16);
->   - кто видит Grafana (Q-4, из D-15);
+>   - Grafana (Q-4, из D-15);
 >   - порядок со спекой мультиорганизаций (Q-5, D-131);
 >   - рои и расходы по пользователям (Q-6);
->   - экран счёта платформы (Q-7, из D-38);
->   - порог размера бандла (Q-8).
+>   - счёт платформы (Q-7, из D-38);
+>   - порог бандла (Q-8).
 >
->   По каждому вопросу дана рекомендация. Разделы 4–8 написаны под рекомендованные варианты. Другой ответ — правка этих разделов до `ready`.
+>   По каждому вопросу дана рекомендация, разделы 4–8 написаны под рекомендации. Другой ответ — правка этих разделов до `ready`.
 
 ## 1. Контекст и цель
 
-Закрывает пункт «UI: каркас с регистрацией и входом, микрофронтенды — кабинет, админка организации, супервизор» этапа 5 [роадмапа](../../AI_PLATFORM_ROADMAP.md#8-пользователи-доступ-и-баланс) (раздел «Фронтенды»).
+Закрывает пункт «UI: каркас с регистрацией и входом, микрофронтенды — кабинет, админка организации, супервизор» этапа 5 [роадмапа](../../AI_PLATFORM_ROADMAP.md#8-пользователи-доступ-и-баланс), раздел «Фронтенды».
 
 **Сейчас.**
-- Есть один фронтенд — `apps/ui/cabinet`, самостоятельное приложение.
-- В нём страница входа, рои и баланс.
-- Регистрацию компании, подтверждение email и принятие приглашения можно пройти только через `curl` и Mailpit: ссылки в письмах ведут на страницы, которых нет.
-- Управлять пользователями и смотреть организации можно только через API.
+- Есть один фронтенд — `apps/ui/cabinet`, самостоятельное приложение: вход, рои, баланс.
+- Регистрацию, подтверждение email и приглашение можно пройти только через `curl` и Mailpit: ссылки в письмах ведут на несуществующие страницы.
+- Пользователями и организациями управляют только через API.
 
 **Цель.**
-- Каркас `apps/ui/shell` с регистрацией, подтверждением, приглашением, входом и навигацией.
+- Каркас с регистрацией, подтверждением, приглашением, входом и навигацией.
 - Три микрофронтенда, которые собираются и запускаются независимо. Каркас подгружает их во время работы по правам из `GET /auth/me`.
-- Сценарий S-1 проходится в браузере целиком.
+- Сценарий S-1 проходится в браузере.
 
 ## 2. Объём
 
 **Входит:**
-- `apps/ui/shell` — каркас:
+- `apps/ui/shell`:
   - страницы `/login`, `/signup`, `/signup/confirm`, `/invite`;
-  - шапка с навигацией и выходом;
+  - шапка с навигацией, темой и выходом;
   - загрузка микрофронтендов по манифесту и правам.
-- `apps/ui/cabinet` становится микрофронтендом: экраны роёв и баланса без изменения поведения, страница входа и общая шапка уходят в каркас.
-- `apps/ui/admin` — пользователи своей организации:
-  - список;
-  - приглашение с ролью;
-  - смена роли `user` ↔ `admin`;
-  - блокировка и разблокировка.
-- `apps/ui/supervisor`:
-  - список организаций;
-  - страница организации: её пользователи с блокировкой, её баланс, история и пополнение.
+- `apps/ui/cabinet` становится микрофронтендом. Экраны роёв и баланса работают как раньше. Вход, шапка и глобальные стили уходят в каркас и общий пакет.
+- `apps/ui/admin`: пользователи своей организации, приглашение с ролью, смена роли `user` ↔ `admin`, блокировка и разблокировка.
+- `apps/ui/supervisor`: список организаций и страница организации — её пользователи с блокировкой, её баланс, история и пополнение.
 - `ui-core`:
   - регистрация, подтверждение и приглашение в сессии;
-  - тексты ошибок;
-  - навигация и доступ к разделам по `AuthMe`;
-  - порты пользователей и организаций;
-  - действия над пользователем.
-- Общий Angular-пакет (Q-2): сессия, текущий пользователь, адаптеры портов на `fetch`, дизайн-токены, базовые компоненты.
-- Дизайн-токены, светлая и тёмная темы, базовые компоненты (Q-3).
-- Compose: каркас на `UI_PORT`, микрофронтенды без опубликованных портов за прокси каркаса.
-- Новые адреса `IDENTITY_CONFIRM_URL` и `IDENTITY_INVITE_URL` в `.env.example` и `.env`.
+  - тексты ошибок, проверки форм;
+  - доступ к разделам и навигация по `AuthMe`;
+  - действия над пользователем;
+  - проверки адресов `returnTo` и remote;
+  - порты пользователей и организаций.
+- `packages/ui-angular` (Q-2):
+  - сессия, текущий пользователь, guard'ы;
+  - адаптеры на `fetch`;
+  - панель баланса;
+  - дизайн-токены, базовые стили, базовые компоненты.
+- Перевод цветов графа роя и стилей кабинета на токены — только чтобы граф работал в тёмной теме.
+- Compose: каркас на `UI_PORT`, микрофронтенды без опубликованных портов, за прокси каркаса.
+- Новые адреса `IDENTITY_CONFIRM_URL` и `IDENTITY_INVITE_URL`.
 - Запуск UI на хосте с горячей перезагрузкой (из N-6).
 - Ручной прогон S-1 в браузере.
 
 **Не входит** (агент это не делает, даже если кажется логичным):
-- **Несколько организаций у пользователя**, переключатель организации, создание второй организации из кабинета — спека по D-131 (Q-5). В 014 у пользователя одна организация из `AuthMe.organization`.
-- **Новые эндпоинты и поля API**: рои и расходы по пользователям, `createdBy` и траты в списке роёв (Q-6).
-- **Счёт платформы супервизора**: поступления, расходы у провайдеров, маржа (Q-7, D-38) — спека 025.
-- **Восстановление и смена пароля** (D-112). Профиль пользователя.
-- **Вход через Google или SSO.**
-- **Лендинг `apps/ui/landing`.**
-- **Продакшен-сборка и деплой фронтендов**: статика за nginx, CDN, манифест на окружение. В 014 только dev-серверы, как в 001.
+- **Несколько организаций у пользователя**, переключатель и создание второй организации — спека по D-131 (Q-5). В 014 организация одна: `AuthMe.organization`.
+- **Новые эндпоинты и поля API.** Сюда же — рои и расходы по пользователям, `createdBy` и траты в списке роёв (Q-6).
+- **Приглашения от супервизора.** `POST /auth/invitations` разрешён только `admin` (024, 4.8), поэтому на странице организации у супервизора формы приглашения нет.
+- **Счёт платформы** (Q-7, D-38) — спека 025.
+- **Восстановление и смена пароля** (D-112), профиль пользователя.
+- **Вход через Google и SSO.** Лендинг.
+- **Продакшен-сборка и деплой фронтендов**: статика за nginx, CDN, манифест на окружение. В 014 — только dev-серверы, как в 001.
 - **Вход в Grafana и её роли** (Q-4) — спека эксплуатации.
-- **Журнал ошибок на экране супервизора** (D-88).
-- **Редизайн экранов роя**: граф, лента, форма. Они только переходят на токены и базовые компоненты (REQ-014-17), раскладка и поведение прежние.
-- **Браузерные e2e-автотесты** (Playwright и т. п.). Экраны проверяются вручную (AC `[manual]`), логика — тестами `ui-core`.
-- **Локализация**: интерфейс только на русском.
+- **Журнал ошибок у супервизора** (D-88).
+- **Новый вид графа роя и экранов роя.** Раскладка, формы и поведение прежние. Графом займётся визуальный редактор (017). В 014 — только цвета на токенах и общие компоненты.
+- **Браузерные e2e-автотесты** (Playwright и т. п.). Экраны проверяются вручную (`[manual]`), логика — тестами `ui-core` и `scripts/`.
+- **Локализация.** Интерфейс только на русском.
 
 ## 3. Требования
 
 | ID | Требование | Приоритет |
 |---|---|---|
-| REQ-014-1 | Каркас `apps/ui/shell` MUST быть отдельным фронтендом и отдельным npm-workspace `@swag/shell`. Он отдаёт страницы входа, регистрации, подтверждения, приглашения и общую шапку, остальные экраны подгружает из микрофронтендов. | MUST |
-| REQ-014-2 | Микрофронтенды `cabinet`, `admin`, `supervisor` MUST собираться и запускаться независимо от каркаса и друг от друга: свой workspace, свой dev-сервер и свой сервис compose. Каркас MUST находить их адреса только по манифесту 4.4, а не по импорту исходников. | MUST |
-| REQ-014-3 | Каркас MUST загружать код микрофронтенда только при входе в его раздел и только когда `canOpen` (4.2) разрешает этот раздел текущему `AuthMe`. Код раздела, на который прав нет, MUST не запрашиваться с сервера. | MUST |
+| REQ-014-1 | Каркас `apps/ui/shell` (`@swag/shell`) MUST быть отдельным фронтендом и npm-workspace. Он отдаёт страницы 4.11 и шапку, а остальные экраны подгружает из микрофронтендов. | MUST |
+| REQ-014-2 | Микрофронтенды `cabinet`, `admin`, `supervisor` MUST собираться и запускаться независимо: свой workspace, свой dev-сервер, свой сервис compose. Исходники каркаса MUST не импортировать исходники микрофронтендов. Адреса remote каркас берёт только из манифеста 4.4. | MUST |
+| REQ-014-3 | Каркас MUST запрашивать `remoteEntry.json` и код микрофронтенда только при входе в его раздел и только когда `canOpen` (4.2) разрешает раздел текущему `AuthMe`. Раздел без прав MUST не давать ни одного запроса под `/mf/<имя>/`. | MUST |
 | REQ-014-4 | Навигация, доступ к разделам и видимость форм MUST вычисляться из `GET /auth/me` (`AuthMe`), а не из claims токена (D-130). `AuthMe` перечитывается при смене токена доступа и сбрасывается при выходе, как в 013. | MUST |
-| REQ-014-5 | Без сессии MUST открываться только `/login`, `/signup`, `/signup/confirm`, `/invite`. Любой другой адрес ведёт на `/login`, исходный адрес передаётся в параметре `returnTo`, после входа пользователь попадает на него. `returnTo` принимается, только если это путь этого же приложения: начинается с одного `/` и не содержит `//` и `\`. Иначе после входа открывается `/`. | MUST |
-| REQ-014-6 | `/signup` MUST принимать email и вызывать `POST /auth/registrations`. На `202` MUST показывать одно и то же сообщение 4.6 независимо от того, есть ли такой email. Ошибки — тексты 4.6 по коду. | MUST |
-| REQ-014-7 | `/signup/confirm?token=` MUST принимать пароль, повтор пароля и название организации и вызывать `POST /auth/registrations/confirm`. На `201` сессия MUST устанавливаться так же, как после входа, и открываться `/`. Пароль проверяется схемой `Password`, название — `OrganizationName`, совпадение повтора — до запроса. | MUST |
-| REQ-014-8 | `/invite?token=` MUST принимать пароль и повтор и вызывать `POST /auth/invitations/accept`. На `201` — сессия и `/`, как в REQ-014-7. | MUST |
-| REQ-014-9 | Страницы `/signup/confirm` и `/invite` MUST после чтения токена убирать его из адресной строки через `history.replaceState`, не передавать в `Referer` (`<meta name="referrer" content="no-referrer">` в каркасе) и не писать токен в лог и консоль. При `400 invalid_token` MUST показывать текст 4.6 и ссылку на `/signup` (для приглашения — текст без ссылки). | MUST |
-| REQ-014-10 | Шапка каркаса MUST показывать пункты `navigationFor(me)` (4.2), email пользователя, название организации (если есть) и кнопку «Выйти». Выход вызывает `logout`, сбрасывает `AuthMe` и открывает `/login`. | MUST |
+| REQ-014-5 | Без сессии MUST открываться только `/login`, `/signup`, `/signup/confirm`, `/invite`. Любой другой адрес ведёт на `/login?returnTo=<исходный путь с query>`, после входа открывается `safeReturnTo(returnTo)` (4.2). | MUST |
+| REQ-014-6 | `/signup` MUST отправлять email в `POST /auth/registrations` и на `202` показывать одно сообщение 4.6, есть такой email или нет. Ошибки — тексты 4.6. При открытой сессии `/signup` ведёт на `/`. | MUST |
+| REQ-014-7 | `/signup/confirm?token=` MUST принимать пароль, повтор и название организации, проверять их `validateConfirmForm` (4.2) до запроса и вызывать `confirmRegistration`. На успех — сессия как после входа и переход на `/`. | MUST |
+| REQ-014-8 | `/invite?token=` MUST принимать пароль и повтор, проверять `validateInviteForm` и вызывать `acceptInvitation`. На успех — как в REQ-014-7. | MUST |
+| REQ-014-9 | Страницы `/signup/confirm` и `/invite` MUST соблюдать три правила. Токен убирается из адреса сразу после чтения: `Location.replaceState` без query. В каркасе стоит `<meta name="referrer" content="no-referrer">`. Токен не пишется в консоль и лог. При открытой сессии страница показывает «Вы вошли как <email>» и кнопку «Выйти и продолжить», форма появляется только после выхода. На `invalid_token` — текст 4.6. | MUST |
+| REQ-014-10 | Шапка каркаса MUST показывать пункты `navigationFor(me)` в порядке 4.2, email, название организации (если есть), переключатель темы и кнопку «Выйти». Выход вызывает `logout`, сбрасывает `AuthMe` и открывает `/login`. | MUST |
 | REQ-014-11 | Микрофронтенд `cabinet` MUST сохранить адреса и поведение экранов 001, 004, 013, 022, 030, 031: `/`, `/swarms/new`, `/swarms/:id`, `/balance`. Своей страницы входа и шапки у него MUST не быть. | MUST |
-| REQ-014-12 | Микрофронтенд `admin` (`/admin/users`) MUST показывать пользователей своей организации из `GET /auth/users`: email, роль, «заблокирован», дату создания. Форма приглашения (email, роль `user` или `admin`) MUST вызывать `POST /auth/invitations`. В строке пользователя MUST быть ровно те действия, которые разрешает `userActions` (4.2). После успешного действия список перечитывается. | MUST |
-| REQ-014-13 | Микрофронтенд `supervisor` MUST показывать организации из `GET /auth/organizations` (`/supervisor`): название, число пользователей, дату создания. Страница организации `/supervisor/organizations/:orgId` MUST показывать: пользователей из `GET /auth/users?orgId=` с действиями `userActions`; баланс и историю из `GET /organizations/:orgId/balance` и `…/entries`; форму пополнения `POST /organizations/:orgId/balance/topups` по правилам формы 013, 4.11. | MUST |
-| REQ-014-14 | Ответ API `401` во всех фронтендах MUST вести к одному `renew()` и одному повтору, неудача — к выходу на `/login`, как в 024, 4.15. На `403 forbidden` экран MUST показывать текст 4.6 и не выходить из сессии. | MUST |
-| REQ-014-15 | Сессия, текущий пользователь и адаптеры API MUST существовать на странице в одном экземпляре на каркас и все загруженные микрофронтенды: один `AuthSessionKeeper`, один токен в памяти, один `refresh` на одновременные `401`. Токен MUST не попадать в `localStorage`, `sessionStorage`, cookie, доступные скрипту, и в адреса. | MUST |
-| REQ-014-16 | Все фронтенды MUST использовать общие дизайн-токены 4.8 (цвета, шрифты, отступы, радиусы) через CSS custom properties. Тема — светлая или тёмная по `prefers-color-scheme`, у переключателя в шапке три положения: «как в системе», «светлая», «тёмная». Выбор хранится в `localStorage`, ключ `swag.theme`. | MUST |
-| REQ-014-17 | Формы, кнопки, поля с ошибкой, таблицы и сообщения во всех фронтендах MUST строиться из базовых компонентов 4.8. Экраны `cabinet` переходят на них без изменения поведения. | MUST |
+| REQ-014-12 | `admin`, страница `/admin/users`, MUST показывать пользователей из `GET /auth/users`: email, роль, «заблокирован», дату создания. На странице MUST быть форма приглашения — email и роль `user` или `admin`, отправка в `POST /auth/invitations`. В строке пользователя — ровно действия `userActions` (4.2), блокировка — с подтверждением. После успешного действия список перечитывается. | MUST |
+| REQ-014-13 | `supervisor` MUST показывать две страницы. `/supervisor` — организации из `GET /auth/organizations`: название, число пользователей, дата создания. `/supervisor/organizations/:orgId`: — название из того же списка; — пользователи из `GET /auth/users?orgId=` с действиями `userActions`; — панель баланса 4.7 этой организации с обязательным комментарием пополнения. Организации нет в списке — текст `not_found`. | MUST |
+| REQ-014-14 | Во всех фронтендах `401` от API MUST вести к одному `renew()` и одному повтору, а неудача — к выходу на `/login`, как в 024, 4.15. На `403` экран MUST показывать текст `forbidden` (4.6) и оставаться в сессии. | MUST |
+| REQ-014-15 | `AuthSessionKeeper`, `CurrentUser` и токен доступа MUST существовать в одном экземпляре на каркас и все загруженные микрофронтенды: один `refresh` на одновременные `401` из любых разделов. Токен MUST не попадать в `localStorage`, `sessionStorage`, доступные скрипту cookie и адреса. | MUST |
+| REQ-014-16 | Все фронтенды MUST брать цвета, шрифты, отступы и радиусы из дизайн-токенов 4.8 (CSS custom properties). Тема светлая или тёмная по `prefers-color-scheme`. Переключатель в шапке: «как в системе», «светлая», «тёмная», выбор хранится в `localStorage` под ключом `swag.theme`. В CSS и шаблонах фронтендов MUST не быть цветовых литералов вне `tokens.css`. | MUST |
+| REQ-014-17 | Кнопки, поля с ошибкой, таблицы, сообщения и диалоги во всех фронтендах MUST строиться из базовых компонентов 4.8. | MUST |
 | REQ-014-18 | Ссылку «трейс» в ленте роя MUST видеть только супервизор (Q-4). Прокси `/grafana` в dev остаётся. | MUST |
-| REQ-014-19 | `IDENTITY_CONFIRM_URL` и `IDENTITY_INVITE_URL` MUST в dev указывать на `http://127.0.0.1:${UI_PORT}/signup/confirm` и `…/invite` в `.env.example` и `.env`. | MUST |
-| REQ-014-20 | Команда `npm run ui:dev` MUST запускать каркас и три микрофронтенда на хосте с горячей перезагрузкой. Прокси при этом ведут на опубликованные порты контура на `127.0.0.1`. Остальной контур поднимается `npm run up` (из N-6). | MUST |
-| REQ-014-21 | Интерактивные элементы базовых компонентов SHOULD быть доступны с клавиатуры. У них SHOULD быть видимый фокус и подписи (`label`, `aria-*`). Контраст текста и фона в обеих темах SHOULD быть не ниже WCAG 2.2 AA (4.5:1). | SHOULD |
+| REQ-014-19 | В `.env.example` и `.env` MUST быть `IDENTITY_CONFIRM_URL=http://127.0.0.1:4200/signup/confirm` и `IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite`. Порт совпадает с `UI_PORT` того же файла. | MUST |
+| REQ-014-20 | `npm run ui:dev` MUST запускать каркас и три микрофронтенда на хосте с горячей перезагрузкой. Прокси ведут на опубликованные порты контура на `127.0.0.1`. Остальной контур поднимается `npm run up` (из N-6). | MUST |
+| REQ-014-21 | Пары «текст — фон» из 4.8 MUST иметь контраст не ниже 4.5:1 (WCAG 2.2 AA) в обеих темах. | MUST |
+| REQ-014-22 | Интерактивные элементы базовых компонентов SHOULD быть доступны с клавиатуры, иметь видимый фокус, подписи (`label`, `aria-*`) и закрывать диалог по Esc. | SHOULD |
 
 ## 4. Контракты
 
-Разделы 4.3–4.5 написаны под рекомендацию Q-1 (Native Federation), 4.7 — под рекомендацию Q-2 (`@swag/ui-angular`), 4.8 — под рекомендацию Q-3.
+4.3–4.5 написаны под рекомендацию Q-1 (Native Federation), 4.7 — под Q-2 (`@swag/ui-angular`), 4.8 — под Q-3. Схему 4.4–4.5 подтверждает задача T-1 до остальных.
 
 ### 4.1. `@swag/ui-core`: сессия — регистрация и приглашение
 
-Порт `AuthApi` из 024, 4.15 дополняется. Адаптер на `fetch` — 4.7.
+Порт `AuthApi` из 024, 4.15 дополняется. Адаптер — в 4.7.
 
 ```ts
 import type { AuthSession, InvitationAcceptRequest, RegistrationConfirmRequest } from '@swag/contracts';
 
 export interface AuthApi {
   // как в 024, 4.15: login, refresh, logout
-  register(email: string): Promise<void>;                                     // POST /auth/registrations, 202; reject с кодом — неудача
+  register(email: string): Promise<void>;                                      // POST /auth/registrations, 202
   confirmRegistration(body: RegistrationConfirmRequest): Promise<AuthSession>; // POST /auth/registrations/confirm, 201
   acceptInvitation(body: InvitationAcceptRequest): Promise<AuthSession>;       // POST /auth/invitations/accept, 201
 }
@@ -136,7 +136,7 @@ export interface AuthApi {
 export type AuthResult = { ok: true } | { ok: false; code: string };
 
 export interface AuthSessionKeeper {
-  // как в 024, 4.15: restore, login, logout, accessToken, renew, onSignedOut
+  // как в 024, 4.15: restore, logout, accessToken, renew, onSignedOut; login возвращает AuthResult (та же форма)
   register(email: string): Promise<AuthResult>;
   confirmRegistration(body: RegistrationConfirmRequest): Promise<AuthResult>;
   acceptInvitation(body: InvitationAcceptRequest): Promise<AuthResult>;
@@ -144,47 +144,82 @@ export interface AuthSessionKeeper {
 ```
 
 Правила:
-- `confirmRegistration` и `acceptInvitation` при успехе ставят токен доступа и увеличивают поколение сессии (`epoch`) так же, как `login`.
-- `register` токен не трогает.
-- Код ошибки берётся как у `login`: `error.code`, иначе `'unknown'`.
-- Тип возврата `login` переименовывается в `AuthResult`, форма не меняется.
+- `confirmRegistration` и `acceptInvitation` устроены как `login`: в начале вызова `bumpEpoch()`, при успехе — токен из ответа.
+- `register` не трогает ни токен, ни поколение.
+- Код ошибки — `error.code` отказа, иначе `'unknown'`, как у `login`.
 
-### 4.2. `@swag/ui-core`: доступ к разделам, навигация, действия
+### 4.2. `@swag/ui-core`: доступ, навигация, проверки
 
-Файл `src/access-ui.ts`, реэкспорт из `src/index.ts`. Чистые функции от `AuthMe`; права — `ROLE_PERMISSIONS` из `@swag/contracts`.
+Файл `src/access-ui.ts`, реэкспорт из `src/index.ts`. Чистые функции. Права — `ROLE_PERMISSIONS` и `can` из `@swag/contracts`.
 
 ```ts
-import type { AuthMe, ManagedUser } from '@swag/contracts';
+import { z } from 'zod';
+import type { AuthMe, ManagedUser, UserUpdate } from '@swag/contracts';
 
 export const UiArea = z.enum(['swarms', 'balance', 'admin', 'supervisor']);
 export type UiArea = z.infer<typeof UiArea>;
-
 export type NavItem = { area: UiArea; label: string; path: string };
 
 export function canOpen(area: UiArea, me: AuthMe | null): boolean;
-export function navigationFor(me: AuthMe | null): NavItem[]; // порядок — как в таблице ниже, только canOpen = true
+export function navigationFor(me: AuthMe | null): NavItem[]; // порядок таблицы, только canOpen = true
 
 export type UserAction = 'make_admin' | 'make_user' | 'block' | 'unblock';
-export function userActions(me: AuthMe, target: ManagedUser): UserAction[]; // порядок — как в перечислении
+export function userActions(me: AuthMe, target: ManagedUser): UserAction[]; // порядок перечисления
+export function userActionBody(action: UserAction): UserUpdate;
+
+export function safeReturnTo(value: string | null): string;
+export function isLocalRemoteUrl(url: string): boolean;
 ```
 
 | `area` | `label` | `path` | `canOpen` — `true`, когда |
 |---|---|---|---|
 | `swarms` | Рои | `/` | есть `swarm.read` |
 | `balance` | Баланс | `/balance` | есть `balance.read` и `me.organization !== null` |
-| `admin` | Админка | `/admin/users` | есть `user.manage` и `role = 'admin'` |
+| `admin` | Админка | `/admin/users` | есть `user.manage` и `me.user.role = 'admin'` |
 | `supervisor` | Организации | `/supervisor` | есть `organization.read` |
 
-`me = null` — `canOpen` всегда `false`, `navigationFor` — `[]`.
+При `me = null` `canOpen` всегда `false`, а `navigationFor` возвращает `[]`.
 
-`userActions(me, target)`:
-- пустой список, если `target.id = me.user.id`, `target.role = 'supervisor'` или у `me` нет `user.manage`;
-- `admin`: пустой список для пользователя другой организации (`target.orgId !== me.organization?.id`);
-- иначе `make_admin`, если `target.role = 'user'`; `make_user`, если `target.role = 'admin'`; `block`, если `!target.blocked`; `unblock`, если `target.blocked`.
+**`userActions(me, target)`** зеркалит `PATCH /auth/users/:id` (024, 4.7). Решает по-прежнему identity.
+- Пустой список, если выполнено любое из условий:
+  - `target.id = me.user.id`;
+  - `target.role = 'supervisor'`;
+  - у роли `me` нет `user.manage`;
+  - `me` — `admin`, а `target.orgId !== me.organization?.id`.
+- Иначе по порядку:
+  - `make_admin`, если `target.role = 'user'`;
+  - `make_user`, если `target.role = 'admin'`;
+  - `block`, если `!target.blocked`;
+  - `unblock`, если `target.blocked`.
 
-Это зеркало правил `PATCH /auth/users/:id` из 024, 4.7. Решает по-прежнему identity.
+**`userActionBody`**: `make_admin` → `{ role: 'admin' }`, `make_user` → `{ role: 'user' }`, `block` → `{ blocked: true }`, `unblock` → `{ blocked: false }`.
 
-Действие → тело `PATCH`: `make_admin` → `{ role: 'admin' }`, `make_user` → `{ role: 'user' }`, `block` → `{ blocked: true }`, `unblock` → `{ blocked: false }`. Функция `userActionBody(action): UserUpdate`.
+**`safeReturnTo(value)`** возвращает `value`, только если выполнены все условия:
+- строка начинается ровно с одного `/`;
+- нет `//`, `\`;
+- нет символов с кодом меньше `0x20` и `0x7f`.
+
+Иначе — `/`. Переход — `router.navigateByUrl`.
+
+**`isLocalRemoteUrl(url)`** — `true`, только если выполнены все условия:
+- `url` начинается с `/mf/`;
+- нет `//`, `\`, `%`, сегментов `.` и `..`;
+- заканчивается на `/remoteEntry.json`.
+
+**Формы.** Файл `src/auth-forms.ts`.
+
+```ts
+export type FormIssue = { field: string; message: string };
+export function validateConfirmForm(input: { token: string; password: string; repeat: string; organizationName: string }):
+  { ok: true; body: RegistrationConfirmRequest } | { ok: false; issues: FormIssue[] };
+export function validateInviteForm(input: { token: string; password: string; repeat: string }):
+  { ok: true; body: InvitationAcceptRequest } | { ok: false; issues: FormIssue[] };
+```
+
+- Тело проверяется схемой `RegistrationConfirmRequest` или `InvitationAcceptRequest`.
+- `field` — первый элемент пути ошибки Zod, `message` — текст 4.6 для поля.
+- `repeat !== password` даёт дополнительную ошибку `{ field: 'repeat', message: 'Пароли не совпадают.' }`.
+- Ошибки идут в порядке полей: `password`, `repeat`, `organizationName`.
 
 ### 4.3. `@swag/ui-core`: порты пользователей и организаций
 
@@ -192,20 +227,20 @@ export function userActions(me: AuthMe, target: ManagedUser): UserAction[]; // �
 import type { InvitationRequest, ManagedUser, OrganizationList, UserList, UserUpdate } from '@swag/contracts';
 
 export interface UsersApi {
-  list(orgId: string | null): Promise<UserList>;       // GET /auth/users[?orgId=]
-  invite(body: InvitationRequest): Promise<void>;      // POST /auth/invitations, 202
+  list(orgId: string | null): Promise<UserList>;              // GET /auth/users[?orgId=]
+  invite(body: InvitationRequest): Promise<void>;             // POST /auth/invitations, 202
   update(id: string, body: UserUpdate): Promise<ManagedUser>; // PATCH /auth/users/:id
 }
 export interface OrganizationsApi {
-  list(): Promise<OrganizationList>;                   // GET /auth/organizations
+  list(): Promise<OrganizationList>;                          // GET /auth/organizations
 }
 ```
 
-Ошибка — reject с `code` из тела (`error.code`, иначе `'unknown'`), как в `AuthApi`. Повтор после `401` делает адаптер (REQ-014-14).
+Отказ — reject с `HttpError` (4.7). Повтор после `401` делает адаптер.
 
-### 4.4. Манифест микрофронтендов
+### 4.4. Манифест и загрузка микрофронтендов
 
-Файл `apps/ui/shell/public/federation.manifest.json` — формат Native Federation, имя remote → адрес `remoteEntry.json`:
+Файл `apps/ui/shell/public/federation.manifest.json` — имя remote → адрес `remoteEntry.json`. Запись появляется в той задаче, которая создаёт remote (T-11, T-14, T-15).
 
 ```json
 {
@@ -215,34 +250,63 @@ export interface OrganizationsApi {
 }
 ```
 
-- Адреса только относительные, того же origin.
-- Каркас грузит манифест при старте (`initFederation('/federation.manifest.json')`) и не принимает адрес, который не начинается с `/mf/`: такой remote не регистрируется, в консоль — предупреждение `remote_rejected` с именем remote.
-- Проверка адреса — функция `ui-core` `isLocalRemoteUrl(url): boolean`.
+**Загрузка.**
+- `main.ts` каркаса вызывает `initFederation({})` — без remote: на старте не запрашивается ни один `remoteEntry.json`.
+- Затем каркас сам читает манифест через `fetch('/federation.manifest.json')`.
+- Записи с `isLocalRemoteUrl(url) = false` отбрасываются, в консоль — `console.warn('remote_rejected', name)`.
+- Остальные записи сервис `RemoteRegistry` (каркас) отдаёт по имени.
+- Remote загружается только в `loadChildren`: `loadRemoteModule({ remoteEntry: registry.url(name), exposedModule: './routes' })`. Имени нет в реестре — ошибка загрузки маршрута, каркас показывает `swag-alert` «Раздел недоступен».
 
-Каждый микрофронтенд экспонирует один модуль `./routes` — массив `Routes` Angular:
+**Маршруты каркаса** (`app.routes.ts`):
 
-| Remote | Префикс в каркасе | Маршруты remote |
-|---|---|---|
-| `cabinet` | `''` | `''`, `swarms/new`, `swarms/:id`, `balance` |
-| `admin` | `admin` | `users` |
-| `supervisor` | `supervisor` | `''`, `organizations/:orgId` |
+```ts
+[
+  { path: 'login', component: LoginPage },
+  { path: 'signup', component: SignupPage },
+  { path: 'signup/confirm', component: ConfirmPage },
+  { path: 'invite', component: InvitePage },
+  {
+    path: '',
+    canMatch: [sessionGuard],
+    component: Layout,
+    children: [
+      { path: 'admin', canMatch: [areaGuard('admin')], loadChildren: () => loadRoutes('admin') },
+      { path: 'supervisor', canMatch: [areaGuard('supervisor')], loadChildren: () => loadRoutes('supervisor') },
+      { path: '', loadChildren: () => loadRoutes('cabinet') },
+    ],
+  },
+  { path: '**', redirectTo: '' },
+]
+```
 
-Каркас подключает remote через `loadRemoteModule(name, './routes')` в `loadChildren`. Защита — `canMatch` с `canOpen` для раздела:
-- маршрут `admin` → `admin`;
-- маршрут `supervisor` → `supervisor`;
-- в `cabinet` маршрут `balance` → `balance`, остальное → `swarms`.
+**Guard'ы** — 4.7.
+- `canMatch` срабатывает до `loadChildren`. Если guard вернул `UrlTree`, Angular не загружает remote (REQ-014-3).
+- `sessionGuard` стоит на родителе и проверяется раньше дочерних guard'ов.
 
-`canMatch` не пускает — Angular не вызывает `loadChildren`, код remote не запрашивается (REQ-014-3). Пользователь уходит на `/`. `swarm.read` есть у всех трёх ролей, поэтому `/` открыт любому вошедшему.
+**Маршруты remote** (экспорт `./routes`):
+
+| Remote | Префикс | Маршруты | Guard внутри remote |
+|---|---|---|---|
+| `cabinet` | `''` | `''`, `swarms/new`, `swarms/:id` | `areaGuard('swarms')` на каждом |
+| | | `balance` | `areaGuard('balance')` |
+| `admin` | `admin` | `users`; `''` → `users` | — (стоит в каркасе) |
+| `supervisor` | `supervisor` | `''`, `organizations/:orgId` | — (стоит в каркасе) |
+
+Маршрут `**` есть только у каркаса. Remote не объявляет `**`, поэтому неизвестный путь проваливается к `**` каркаса.
 
 ### 4.5. Общие зависимости федерации
 
-`federation.config.js` каркаса и каждого remote: `shareAll({ singleton: true, strictVersion: true, requiredVersion: 'auto' })`. Отдельно явно — `@swag/ui-angular`, `@swag/ui-core`, `@swag/contracts` как `singleton: true`.
+У каркаса и у каждого remote свой `federation.config.js`. В нём:
+- `shareAll({ singleton: true, strictVersion: true, requiredVersion: 'auto' })`;
+- workspace-пакеты `@swag/ui-angular`, `@swag/ui-core`, `@swag/contracts` с `singleton: true` — через `sharedMappings` (исходники TS, `exports: ./src/index.ts`). Альтернатива — `paths` в `tsconfig` фронтенда, если `sharedMappings` не работает с exports workspace.
 
-Так на странице одна копия Angular, одна копия общего пакета и, значит, один `SESSION` и один `CurrentUser` (REQ-014-15). Версии Angular во всех четырёх `package.json` одинаковые и точные.
+Точный рабочий конфиг фиксирует T-1. Он записывается в README каркаса и журнал, остальные фронтенды копируют его.
+
+Цель — на странице одна копия Angular и `@swag/ui-angular`, а значит один `SESSION` и один `CurrentUser` (REQ-014-15). Версии Angular и `@angular-architects/native-federation` во всех четырёх `package.json` одинаковые и точные.
 
 ### 4.6. Тексты
 
-Константы `ui-core`, функция `authErrorText(code: string): string`; неизвестный код — «Что-то пошло не так. Попробуйте ещё раз.».
+Константы `ui-core`, файл `src/auth-forms.ts`. `authErrorText(code)` для неизвестного кода — «Что-то пошло не так. Попробуйте ещё раз.»
 
 | Код | Текст |
 |---|---|
@@ -255,317 +319,445 @@ export interface OrganizationsApi {
 | `validation_error` | Проверьте поля формы. |
 | `forbidden` | Недостаточно прав. |
 | `not_found` | Не найдено. |
+| `unauthorized`, `invalid_refresh_token` | Сессия закончилась. Войдите снова. |
+| `org_directory_unavailable`, `auth_unavailable` | Сервис временно недоступен. Попробуйте позже. |
+| `internal_error`, `unknown` | Что-то пошло не так. Попробуйте ещё раз. |
 
-Прочие тексты:
+Тексты полей форм:
+
+| Поле | Текст |
+|---|---|
+| `password` | Пароль — от 10 до 128 символов. |
+| `repeat` | Пароли не совпадают. |
+| `organizationName` | Название — от 1 до 200 символов. |
+| `email` | Введите email. |
+| `comment` (пополнение у супервизора) | Укажите комментарий. |
+
+Сообщения:
 - `/signup` после `202`: «Если адрес верный, мы отправили на него письмо со ссылкой. Откройте его, чтобы закончить регистрацию.»
+- `/signup/confirm` с `invalid_token`: текст `invalid_token` и ссылка «Зарегистрироваться заново» на `/signup`.
 - `/invite` с `invalid_token`: «Приглашение недействительно или устарело. Попросите администратора прислать новое.»
 - `admin` после приглашения: «Приглашение отправлено на <email>.»
-- Подтверждение действий: `block` — «Заблокировать <email>? Его сессии завершатся, рои остановятся.» Остальные действия — без подтверждения.
-- Подписи действий: `make_admin` — «Сделать администратором», `make_user` — «Сделать пользователем», `block` — «Заблокировать», `unblock` — «Разблокировать».
-- Ошибка поля «повтор пароля»: «Пароли не совпадают.»
+
+Подписи действий:
+- `make_admin` — «Сделать администратором»;
+- `make_user` — «Сделать пользователем»;
+- `block` — «Заблокировать»;
+- `unblock` — «Разблокировать».
+
+Подтверждение нужно только для `block`: «Заблокировать <email>? Его сессии завершатся, рои остановятся.»
 
 ### 4.7. Общий Angular-пакет `@swag/ui-angular`
 
-Каталог `packages/ui-angular`. Это оболочечный код, общий для фронтендов, а не ядро: в нём можно Angular и DOM, `arch:check` не относит его к ядрам. Содержимое:
+**Устройство пакета.**
+- Каталог `packages/ui-angular` — оболочечный код фронтендов, не ядро. В нём разрешены Angular и DOM. `arch:check` относит к ядрам только `*-core`, `contracts`, `api-integration`, поэтому пакет туда не попадает без правок.
+- `package.json`:
+  - зависимости — `@angular/core`, `@angular/common`, `@angular/router`, `@angular/cdk` (версия как у Angular, точная), `@swag/ui-core`, `@swag/contracts`;
+  - `exports` — `./src/index.ts` и `./styles/*`.
+- `tsconfig.json` — по образцу `apps/ui/cabinet/tsconfig.json` (DOM, `bundler`).
 
 | Файл `src/` | Что | Откуда |
 |---|---|---|
-| `session.ts` | `SESSION`, `CurrentUser` | перенос из `apps/ui/cabinet/src/app/session.ts` без изменения поведения |
-| `auth-api.ts` | адаптер `AuthApi` на `fetch` (4.1) | перенос и дополнение `apps/ui/cabinet/src/app/auth-api.ts` |
-| `http.ts` | общий запрос с `Authorization: Bearer`, `renew()` и одним повтором на `401`, разбор `error.code` | вынос из `apps/ui/cabinet/src/app/api.ts` |
-| `users-api.ts` | адаптеры `UsersApi`, `OrganizationsApi` (4.3) | новое |
-| `balance-api.ts` | `createBalanceApi` | перенос из `api.ts` кабинета |
-| `guards.ts` | `areaGuard(area)` — `CanMatchFn` на `canOpen` и `CurrentUser.ensure()` | новое |
-| `theme.ts` | переключатель темы (REQ-014-16) | новое |
-| `components/` | базовые компоненты 4.8 | новое |
-| `styles/tokens.css` | дизайн-токены 4.8 | новое |
+| `session.ts` | `SESSION`, `CurrentUser`; у `CurrentUser` добавлен публичный `readonly me: Signal<AuthMe \| null>` | перенос `apps/ui/cabinet/src/app/session.ts` |
+| `http.ts` | `HttpError` (`status: number`, `code: string`, по умолчанию `'unknown'`), `createRequest(session, basePath)` — `Authorization: Bearer`, на `401` один `renew()` и повтор, неудача — `onSignedOut` | вынос из `apps/ui/cabinet/src/app/api.ts` с параметром `basePath` (`/api` или `/auth`) |
+| `auth-api.ts` | адаптер `AuthApi` (4.1) на `fetch`, ошибки — `HttpError` | перенос `apps/ui/cabinet/src/app/auth-api.ts`, класс `AuthRequestError` заменяется `HttpError` |
+| `users-api.ts` | `createUsersApi(session)`, `createOrganizationsApi(session)` (4.3) на `createRequest(session, '/auth')` | новое |
+| `balance-api.ts` | `createBalanceApi(session)` | перенос из `api.ts` кабинета |
+| `guards.ts` | `sessionGuard`: `CanMatchFn` — `restore()` один раз за загрузку страницы, затем `CurrentUser.ensure()`; нет токена — `UrlTree` `/login?returnTo=<router.currentNavigation()?.extractedUrl>` | замена `apps/ui/cabinet/src/app/auth.guard.ts` |
+| | `areaGuard(area)`: `CanMatchFn` — `ensure()`, затем `canOpen(area, me)`; `false` — `UrlTree` `/` | новое |
+| `balance-panel.ts` | компонент `swag-balance-panel`: вход `orgId`, `requireComment`; числа, история с «Ещё», форма пополнения при `balance.topup`; поведение — 013, 4.11 | вынос из `apps/ui/cabinet/src/app/balance.page.ts` |
+| `theme.ts` | `ThemeService`: `mode` (`system` \| `light` \| `dark`), атрибут `data-theme` на `<html>`, `localStorage['swag.theme']` в `try/catch` | новое |
+| `components/*.ts` | базовые компоненты 4.8, по файлу на компонент | новое |
+| `index.ts` | реэкспорт | новое |
 
-API роёв (`createSwarmsApi`, `createSwarmStream`) остаётся в `cabinet`: им пользуется только он.
+`styles/tokens.css` — токены 4.8. `styles/base.css` — глобальные стили: элементы, раскладка, классы кабинета `.feed`, `.agent-row`, `.toolbar`. Они переносятся из `<style>` в `apps/ui/cabinet/src/index.html`, литералы цвета заменяются токенами. Оба файла подключает каркас в `angular.json` (`styles`). Remote работают в документе каркаса и получают их оттуда.
+
+API роёв (`createSwarmsApi`, `createSwarmStream`) остаётся в `cabinet`.
 
 ### 4.8. Дизайн-токены и базовые компоненты
 
-Написано под рекомендацию Q-3.
+**Токены** — CSS custom properties в `styles/tokens.css`.
+- Светлая тема — в `:root`. Тёмная — в `:root[data-theme="dark"]` и в `@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { … } }`.
+- Имена:
+  - фон и поверхности: `--swag-color-bg`, `--swag-color-surface`, `--swag-color-surface-2`;
+  - текст: `--swag-color-text`, `--swag-color-text-muted`;
+  - границы и фокус: `--swag-color-border`, `--swag-color-focus`;
+  - основной цвет: `--swag-color-primary`, `--swag-color-primary-text`;
+  - статусы: `--swag-color-danger`, `--swag-color-danger-text`, `--swag-color-success`, `--swag-color-warning`;
+  - шрифты: `--swag-font-sans`, `--swag-font-mono`;
+  - размеры текста: `--swag-text-sm`, `--swag-text-md`, `--swag-text-lg`, `--swag-text-xl`;
+  - отступы: `--swag-space-1` … `--swag-space-6`;
+  - радиусы: `--swag-radius-sm`, `--swag-radius-md`;
+  - тень: `--swag-shadow-1`.
+- Значения задаёт задача T-7 скиллом из Q-3 и записывает в README пакета.
+- Пары контраста REQ-014-21, ≥ 4.5:1 в обеих темах:
+  - `text`/`bg`, `text`/`surface`, `text-muted`/`surface`;
+  - `primary-text`/`primary`, `danger-text`/`danger`.
+- Значения цветов — только hex `#rrggbb`: так автотест посчитает контраст.
 
-**Токены** — CSS custom properties в `styles/tokens.css`. Значения для светлой темы — в `:root`, для тёмной — в `[data-theme="dark"]` и в `@media (prefers-color-scheme: dark)` под `:root:not([data-theme="light"])`.
+**Компоненты** — standalone, файл на компонент, селекторы с префиксом `swag-`.
 
-Имена токенов:
-- цвета: `--swag-color-bg`, `--swag-color-surface`, `--swag-color-text`, `--swag-color-text-muted`, `--swag-color-border`, `--swag-color-primary`, `--swag-color-primary-text`, `--swag-color-danger`, `--swag-color-success`, `--swag-color-focus`;
-- шрифты: `--swag-font-sans`, `--swag-font-mono`;
-- размер текста: `--swag-text-sm`, `--swag-text-md`, `--swag-text-lg`, `--swag-text-xl`;
-- отступы: `--swag-space-1` … `--swag-space-6`;
-- радиусы: `--swag-radius-sm`, `--swag-radius-md`;
-- тень: `--swag-shadow-1`.
-
-Конкретные значения выбирает реализация скиллом дизайна из Q-3 и записывает в README пакета. Пары текст/фон проходят контраст REQ-014-21.
-
-Базовые компоненты — standalone, префикс `swag-`:
-
-| Компонент | Назначение |
-|---|---|
-| `swag-button` | `variant: 'primary' \| 'secondary' \| 'danger'`, `disabled`, `busy` |
-| `swag-field` | подпись, слот поля, текст ошибки (`aria-describedby`) |
-| `swag-card` | блок с заголовком |
-| `swag-table` | таблица со строкой «пусто» |
-| `swag-alert` | `kind: 'error' \| 'info' \| 'success'`, `role="alert"` для ошибки |
-| `swag-page` | заголовок страницы и область содержимого |
-| `swag-confirm` | диалог подтверждения: текст, «Подтвердить», «Отмена» |
+| Компонент | Входы | Назначение |
+|---|---|---|
+| `swag-button` | `variant: 'primary' \| 'secondary' \| 'danger'`, `disabled`, `busy` | кнопка; `busy` блокирует повторное нажатие |
+| `swag-field` | `label`, `error: string \| null` | подпись, слот поля, ошибка через `aria-describedby` |
+| `swag-card` | `title` | блок с заголовком |
+| `swag-table` | `empty: string` | обёртка таблицы со строкой «пусто» |
+| `swag-alert` | `kind: 'error' \| 'info' \| 'success'` | сообщение; у ошибки `role="alert"` |
+| `swag-page` | `title` | заголовок страницы и область содержимого |
+| `swag-confirm` | `text`, событие `confirmed`, `cancelled` | диалог на `@angular/cdk/dialog`, Esc — отмена |
 
 ### 4.9. Compose и dev-серверы
 
-| Сервис | Образ | Порт | Что |
+| Сервис | Образ | Порт | `ng serve` |
 |---|---|---|---|
-| `ui` | `apps/ui/shell/Dockerfile` | `127.0.0.1:${UI_PORT}:4200` | каркас, `ng serve` |
-| `ui-cabinet` | `apps/ui/cabinet/Dockerfile` | не публикуется, 4201 в сети compose | remote |
-| `ui-admin` | `apps/ui/admin/Dockerfile` | не публикуется, 4202 | remote |
-| `ui-supervisor` | `apps/ui/supervisor/Dockerfile` | не публикуется, 4203 | remote |
+| `ui` | `apps/ui/shell/Dockerfile` | `127.0.0.1:${UI_PORT}:4200` | `--host 0.0.0.0 --port 4200` |
+| `ui-cabinet` | `apps/ui/cabinet/Dockerfile` | не публикуется | `--host 0.0.0.0 --port 4201 --serve-path /mf/cabinet/` |
+| `ui-admin` | `apps/ui/admin/Dockerfile` | не публикуется | `--port 4202 --serve-path /mf/admin/` |
+| `ui-supervisor` | `apps/ui/supervisor/Dockerfile` | не публикуется | `--port 4203 --serve-path /mf/supervisor/` |
 
-Прокси каркаса `apps/ui/shell/proxy.conf.json`:
+Команда — скрипт `start` в `package.json` фронтенда.
+- **Healthcheck remote**: `wget -qO- http://127.0.0.1:<порт>/mf/<имя>/remoteEntry.json`.
+- **Зависимости `ui`**: `depends_on` `condition: service_healthy` на `api`, `identity` и на существующие к этому моменту remote.
+
+**Прокси каркаса** `apps/ui/shell/proxy.conf.json`:
 - `/api`, `/auth`, `/grafana` — как сейчас у кабинета;
-- `/mf/cabinet` → `http://ui-cabinet:4201`, `/mf/admin` → `http://ui-admin:4202`, `/mf/supervisor` → `http://ui-supervisor:4203`, без `pathRewrite`.
+- `/mf/cabinet` → `http://ui-cabinet:4201`, `/mf/admin` → `http://ui-admin:4202`, `/mf/supervisor` → `http://ui-supervisor:4203`, без `pathRewrite` и с `changeOrigin: false`.
 
-Каждый remote отдаётся с `servePath` / `baseHref` `/mf/<имя>/`. `/internal` не проксируется.
+`changeOrigin: false` нужен потому, что dev-сервер remote отвергает чужой `Host`, а с ним приходит `127.0.0.1:4200`. Если dev-сервер всё равно отвергает, T-1 добавляет `allowedHosts` в `angular.json` remote и пишет это в журнал. `/internal` не проксируется.
 
-У `ui` — `depends_on` с `condition: service_healthy` на `api`, `identity` и три remote. Healthcheck remote — `wget` своего `remoteEntry.json`.
+**`npm run ui:dev`** (REQ-014-20) — скрипт `scripts/ui-dev.ts`.
+- Запускает четыре `ng serve --host 127.0.0.1` на портах `UI_PORT`, `UI_CABINET_PORT`, `UI_ADMIN_PORT`, `UI_SUPERVISOR_PORT` с `serve-path` как в таблице. По Ctrl+C останавливает все.
+- Каркас идёт с `--proxy-config apps/ui/shell/proxy.host.conf.mjs`. Адреса прокси берутся из env:
+  - `/api` → `http://127.0.0.1:${API_PORT}`, `pathRewrite` как в compose;
+  - `/auth` → `http://127.0.0.1:${IDENTITY_PORT}`;
+  - `/grafana` → `http://127.0.0.1:${GRAFANA_PORT}`;
+  - `/mf/<имя>` → `http://127.0.0.1:${UI_<ИМЯ>_PORT}`.
+- Если `UI_PORT` занят сервисом `ui` контура, скрипт падает с текстом «Остановите ui: docker compose stop ui».
 
-**На хосте (REQ-014-20).**
-- `npm run ui:dev` — четыре `ng serve` с `--host 127.0.0.1` на портах `UI_PORT`, `UI_CABINET_PORT`, `UI_ADMIN_PORT`, `UI_SUPERVISOR_PORT`.
-- Прокси каркаса — `apps/ui/shell/proxy.host.conf.mjs`, адреса берёт из env:
-  - `/api` → `127.0.0.1:${API_PORT}`;
-  - `/auth` → `127.0.0.1:${IDENTITY_PORT}`;
-  - `/grafana` → `127.0.0.1:${GRAFANA_PORT}`;
-  - `/mf/<имя>` → `127.0.0.1:${UI_<ИМЯ>_PORT}`.
-- Перед `ui:dev` сервис `ui` контура останавливается (`docker compose stop ui`), иначе `UI_PORT` занят. Команда пишет это в README.
+### 4.10. env и конфиг
 
-### 4.10. env
-
-`.env.example` и `.env`:
+Добавить в `.env.example` и `.env`, значения буквальные (`node --env-file` не раскрывает `${}`):
 
 ```
 UI_CABINET_PORT=4201
 UI_ADMIN_PORT=4202
 UI_SUPERVISOR_PORT=4203
-IDENTITY_CONFIRM_URL=http://127.0.0.1:4200/signup/confirm   # было /auth/confirm (012, 4.10; изменено спекой 014)
-IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite            # было /auth/invite (024, 4.14; изменено спекой 014)
+IDENTITY_CONFIRM_URL=http://127.0.0.1:4200/signup/confirm
+IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
 ```
 
-`UI_*_PORT` нужны только `ui:dev` на хосте. В compose remote слушают фиксированные порты 4201–4203.
+Последние две строки меняют значения из 012, 4.10 и 024, 4.14 с пометкой «изменено спекой 014». Комментарии у этих переменных в `packages/config/src/index.ts` обновляются.
 
-### 4.11. Маршруты каркаса
+`UiConfig` (`@swag/config`) получает `UI_CABINET_PORT`, `UI_ADMIN_PORT`, `UI_SUPERVISOR_PORT` (`Port`, по умолчанию 4201–4203). Конфиг читает `scripts/ui-dev.ts`.
 
-| Путь | Сессия | Что |
+`infra:check` проверяет:
+- `ui` — `GET /` на `UI_PORT`;
+- remote — через прокси каркаса, `GET http://127.0.0.1:${UI_PORT}/mf/<имя>/remoteEntry.json`.
+
+### 4.11. Страницы каркаса
+
+| Путь | При открытой сессии | Что |
 |---|---|---|
-| `/login?returnTo=` | нет (есть — на `/`) | вход, ссылка «Зарегистрировать компанию» на `/signup` |
-| `/signup` | нет | email, отправка, сообщение 4.6; ссылка «Уже есть аккаунт» на `/login` |
-| `/signup/confirm?token=` | нет | пароль, повтор, название организации |
-| `/invite?token=` | нет | пароль, повтор |
-| `''` (и всё remote `cabinet`) | да | `loadChildren` `cabinet` |
-| `admin/**` | да | `loadChildren` `admin` |
-| `supervisor/**` | да | `loadChildren` `supervisor` |
-| `**` | — | на `/` |
+| `/login?returnTo=` | → `safeReturnTo(returnTo)` | email, пароль; ссылка «Зарегистрировать компанию» → `/signup` |
+| `/signup` | → `/` | email; сообщение 4.6; ссылка «Уже есть аккаунт» → `/login` |
+| `/signup/confirm?token=` | «Вы вошли как …», «Выйти и продолжить» (REQ-014-9) | пароль, повтор, название организации |
+| `/invite?token=` | так же | пароль, повтор |
 
-Есть ли сессия, решает `restore()` при старте: guard ждёт его и `CurrentUser.ensure()`. `/signup/confirm` и `/invite` при уже открытой сессии сначала вызывают `logout()` и только потом показывают форму: ссылка из письма относится к другому человеку или новой организации.
+`/signup/confirm` и `/invite` без `token` показывают текст `invalid_token`. Есть ли сессия, страницы узнают через `restore()`: общий вызов с `sessionGuard`, один раз за загрузку страницы.
 
 ## 5. Критерии приёмки
 
-- **AC-014-1** — *Given* `AuthApi`-заглушка *When* `confirmRegistration` и `acceptInvitation` с `201` *Then* `accessToken()` — токен из ответа, результат `{ ok: true }`. *When* ответ — reject с `invalid_token` *Then* `{ ok: false, code: 'invalid_token' }`, токен прежний. *When* `register` с `202` и с reject `rate_limited` *Then* `{ ok: true }` и `{ ok: false, code: 'rate_limited' }`, токен не меняется. *When* `refresh`, начатый до `confirmRegistration`, отвечает после *Then* его токен не записывается (поколение 4.1).
-- **AC-014-2** — *Given* `AuthMe` ролей `user`, `admin`, `supervisor` и `null` *When* `canOpen` для каждой `UiArea` и `navigationFor` *Then* результаты по таблице 4.2. Супервизор без организации не видит `balance`. Пункты идут в порядке таблицы.
-- **AC-014-3** — *Given* `me` администратора организации A *When* `userActions` для:
+- **AC-014-1** — *Given* `AuthApi`-заглушка.
+  - *When* `confirmRegistration` и `acceptInvitation` с успехом *Then* `{ ok: true }` и `accessToken()` — токен из ответа.
+  - *When* reject `{ code: 'invalid_token' }` *Then* `{ ok: false, code: 'invalid_token' }` и токена нет.
+  - *When* `register` с успехом и с reject `rate_limited` *Then* `{ ok: true }` и `{ ok: false, code: 'rate_limited' }`, токен прежний.
+  - *When* `refresh`, начатый до `confirmRegistration`, отвечает после *Then* его токен не записывается.
+- **AC-014-2** — *Given* `AuthMe` ролей `user`, `admin` (с организацией), `supervisor` (без неё) и `null` *When* `canOpen` для каждой `UiArea` и `navigationFor` *Then* результаты по таблице 4.2 в её порядке. У супервизора нет `balance`, у `null` — пусто.
+- **AC-014-3** — *Given* `me` — администратор организации A *When* `userActions` для:
   - себя;
   - супервизора;
-  - пользователя организации B;
+  - `user` организации B;
   - `user` A;
   - `admin` A;
-  - заблокированного `user` A
+  - заблокированного `user` A.
 
-  *Then* `[]`, `[]`, `[]`, `['make_admin', 'block']`, `['make_user', 'block']`, `['make_admin', 'unblock']`. *Given* супервизор *When* для `admin` организации B *Then* `['make_user', 'block']`. *Given* `user` *When* для любого *Then* `[]`. `userActionBody` для каждого действия — тело 4.2, оно проходит схему `UserUpdate`.
-- **AC-014-4** — *Given* `authErrorText` *When* каждый код таблицы 4.6 и неизвестный код *Then* тексты таблицы и текст по умолчанию.
+  *Then* `[]`, `[]`, `[]`, `['make_admin', 'block']`, `['make_user', 'block']`, `['make_admin', 'unblock']`.
+
+  *Given* супервизор *When* `admin` организации B *Then* `['make_user', 'block']`. *Given* `user` *When* любой *Then* `[]`. `userActionBody` для каждого действия даёт тело 4.2, и оно проходит `UserUpdate`.
+- **AC-014-4** — *Given* `authErrorText` *When* каждый код таблицы 4.6 и `nonexistent` *Then* тексты таблицы и текст по умолчанию.
 - **AC-014-5** — *Given* `isLocalRemoteUrl` *When*:
   - `/mf/admin/remoteEntry.json`;
   - `https://evil.example/remoteEntry.json`;
-  - `//evil.example/x.json`;
-  - `/mf/../x`;
-  - `javascript:alert(1)`
+  - `//evil.example/remoteEntry.json`;
+  - `/mf/../x/remoteEntry.json`;
+  - `/mf/%2e%2e/remoteEntry.json`;
+  - `/mf/a\b/remoteEntry.json`;
+  - `/mf/admin/main.js`;
+  - `javascript:alert(1)`.
 
-  *Then* `true`, затем `false` у остальных. Тест читает `apps/ui/shell/public/federation.manifest.json`: у каждого адреса `isLocalRemoteUrl` — `true`, имена — ровно `cabinet`, `admin`, `supervisor`.
-- **AC-014-6** — *Given* функция `ui-core` `safeReturnTo(value: string | null): string` *When* `/swarms/x`, `null`, `https://evil.example`, `//evil.example`, `/\evil`, `swarms` *Then* `/swarms/x`, затем `/` у остальных (REQ-014-5).
-- **AC-014-7** — *Given* функция `ui-core` `validatePasswordPair(password, repeat)` и схемы `RegistrationConfirmRequest`, `InvitationAcceptRequest` *When* пароль 9 символов, несовпадающий повтор, пустое название, верные данные *Then* ошибка поля `password`, ошибка `repeat` с текстом 4.6, ошибка `organizationName`, успех.
-- **AC-014-8** `[manual]` — регистрация в браузере (из S-1, шаги 1–4).
-  - *Given* `npm run up`, пустой Mailpit.
-  - *When* без входа открыть `/`, `/balance`, `/admin/users` *Then* `/login?returnTo=…`.
-  - *When* `/signup` с новым email *Then* сообщение 4.6, письмо в Mailpit со ссылкой на `/signup/confirm?token=`.
-  - *When* открыть ссылку *Then* токена в адресной строке нет.
-  - *When* задать пароль и название *Then* открыт `/`, в шапке email и название организации, пункты «Рои», «Баланс», «Админка».
-  - *When* повторно открыть ту же ссылку *Then* текст `invalid_token` и ссылка на `/signup`.
-  - *When* `/signup` с тем же email *Then* то же сообщение 4.6 и письмо «Вы уже зарегистрированы».
+  *Then* первый — `true`, остальные — `false`.
+- **AC-014-6** — *Given* `safeReturnTo` *When* `/swarms/x?a=1`, `null`, `https://evil.example`, `//evil.example`, `/\evil`, `swarms`, `/a\tb` (табуляция) *Then* `/swarms/x?a=1`, остальные — `/`.
+- **AC-014-7** — *Given* `validateConfirmForm` и `validateInviteForm` *When*:
+  - пароль из 9 символов;
+  - верный пароль и другой повтор;
+  - пустое название;
+  - верные данные.
+
+  *Then* ошибки 4.6 по полям `password`, `repeat`, `organizationName` в этом порядке, на верных данных — `ok` и тело, которое проходит схему контракта.
+- **AC-014-8** — *Given* `scripts/ui-config.test.ts`:
+  - *When* читает `apps/ui/shell/public/federation.manifest.json` *Then* у каждой записи `isLocalRemoteUrl` — `true`, имена — ровно `cabinet`, `admin`, `supervisor`.
+  - *When* читает исходники `apps/ui/shell/src` *Then* нет импорта из `apps/ui/cabinet`, `apps/ui/admin`, `apps/ui/supervisor`, `@swag/cabinet`, `@swag/admin`, `@swag/supervisor` (REQ-014-2).
+- **AC-014-9** — *Given* `scripts/ui-config.test.ts`:
+  - *When* читает `.env.example` *Then* `IDENTITY_CONFIRM_URL` и `IDENTITY_INVITE_URL` — пути `/signup/confirm` и `/invite` на порту `UI_PORT` того же файла; есть `UI_CABINET_PORT`, `UI_ADMIN_PORT`, `UI_SUPERVISOR_PORT`.
+  - *When* читает `compose.yaml` *Then* у `ui-cabinet`, `ui-admin`, `ui-supervisor` нет `ports`; `ui` публикует только `127.0.0.1:`.
+  - *When* читает `proxy.conf.json` и `proxy.host.conf.mjs` каркаса *Then* нет ключа, который начинается с `/internal`.
+- **AC-014-10** — *Given* `scripts/ui-config.test.ts` *When* читает `packages/ui-angular/styles/tokens.css` *Then* у обеих тем есть все токены 4.8, пары REQ-014-21 дают контраст ≥ 4.5:1. *When* ищет в `apps/ui/*/src` и `packages/ui-angular/src` литералы `#hex`, `rgb(`, `hsl(` в `.css`, `.html` и строках стилей `.ts` *Then* не находит (REQ-014-16).
+- **AC-014-11** `[manual]` — регистрация (из S-1, шаги 1–4).
+  - *Given* `npm run up`.
+  - *When* без входа открыть `/balance` и `/admin/users` *Then* `/login?returnTo=%2Fbalance` и `…%2Fadmin%2Fusers`. Во вкладке «Сеть» нет запросов под `/mf/`.
+  - *When* `/signup` с новым email *Then* сообщение 4.6. В Mailpit письмо со ссылкой `/signup/confirm?token=`.
+  - *When* открыть ссылку *Then* в адресной строке токена нет. В `<head>` есть `meta referrer no-referrer`. В консоли токена нет.
+  - *When* пароль и название *Then* `/`, в шапке email, название, пункты «Рои», «Баланс», «Админка».
+  - *When* открыть ту же ссылку *Then* «Вы вошли как …». *When* «Выйти и продолжить» и отправить форму *Then* текст `invalid_token` и ссылка на `/signup`.
+  - *When* `/signup` с тем же email *Then* то же сообщение и письмо «Вы уже зарегистрированы».
 
   В журнал — шаги и снимки экрана.
-- **AC-014-9** `[manual]` — админка и приглашение (из S-1, шаги 5, 7, 9).
-  - *Given* администратор из AC-014-8.
-  - *When* выйти и войти неверным паролем *Then* текст `invalid_credentials`.
-  - *When* войти верным *Then* `/`.
-  - *When* «Админка» → пригласить email с ролью `user` *Then* текст «Приглашение отправлено», письмо со ссылкой на `/invite?token=`.
-  - *When* в другом профиле браузера открыть ссылку и задать пароль *Then* у приглашённого кабинет без пункта «Админка».
-  - *When* приглашённый открывает `/admin/users` *Then* `/`. Во вкладке «Сеть» нет запроса к `/mf/admin/`.
-  - *When* администратор блокирует приглашённого с подтверждением *Then* в списке «заблокирован». Следующий запрос приглашённого (обновить список роёв) уводит его на `/login`, вход — текст `user_blocked`.
-  - *When* разблокировать и сменить роль на `admin` *Then* список отражает изменения.
-- **AC-014-10** `[manual]` — супервизор (из S-1, шаги 8, 10).
-  - *Given* две организации из AC-014-8 и ещё одной регистрации.
-  - *When* войти супервизором из `.env` *Then* пункты «Рои» и «Организации», «Баланс» и «Админки» нет.
-  - *When* «Организации» *Then* обе организации с числом пользователей.
-  - *When* открыть организацию *Then* её пользователи и баланс.
-  - *When* пополнить на $1 с комментарием *Then* баланс и история обновлены, у администратора этой организации на `/balance` та же запись.
-  - *When* супервизор блокирует пользователя организации *Then* статус в списке.
-  - *When* администратор организации A пробует открыть `/supervisor` *Then* `/`, запроса к `/mf/supervisor/` нет.
-- **AC-014-11** `[manual]` — кабинет как remote не изменился.
+- **AC-014-12** `[manual]` — вход, админка, приглашение (из S-1, шаги 5, 7, 9).
+  - *Given* администратор A из AC-014-11.
+  - *When* выйти, открыть `/balance`, войти с неверным паролем *Then* текст `invalid_credentials`. *When* с верным *Then* открыт `/balance` (`returnTo`).
+  - *When* «Админка» → пригласить email с ролью `user` *Then* «Приглашение отправлено на …», в Mailpit ссылка `/invite?token=`.
+  - *When* в другом профиле браузера принять приглашение *Then* у приглашённого «Рои» и «Баланс», без «Админки». *When* он открывает `/admin/users` *Then* `/`, запросов под `/mf/admin/` нет.
+  - *When* администратор блокирует приглашённого с подтверждением *Then* в списке «заблокирован». Через `API_REVOCATION_POLL_MS` + 1 с действие приглашённого в «Роях» уводит его на `/login`, повторный вход — текст `user_blocked`.
+  - *When* разблокировать и сделать администратором *Then* список отражает изменения. После входа приглашённого у него есть «Админка».
+- **AC-014-13** `[manual]` — `403` и смена прав (REQ-014-4, REQ-014-14).
+  - *Given* два администратора организации A — `adm1` и `adm2`, у `adm2` открыта «Админка».
+  - *When* `adm1` делает `adm2` пользователем, а `adm2`, не перезагружая страницу, нажимает «Заблокировать» у третьего пользователя *Then* токен `adm2` отозван (024, AC-024-7), `renew` выдаёт токен с ролью `user`, `PATCH` отвечает `403`. На экране «Недостаточно прав», сессия не закрыта.
+  - *When* перейти на «Рои» *Then* пункта «Админка» в шапке нет.
+- **AC-014-14** `[manual]` — супервизор (из S-1, шаги 8, 10).
+  - *Given* организации A (AC-014-11) и B (вторая регистрация), администратор A из AC-014-12.
+  - *When* вход супервизором из `.env` *Then* пункты «Рои» и «Организации».
+  - *When* «Организации» *Then* A и B с числом пользователей.
+  - *When* открыть A *Then* название, пользователи, баланс.
+  - *When* пополнить на $1 без комментария *Then* «Укажите комментарий». *When* с комментарием *Then* баланс и история обновлены, у администратора A на `/balance` та же запись.
+  - *When* супервизор блокирует пользователя A *Then* статус в списке.
+  - *When* администратор A открывает `/supervisor` *Then* `/`, запросов под `/mf/supervisor/` нет.
+  - *When* супервизор открывает `/supervisor/organizations/<случайный uuid>` *Then* текст `not_found`.
+- **AC-014-15** `[manual]` — кабинет как remote (REQ-014-11, REQ-014-18).
   - *Given* администратор с балансом.
-  - *When* создать рой, открыть его, остановить, открыть `/balance` *Then* экраны и поведение — как в 013, AC-013-25: граф, лента, деньги, «Стоп», отказ `402` с текстом 013, история баланса.
-  - *When* обновить страницу на `/swarms/:id` *Then* сессия восстанавливается, страница роя открыта.
-  - Ссылки «трейс» в ленте у администратора нет, у супервизора — есть (REQ-014-18).
-- **AC-014-12** `[manual]` — один экземпляр сессии (REQ-014-15).
-  - *Given* вход администратором, открыты «Рои», затем «Админка».
-  - *When* в DevTools выполнить проверку из журнала: оба раздела используют один `SESSION`.
-  - *When* дождаться истечения токена доступа (`IDENTITY_ACCESS_TTL_S` уменьшен до 30 в `.env` на время проверки) и открыть «Админку» и «Рои» *Then* во вкладке «Сеть» ровно один `POST /auth/refresh` на оба раздела.
-  - В `localStorage` и `sessionStorage` нет токена, есть только `swag.theme`.
-- **AC-014-13** `[manual]` — темы и доступность (REQ-014-16, REQ-014-21).
-  - *When* переключатель в положениях «тёмная», «светлая», «как в системе» при тёмной системной теме *Then* тёмная, светлая, тёмная. Выбор переживает перезагрузку.
-  - *When* пройти `/login`, `/signup`, «Админку» клавиатурой (Tab, Enter, Esc в диалоге) *Then* все действия доступны, фокус виден.
-  - Контраст основного текста и кнопки primary в обеих темах ≥ 4.5:1 по DevTools. Значения — в журнал.
-- **AC-014-14** `[manual]` — запуск на хосте (REQ-014-20).
+  - *When* создать рой, открыть, остановить, открыть `/balance` *Then* поведение как в 013, AC-013-25: граф, лента, деньги, «Стоп», отказ `402` с текстом 013, история.
+  - *When* перезагрузить `/swarms/:id` *Then* сессия восстановлена, страница роя открыта.
+  - Ссылки «трейс» у администратора нет, у супервизора на том же рое — есть.
+  - Граф и лента читаются в тёмной теме.
+- **AC-014-16** `[manual]` — одна сессия (REQ-014-15).
+  - *Given* `IDENTITY_ACCESS_TTL_S=60` в `.env` на время проверки, вход администратором, открыты «Рои», затем «Админка».
+  - *When* подождать больше 60 с, затем открыть «Рои» и сразу «Админку» *Then* во вкладке «Сеть» один `POST /auth/refresh`.
+  - В консоли `[...document.querySelectorAll('script[type="importmap-shim"],script[type="importmap"]')]` показывает один адрес `@swag/ui-angular`.
+  - В `localStorage` и `sessionStorage` только `swag.theme`.
+- **AC-014-17** `[manual]` — темы и клавиатура (REQ-014-16, REQ-014-22).
+  - *When* «тёмная», «светлая», «как в системе» при тёмной системной теме *Then* тёмная, светлая, тёмная; выбор переживает перезагрузку.
+  - *When* `/login`, `/signup`, «Админка» только с клавиатуры (Tab, Enter, Esc в диалоге) *Then* все действия доступны, фокус виден.
+  - Итог `audit` скилла из Q-3 — в журнал.
+- **AC-014-18** `[manual]` — запуск на хосте (REQ-014-20).
   - *Given* `npm run up`, `docker compose stop ui`.
-  - *When* `npm run ui:dev` и правка текста на странице `/login` *Then* изменение видно без перезапуска.
-  - Вход и раздел «Админка» работают через прокси на `127.0.0.1`.
-- **AC-014-15** — *Given* `.env.example` *When* тест читает `IDENTITY_CONFIRM_URL` и `IDENTITY_INVITE_URL` *Then* пути `/signup/confirm` и `/invite`, порт — `UI_PORT` того же файла. В `.env.example` есть `UI_CABINET_PORT`, `UI_ADMIN_PORT`, `UI_SUPERVISOR_PORT`. `compose.yaml` не публикует порты сервисов `ui-cabinet`, `ui-admin`, `ui-supervisor`, а `ui` публикует только на `127.0.0.1`.
-- **AC-014-16** — *Given* `canOpen` и `navigationFor`.
-  - *When* `me.user.role` — `user`, а `organization = null` (неконсистентный ответ) *Then* `balance` закрыт, остальное — по таблице 4.2.
-  - *When* `me.user.role` — `supervisor` *Then* `canOpen('admin', me)` — `false`, хотя `user.manage` у супервизора есть: админка требует `role = 'admin'`.
+  - *When* `npm run ui:dev` и правка текста `/login` *Then* изменение видно без перезапуска.
+  - Вход и «Админка» работают.
+  - *When* `npm run ui:dev` при запущенном `ui` *Then* текст «Остановите ui…».
 
 ## 6. Нефункциональные требования
 
 | ID | Требование | Как измеряется |
 |---|---|---|
-| NFR-014-1 | Начальный JS каркаса (без remote) — не больше 250 КБ gzip (Q-8) | `ng build` каркаса, сумма gzip начальных чанков из `stats.json`; значение в журнал |
-| NFR-014-2 | Переход в раздел другого remote после входа — не дольше 1 с до отрисовки на dev-сервере, локально, второй и последующие переходы | DevTools Performance, 5 замеров, медиана в журнал |
+| NFR-014-1 | Начальный JS каркаса — не больше 250 КБ gzip (Q-8). Сюда входит всё, что `index.html` каркаса грузит до первого перехода в раздел, включая общие зависимости из import map. Remote не входят. | `ng build --stats-json` каркаса и сумма gzip этих файлов; второй замер — «Сеть» на `/login` без кэша. Оба значения — в журнал. |
+| NFR-014-2 | Первый переход в раздел другого remote после входа — до отрисовки не дольше 1 с, локально, на dev-сервере | DevTools Performance, 5 замеров, медиана — в журнал |
 
 ## 7. Безопасность: что не должно сломаться
 
-- **Скрытие в UI — не доступ.** Права проверяют `api` и identity. Существующие AC 024 и 013 на `403` и область видимости остаются зелёными: `npm run check`.
-- **Код раздела без прав не загружается.** REQ-014-3: AC-014-2, AC-014-9, AC-014-10 (сеть без `/mf/admin/`, `/mf/supervisor/`).
-- **Remote только своего origin.** Чужой адрес в манифесте не регистрируется: AC-014-5.
-- **Открытый редирект после входа закрыт** проверкой `returnTo`: AC-014-6.
-- **Токены из писем.**
-  - Убираются из адреса и не уходят в `Referer`: REQ-014-9, AC-014-8.
-  - Не логируются: ревью этапа и поиск `console.` в страницах `/signup/confirm` и `/invite`.
-- **Токен доступа только в памяти**, один на страницу: REQ-014-15, AC-014-12.
-- **Нет перебора email.** `/signup` показывает одно сообщение на существующий и новый email: REQ-014-6, AC-014-8.
-- **Порты.** Remote не опубликованы, каркас — только на `127.0.0.1`: AC-014-15.
-- **`/internal` не проксируется** ни одним прокси каркаса: AC-014-15 дополнительно проверяет `proxy.conf.json` и `proxy.host.conf.mjs` на отсутствие `/internal`.
-- **Трейсы видит только супервизор** (Q-4): AC-014-11.
+- **Скрытие в UI — не доступ.** Права проверяют `api` и identity, AC 024 и 013 на `403` и область видимости остаются зелёными (`npm run check`).
+- **Код раздела без прав не загружается:** REQ-014-3, AC-014-2, AC-014-11, AC-014-12, AC-014-14.
+- **Remote только своего origin под `/mf/`:** AC-014-5, AC-014-8.
+- **Нет открытого редиректа после входа:** AC-014-6.
+- **Токены из писем** не остаются в адресе, не уходят в `Referer` и консоль. Старая ссылка не выкидывает из сессии молча — нужен явный «Выйти и продолжить»: REQ-014-9, AC-014-11.
+- **Токен доступа только в памяти**, один на страницу: REQ-014-15, AC-014-16.
+- **Нет перебора email на `/signup`:** REQ-014-6, AC-014-11.
+- **Порты.** Remote не опубликованы, каркас — только на `127.0.0.1`. `/internal` не проксируется: AC-014-9.
+- **Grafana.** Ссылку «трейс» видит только супервизор (AC-014-15). Сама Grafana в dev по адресу `/grafana` открыта любому, кто открыл UI на `127.0.0.1`. Закрыть её входом — спека эксплуатации (Q-4).
 
 ## 8. Задачи для агента
 
-Выполняются по порядку. После каждой задачи — коммит. Задачи T-5…T-10 меняют сборку кабинета: до T-9 кабинет и каркас не работают вместе. Поэтому T-5…T-10 — группа через фича-ветку `spec/014-shell` (implement-spec, «Связанные задачи»).
+Выполняются по порядку, коммит на задачу.
+- **Сборка.** T-11 и T-12 ломают вход до перевода compose: кабинет перестаёт быть приложением, а `ui` в compose ещё на нём. Поэтому они идут группой через фича-ветку `spec/014-cabinet-remote` (implement-spec, «Связанные задачи»). Группа и причина записываются в журнал до T-11. Остальные задачи аддитивны и `main` не ломают.
+- **Исполнитель.** Задачи — субагенту Haiku, кроме T-1 и T-7. T-1 — проверка технологии с возможной блокировкой. T-7 — дизайн скиллом. Обе отдаются Sonnet, отклонение от правила 9 `CLAUDE.md` записывается в журнал.
 
-- [ ] **T-1.** `packages/ui-core/src/auth-session.ts`: методы `AuthApi` и `AuthSessionKeeper` из 4.1, тип `AuthResult`. Тесты в `test/auth-session.test.ts`. README `ui-core`, глоссарий: `AuthResult`. Закрывает: REQ-014-7, REQ-014-8, AC-014-1. Готово, когда: тесты пакета зелёные, AC-024-23 не изменён и зелёный.
-- [ ] **T-2.** `packages/ui-core/src/access-ui.ts`:
+- [ ] **T-1.** Проверка федерации на Angular 22.2 и `@angular-architects/native-federation` 22.2.x. Временный каталог вне репозитория или ветка без слияния: каркас и один remote, оба импортируют `@swag/ui-angular`-заглушку с `InjectionToken` и `@swag/ui-core`. Проверить:
+  - `initFederation({})` и `loadRemoteModule({ remoteEntry, exposedModule })` — до перехода нет запросов к remote;
+  - один экземпляр токена и пакета в каркасе и remote (сравнить объекты);
+  - `servePath` remote за прокси dev-сервера каркаса с `changeOrigin: false`;
+  - рабочий `federation.config.js` с workspace-пакетами (4.5).
+
+  Результат — журнал и README-заготовка каркаса с конфигом. Если что-то из 4.4–4.5 не работает — `blocked`, вопрос `Q-k` с вариантами. Закрывает: проверку 4.4–4.5. Готово, когда: журнал содержит конфиг и результаты четырёх проверок.
+- [ ] **T-2.** `packages/ui-core/src/auth-session.ts`: дополнения 4.1, тип `AuthResult`. Тесты — `test/auth-session.test.ts`. Обновить README `ui-core` и глоссарий. Закрывает: REQ-014-7, REQ-014-8 (сессия), AC-014-1. Готово, когда: тесты пакета зелёные, AC-024-23 зелёный без правок.
+- [ ] **T-3.** `packages/ui-core/src/access-ui.ts`:
   - `UiArea`, `NavItem`, `canOpen`, `navigationFor`;
   - `UserAction`, `userActions`, `userActionBody`;
-  - `isLocalRemoteUrl`, `safeReturnTo`.
+  - `safeReturnTo`, `isLocalRemoteUrl`.
 
-  Реэкспорт из `index.ts`. Тесты `test/access-ui.test.ts`. Тест чтения манифеста добавляется в T-7, когда появится файл. Закрывает: REQ-014-3…5, REQ-014-12 (действия), AC-014-2, AC-014-3, AC-014-5 (функция), AC-014-6, AC-014-16. Готово, когда: тесты зелёные, имена в глоссарии.
-- [ ] **T-3.** `packages/ui-core/src/auth-texts.ts`:
-  - `authErrorText` и тексты 4.6 константами;
-  - `validatePasswordPair`.
+  Реэкспорт. Тесты — `test/access-ui.test.ts`. Закрывает: REQ-014-3…5, AC-014-2, AC-014-3, AC-014-5, AC-014-6. Готово, когда: тесты зелёные.
+- [ ] **T-4.** `packages/ui-core/src/auth-forms.ts`: `authErrorText`, тексты 4.6 константами, `FormIssue`, `validateConfirmForm`, `validateInviteForm`. Порты `UsersApi` и `OrganizationsApi` (4.3) — в `src/index.ts`. Тесты — `test/auth-forms.test.ts`. Закрывает: AC-014-4, AC-014-7. Готово, когда: тесты зелёные.
+- [ ] **T-5.** Каркас пакета `packages/ui-angular`:
+  - `package.json` с зависимостями 4.7, `tsconfig.json` по образцу кабинета, ссылка в корневом `tsconfig.json`;
+  - README по правилу 7;
+  - `src/index.ts` пока пустой;
+  - строка в `docs/architecture.md`, раздел «Пакеты»: фронтендовый оболочечный пакет, не ядро.
 
-  Тесты `test/auth-texts.test.ts`. Порты `UsersApi`, `OrganizationsApi` (4.3) в `src/index.ts`. Закрывает: REQ-014-6…9 (тексты), AC-014-4, AC-014-7. Готово, когда: тесты зелёные.
-- [ ] **T-4.** Пакет `packages/ui-angular` (`@swag/ui-angular`) по 4.7:
-  - `package.json`, `tsconfig.json`, ссылка в корневом `tsconfig.json`, README;
-  - строка в `docs/architecture.md`, «Пакеты»: фронтендовый оболочечный пакет, не ядро;
-  - если `arch:check` требует классификации — правило «`packages/ui-angular` не ядро» и тест в `scripts/arch-check.test.ts`.
+  Закрывает: часть 4.7. Готово, когда: `npm install`, `npm run typecheck` и `npm run arch:check` зелёные.
+- [ ] **T-6.** Перенос в `packages/ui-angular/src`:
+  - `session.ts`, где `CurrentUser.me` становится публичным;
+  - `http.ts` с `HttpError` и `basePath`;
+  - `auth-api.ts` с методами 4.1 на `HttpError`;
+  - `balance-api.ts`.
 
-  Перенести `session.ts`, `auth-api.ts`, общий `http.ts` и `createBalanceApi` из кабинета, дописать адаптер 4.1 и `users-api.ts` 4.3, `areaGuard`. Кабинет импортирует перенесённое из пакета, его поведение не меняется. Закрывает: REQ-014-14, REQ-014-15 (код). Готово, когда: `npm run check` зелёный, кабинет в `npm run up` входит и показывает рои.
-- [ ] **T-5.** `packages/ui-angular`:
-  - `styles/tokens.css`, `theme.ts`;
-  - компоненты 4.8 в `components/`.
+  Плюс новые `users-api.ts`. Кабинет импортирует перенесённое из пакета, его `api.ts` использует `createRequest(session, '/api')`. Поведение кабинета не меняется. Закрывает: REQ-014-14, REQ-014-15 (код). Готово, когда: `npm run check` зелёный, в `npm run up` кабинет входит и показывает рои.
+- [ ] **T-7.** *(Sonnet, скилл из Q-3)*
+  - Поставить скиллы `frontend-design` и Impeccable в `.claude/skills/`, в README пакета записать коммит источника и лицензию.
+  - Скиллом `frontend-design` выбрать значения токенов 4.8 для обеих тем, записать `packages/ui-angular/styles/tokens.css` и обоснование в README.
+  - Добавить тест контраста — `scripts/ui-config.test.ts`, первая часть AC-014-10.
 
-  Значения токенов — скиллом дизайна из Q-3, решение и источник в README. Закрывает: REQ-014-16, REQ-014-17 (компоненты), REQ-014-21. Готово, когда: пакет собирается, компоненты экспортированы.
-- [ ] **T-6.** Каркас `apps/ui/shell` (`@swag/shell`): Angular-приложение, Native Federation host, `federation.config.js` по 4.5, манифест 4.4, `initFederation` с `isLocalRemoteUrl`. Шапка: `navigationFor`, email, организация, тема, «Выйти». Маршруты 4.11 с `areaGuard`. `Dockerfile`, `proxy.conf.json`, README. Закрывает: REQ-014-1, REQ-014-3, REQ-014-10. Готово, когда: каркас собирается (`ng build`), страницы remote пока дают ошибку загрузки — ожидаемо внутри группы.
-- [ ] **T-7.** Страницы каркаса `/login` (перенос из кабинета), `/signup`, `/signup/confirm`, `/invite` по 4.11, 4.6, REQ-014-5…9. Добавить в `packages/ui-core/test/access-ui.test.ts` тест чтения манифеста (AC-014-5). Закрывает: REQ-014-5…9, AC-014-5 (манифест). Готово, когда: страницы собираются, тест манифеста зелёный.
-- [ ] **T-8.** `apps/ui/cabinet` → remote:
-  - Native Federation remote, экспорт `./routes`;
-  - удалить `login.page.ts`, шапку `app.ts`, свой `auth.guard.ts`;
-  - экраны — на компоненты 4.8 без изменения поведения;
-  - ссылка «трейс» — только при `role = 'supervisor'` из `CurrentUser`;
-  - `servePath` `/mf/cabinet/`, порт 4201, Dockerfile, README.
+  Закрывает: REQ-014-16 (токены), REQ-014-21, AC-014-10 (контраст). Готово, когда: тест зелёный.
+- [ ] **T-8.** `packages/ui-angular`:
+  - `styles/base.css` — перенос `<style>` из `apps/ui/cabinet/src/index.html` на токены;
+  - `src/theme.ts` (`ThemeService`);
+  - подключить `tokens.css` и `base.css` в `angular.json` кабинета вместо `<style>`;
+  - перевести цвета `apps/ui/cabinet/src/app/swarm-graph.ts` на `var(--swag-…)`.
 
-  Закрывает: REQ-014-2, REQ-014-11, REQ-014-17, REQ-014-18. Готово, когда: remote собирается, `remoteEntry.json` отдаётся.
-- [ ] **T-9.** Compose по 4.9: сервисы `ui` (каркас), `ui-cabinet`, `ui-admin`, `ui-supervisor` (последние два — после T-10, в этой задаче только `ui` и `ui-cabinet`). `infra:check` — каркас и `remoteEntry.json` кабинета. Корневой README. Закрывает: REQ-014-2. Готово, когда: `npm run up` — вход в каркас и экраны кабинета работают.
-- [ ] **T-10.** `apps/ui/admin` (`@swag/admin`): remote, `./routes` с `users`, страница REQ-014-12 на `UsersApi` и `userActions`, подтверждение блокировки, тексты 4.6, Dockerfile, README. Сервис `ui-admin` в compose и `infra:check`. Закрывает: REQ-014-12. Готово, когда: `npm run up`, раздел открывается у администратора. После этой задачи — PR фича-ветки `spec/014-shell` в `main`.
-- [ ] **T-11.** `apps/ui/supervisor` (`@swag/supervisor`): remote, `./routes`, страницы REQ-014-13 на `OrganizationsApi`, `UsersApi`, `createBalanceApi`, форма пополнения по 013, 4.11, Dockerfile, README, сервис `ui-supervisor` в compose и `infra:check`. Закрывает: REQ-014-13. Готово, когда: `npm run up`, раздел открывается у супервизора.
-- [ ] **T-12.** env по 4.10 в `.env.example` и `.env`, дефолты в `compose.yaml`, тест AC-014-15 (`scripts/` или `apps/ui/shell/test/`), README identity — новые адреса страниц. Закрывает: REQ-014-19, AC-014-15. Готово, когда: тест зелёный, письмо регистрации ведёт на `/signup/confirm`.
-- [ ] **T-13.** *(из N-6)* `npm run ui:dev`, `apps/ui/shell/proxy.host.conf.mjs` по 4.9, раздел в корневом README и README каркаса. Закрывает: REQ-014-20. Готово, когда: AC-014-14 пройден вручную.
-- [ ] **T-14.** Ручные проверки AC-014-8…14 с записью в журнал, замеры NFR-014-1 и NFR-014-2, статус S-1 в `docs/spec/scenarios.md` (шаги 1–5, 7–10 в UI — ручной прогон 014), сверка README всех затронутых пакетов, `apps/ui/README.md` и `docs/architecture.md`. Готово, когда: журнал заполнен, `npm run check` зелёный.
+  Тест литералов — вторая часть AC-014-10, пока только по кабинету и пакету. Закрывает: REQ-014-16. Готово, когда: тест зелёный, кабинет в `npm run up` выглядит как раньше в светлой теме.
+- [ ] **T-9.** `packages/ui-angular/src/components/`: `swag-button`, `swag-field`, `swag-card`, `swag-alert` (4.8), экспорт из `index.ts`. Закрывает: REQ-014-17 (часть), REQ-014-22. Готово, когда: пакет собирается в кабинете.
+- [ ] **T-10.** `components/`: `swag-table`, `swag-page`, `swag-confirm` (на `@angular/cdk/dialog`). `src/guards.ts`: `sessionGuard`, `areaGuard` (4.7). `src/balance-panel.ts` — вынос из `balance.page.ts` кабинета: страница кабинета становится обёрткой с `orgId` из `CurrentUser`. Закрывает: REQ-014-17, REQ-014-13 (панель). Готово, когда: `/balance` кабинета работает как раньше.
+- [ ] **T-11.** *(группа `spec/014-cabinet-remote`)* Каркас `apps/ui/shell` (`@swag/shell`):
+  - Angular-приложение с конфигом T-1;
+  - `main.ts`, `RemoteRegistry`, маршруты 4.4, `Layout` — шапка по REQ-014-10;
+  - страница `/login` — перенос из кабинета с `returnTo`;
+  - манифест с записью `cabinet`;
+  - `proxy.conf.json` 4.9, `Dockerfile`, README.
+
+  `apps/ui/cabinet` становится remote:
+  - экспорт `./routes` с guard'ами 4.4;
+  - удалить `login.page.ts`, `auth.guard.ts`, шапку из `app.ts`, `app.routes.ts`;
+  - скрипт `start` и `Dockerfile` по 4.9, README.
+
+  Закрывает: REQ-014-1, REQ-014-2, REQ-014-3, REQ-014-5, REQ-014-10, REQ-014-11. Готово, когда: оба собираются (`ng build`).
+- [ ] **T-12.** *(группа, затем PR группы в `main`)*
+  - Compose 4.9: `ui` на каркасе, сервис `ui-cabinet`.
+  - `infra:check` по 4.10.
+  - Корневой README и `apps/ui/README.md`.
+
+  Закрывает: REQ-014-2. Готово, когда: `npm run up`, вход в каркас и экраны кабинета работают, `npm run check` зелёный.
+- [ ] **T-13.** Страницы каркаса `/signup`, `/signup/confirm`, `/invite` по 4.11, 4.6, REQ-014-6…9 на компонентах 4.8. Закрывает: REQ-014-6…9. Готово, когда: регистрация проходит в `npm run up`.
+- [ ] **T-14.** `apps/ui/admin` (`@swag/admin`):
+  - remote, `./routes`, страница REQ-014-12 на `createUsersApi`, `userActions`, `swag-confirm`;
+  - `Dockerfile`, README;
+  - сервис `ui-admin` и запись `admin` в манифесте;
+  - `infra:check`.
+
+  Закрывает: REQ-014-12. Готово, когда: «Админка» работает у администратора в `npm run up`.
+- [ ] **T-15.** `apps/ui/supervisor` (`@swag/supervisor`):
+  - remote, `./routes`, страницы REQ-014-13 на `createOrganizationsApi`, `createUsersApi`, `swag-balance-panel` с `requireComment`;
+  - `Dockerfile`, README;
+  - сервис `ui-supervisor` и запись в манифесте;
+  - `infra:check`;
+  - тест манифеста и импортов — AC-014-8 в `scripts/ui-config.test.ts`.
+
+  Закрывает: REQ-014-13, AC-014-8. Готово, когда: «Организации» работают у супервизора, тест зелёный.
+- [ ] **T-16.** Экраны кабинета (`swarm-list.page.ts`, `swarm-new.page.ts`, `swarm.page.ts`) на компонентах 4.8 без изменения поведения. Ссылка «трейс» — только при `CurrentUser.role() === 'supervisor'`. Тест литералов AC-014-10 расширяется на все `apps/ui/*/src`. Закрывает: REQ-014-17, REQ-014-18, AC-014-10. Готово, когда: тест зелёный, AC-014-15 проходит.
+- [ ] **T-17.** env и конфиг по 4.10:
+  - `.env.example` и `.env`;
+  - `UiConfig`, комментарии в `packages/config/src/index.ts`;
+  - README identity — новые адреса страниц;
+  - проверки AC-014-9 в `scripts/ui-config.test.ts`.
+
+  Закрывает: REQ-014-19, AC-014-9. Готово, когда: тест зелёный, письмо регистрации ведёт на `/signup/confirm`.
+- [ ] **T-18.** *(из N-6)* `scripts/ui-dev.ts` и скрипт `ui:dev` в корневом `package.json`, `apps/ui/shell/proxy.host.conf.mjs` по 4.9, раздел в корневом README и в README каркаса. Закрывает: REQ-014-20. Готово, когда: AC-014-18 пройден вручную.
+- [ ] **T-19.** Завершение:
+  - ручные AC-014-11…18 с журналом;
+  - замеры NFR-014-1 и NFR-014-2;
+  - статус S-1 в `docs/spec/scenarios.md`;
+  - сверка README всех затронутых пакетов, `apps/ui/README.md`, `docs/architecture.md`, глоссария.
+
+  Готово, когда: журнал заполнен, `npm run check` зелёный.
 
 ## 9. Открытые вопросы
 
 Пока список не пуст, спека не может быть `ready`.
 
 - [ ] **Q-1.** *(из D-11)* Чем каркас подгружает микрофронтенды. *(Claude, 2026-11-01)*
-  - **(а) Native Federation** (`@angular-architects/native-federation`): import maps и ESM, работает поверх сборщика `@angular/build` на esbuild, которым уже собирается кабинет. Общие зависимости — одна копия на странице (`singleton`).
+  - **(а) Native Federation** (`@angular-architects/native-federation`): import maps и ESM поверх `@angular/build` на esbuild, которым уже собирается кабинет. Общие зависимости — одна копия (`singleton`).
   - **(б) Module Federation на rspack/webpack**: надо уйти с esbuild-сборщика Angular.
   - **(в) Web components и import maps без федерации**: любая технология у каждого фронтенда. Но у каждого своя копия Angular, а общую сессию придётся передавать через `window` или события.
-  - **(г) Без рантайм-подгрузки**: каркас импортирует кабинет, админку и супервизор как библиотеки с ленивыми маршрутами. Проще всего, но независимый деплой теряется, что противоречит роадмапу.
+  - **(г) Без подгрузки во время работы**: каркас импортирует остальные как библиотеки с ленивыми маршрутами. Проще всего, но независимый деплой роадмапа теряется.
 
-  Проверено по npm 2026-11-01: `@angular-architects/native-federation` 22.2.4, peer `@angular/build ~22.2.0`, то есть поддерживает Angular 22.2 (кабинет на 22.2.3). У Module Federation на rspack поддержка Angular 22 не подтверждена. Обёртки Nx для Module Federation объявлены устаревшими в Nx 23. Официальной позиции команды Angular по микрофронтендам не найдено.
+  По npm на 2026-11-01:
+  - `@angular-architects/native-federation` 22.2.4, peer `@angular/build ~22.2.0` — подходит к Angular 22.2 кабинета;
+  - для Module Federation на rspack поддержка Angular 22 не подтверждена, а обёртки Nx для неё устарели в Nx 23;
+  - официальной позиции команды Angular по микрофронтендам нет.
 
-  **Рекомендация: (а)** — тот же сборщик и одна копия Angular и сессии. Версия пакета — точная, по минорной версии Angular. Манифест — файл 4.4 рядом с каркасом. В проде его подменяет деплой (вне 014).
-- [ ] **Q-2.** *(из D-11)* Где живёт общий фронтендовый код. *(Claude, 2026-11-01)*
-  - Логика — одно ядро `ui-core` на все фронтенды, по файлу на область. Отдельные `cabinet-core` и `admin-core` не нужны, общих частей больше, чем различий.
-  - Angular-код, общий для фронтендов (сессия, `CurrentUser`, адаптеры на `fetch`, компоненты, токены), — варианты:
-    - **(а)** новый пакет `packages/ui-angular` — оболочечный, не ядро, разделяется федерацией как `singleton`;
-    - **(б)** копия в каждом фронтенде: нарушает DRY, и у каждого remote появляется своя сессия, а это противоречит REQ-014-15;
-    - **(в)** только адаптеры в `ui-angular`, компоненты — web components в отдельном пакете, чтобы их мог взять фронтенд не на Angular.
+  **Рекомендация: (а)**: тот же сборщик, одна копия Angular и сессии. Ленивая загрузка remote без `initFederation(manifest)` (4.4) и общий экземпляр пакета проверяются первой задачей (T-1). В проде манифест подменяет деплой, это вне 014.
+- [ ] **Q-2.** *(из D-11)* Деление фронтендового кода. *(Claude, 2026-11-01)*
+  - **Логика.**
+    - **(а)** одно ядро `ui-core`, по файлу на область (сессия, доступ, формы, рои);
+    - **(б)** своё ядро на фронтенд (`cabinet-core`, `admin-core`…) над общим `api-integration`.
+  - **Angular-код** (сессия, `CurrentUser`, адаптеры, компоненты, токены).
+    - **(в)** пакет `packages/ui-angular`, оболочечный, `singleton` в федерации;
+    - **(г)** копия в каждом фронтенде: нарушает DRY и даёт каждому remote свою сессию, что противоречит REQ-014-15;
+    - **(д)** адаптеры в `ui-angular`, компоненты — web components отдельным пакетом.
 
-  **Рекомендация: (а)**: все фронтенды MVP на Angular. Web components — когда появится фронтенд на другой технологии.
-- [ ] **Q-3.** *(из D-16)* Дизайн-система: когда, на чём и каким скиллом. *(Claude, 2026-11-01)*
-  **Когда.** Варианты D-16: внутри 014; отдельной спекой перед 014; отдельной спекой раньше. Рекомендация — внутри 014 (D-16 (а)): каркас и три новых фронтенда сразу пишутся в общем стиле, и переделывать их потом не придётся.
-
-  **Библиотека.** Версии проверены по npm 2026-11-01:
-  - **(а)** свои базовые компоненты 4.8 на токенах и `@angular/cdk` 22.2.x для диалога и ловушки фокуса;
-  - **(б)** Angular Material 22.2.5 (M3; peer `@angular/core ^22 || ^23`), тема из токенов;
-  - **(в)** Spartan `@spartan-ng/brain` 1.9.0 (подход shadcn; peer `@angular/core >=21 <23`, требует Tailwind ≥ 4, сейчас 4.3.3). Стабильность релизов не оценена;
-  - **(г)** PrimeNG 22.1.4 (peer `^22.1.0`), 90+ компонентов.
-
-  **Скилл дизайна.** Проверено 2026-11-01:
-  - `frontend-design` из [anthropics/skills](https://github.com/anthropics/skills/tree/main/skills/frontend-design): последнее изменение 2026-09-03. Задаёт эстетику от предмета и аудитории, палитру из 4–6 цветов, шкалу шрифтов, проверку на шаблонность и доступность.
-  - [Impeccable](https://github.com/pbakaus/impeccable) (`pbakaus/impeccable`): около 98,7 тыс. звёзд, обновлён 2026-10-31. Команды `critique`, `audit`, `polish` и детектор из 62 правил.
-  - Каталоги навыков (awesome-claude-skills, skills.sh) дают производные копии `frontend-design`, их не берём.
+  **Рекомендация: (а) и (в).** Общей логики (сессия, права, формы) больше, чем различий, а все фронтенды MVP на Angular. Web components понадобятся, когда появится фронтенд на другой технологии.
+- [ ] **Q-3.** *(из D-16)* Дизайн-система: когда, на чём, каким скиллом, тёмная тема. *(Claude, 2026-11-01)*
+  - **Когда.** Варианты D-16: внутри 014; отдельной спекой перед 014; отдельной спекой раньше. Рекомендация — внутри 014: каркас и три новых фронтенда сразу пишутся в общем стиле.
+  - **Тёмная тема.** В 014 (REQ-014-16) или позже. Рекомендация — в 014: токены всё равно вводятся, вторая тема — это второй набор значений и тест контраста.
+  - **Библиотека** (npm, 2026-11-01):
+    - **(а)** свои 7 компонентов 4.8 на токенах и `@angular/cdk` для диалога и фокуса;
+    - **(б)** Angular Material 22.2.5 (M3, peer `@angular/core ^22 || ^23`) с темой из токенов;
+    - **(в)** Spartan `@spartan-ng/brain` 1.9.0 (подход shadcn, peer `@angular/core >=21 <23`, нужен Tailwind ≥ 4, сейчас 4.3.3), стабильность релизов не оценена;
+    - **(г)** PrimeNG 22.1.4 (peer `^22.1.0`).
+  - **Скилл** (2026-11-01):
+    - `frontend-design` из [anthropics/skills](https://github.com/anthropics/skills/tree/main/skills/frontend-design), последнее изменение 2026-09-03. Эстетика от предмета и аудитории, палитра из 4–6 цветов, шкала шрифтов, проверка на шаблонность и доступность;
+    - [Impeccable](https://github.com/pbakaus/impeccable): около 98,7 тыс. звёзд, обновлён 2026-10-31, команды `critique`, `audit`, `polish` и детектор из 62 правил;
+    - копии `frontend-design` из каталогов (awesome-claude-skills, skills.sh) не берём.
 
   **Рекомендация.**
-  - Библиотека — **(а)**. Экранов немного: формы, таблицы, диалог. Своих компонентов 7, и общая зависимость федерации получается маленькой. Тема — только наши токены, без перекраски чужой. CDK даёт доступный диалог без своего кода фокуса. (б) — запасной вариант, если своих компонентов окажется мало.
-  - Скилл — `frontend-design`: им в T-5 выбираются эстетика и значения токенов. Impeccable `audit` — на ручной приёмке AC-014-13, итог в журнал.
-  - Оба скилла ставятся в `.claude/skills/` проекта с указанием коммита источника. Лицензию проверить при установке и записать в README `ui-angular`.
+  - Библиотека **(а)**. Экранов мало: формы, таблицы, диалог. Общая зависимость федерации получается маленькой, тема — только наши токены. CDK даёт доступный диалог без своего кода фокуса. (б) — запасной вариант.
+  - Скилл — `frontend-design` для токенов (T-7). Impeccable `audit` — на приёмке (AC-014-17).
 - [ ] **Q-4.** *(из D-15)* Кто видит Grafana. *(Claude, 2026-11-01)*
-  Сейчас прокси `/grafana` в dev-сервере пускает в Grafana любого, кто открыл UI. Grafana слушает только `127.0.0.1`, входа в ней нет. Трейсы показывают промпты, ответы моделей и данные всех организаций.
-  - **(а)** В 014 ссылку «трейс» видит только супервизор. Прокси `/grafana` в dev остаётся. Вход в Grafana и её роли — спека эксплуатации (16) до выхода в прод.
-  - **(б)** Ссылку видят все, Grafana закрывается прокси с проверкой токена супервизора: нужен свой прокси с проверкой JWT в dev-сервере или в `api`.
-  - **(в)** Пользователь и администратор видят трейсы своих роёв: нужна фильтрация Tempo по организации — тяжело и вне MVP.
+  Сейчас прокси `/grafana` в dev-сервере пускает в Grafana любого, кто открыл UI на `127.0.0.1`. Входа у Grafana нет, а трейсы содержат промпты, ответы и данные всех организаций.
+  - **(а)** В 014 ссылку видит только супервизор, прокси в dev остаётся. Вход и роли Grafana — спека эксплуатации (16), до выхода в прод.
+  - **(б)** Ссылку видят все, а `/grafana` закрывается прокси с проверкой токена супервизора: нужен свой прокси с проверкой JWT.
+  - **(в)** Пользователь и администратор видят трейсы своих роёв: нужна фильтрация Tempo по организации, это вне MVP.
 
-  **Рекомендация: (а)**: не обещаем организации то, чего не можем ей безопасно показать, а инструмент разработки остаётся под рукой.
+  **Рекомендация: (а)**: организации не обещаем то, что не можем безопасно показать, а инструмент разработки остаётся. Ограничение dev записано в разделе 7.
 - [ ] **Q-5.** *(D-131: «новая спека после 013, до 014»)* Порядок со спекой мультиорганизаций. *(Claude, 2026-11-01)*
-  - **(а)** 014 делается до спеки по D-131. Экраны берут одну организацию из `AuthMe.organization`, весь доступ уже идёт через `/auth/me` и `canOpen`. Переключатель организации и создание второй — в спеке D-131: она добавит в шапку каркаса выбор и поменяет `AuthMe`.
+  - **(а)** 014 раньше. Экраны берут одну организацию из `AuthMe.organization`, весь доступ уже идёт через `/auth/me` и `canOpen`. Переключатель и создание второй организации — в спеке D-131: она меняет `AuthMe` и добавляет выбор в шапку каркаса.
   - **(б)** Сначала спека D-131 (identity, `api`, контракты), 014 зависит от неё и сразу рисует переключатель.
 
-  **Рекомендация: (а)**: регистрация и вход в браузере нужны для ручных проверок всех следующих спек, а изменения D-131 в UI сводятся к шапке и `AuthMe`. D-131 остаётся в `questions.md`; при ответе (а) в нём меняется «до 014» на «после 014».
-- [ ] **Q-6.** Рои и расходы по пользователям в админке, «все рои и расходы» у супервизора. Роадмап кладёт их в админку, но в `SwarmSummary` нет `orgId`, `createdBy` и трат. *(Claude, 2026-11-01)*
-  - **(а)** Не в 014. Админ и супервизор видят рои в разделе «Рои», как сейчас: область видимости по роли — из 024. Расходы по пользователям и узлам — 025, где появляется агрегирование расхода.
-  - **(б)** В 014: `SwarmSummary` получает `orgId`, `createdBy`, `spentMicroUsd`, `GET /swarms` — фильтры `?orgId=&createdBy=`, в админке и у супервизора — таблица роёв с тратами. Плюс 3–4 задачи в `contracts`, `api-core`, `adapter-postgres`.
+  **Рекомендация: (а)**: регистрация и вход в браузере нужны для ручных проверок всех следующих спек, а UI-часть D-131 — это шапка и `AuthMe`. D-131 остаётся в `questions.md`; при (а) в нём «до 014» меняется на «после 014».
+- [ ] **Q-6.** Рои и расходы по пользователям в админке и «все рои и расходы» у супервизора. В `SwarmSummary` нет `orgId`, `createdBy` и трат. *(Claude, 2026-11-01)*
+  - **(а)** Не в 014. Админ и супервизор видят рои в разделе «Рои» по области видимости из 024. Расход по пользователям и узлам — 025, где появится агрегирование расхода.
+  - **(б)** В 014: в `SwarmSummary` добавить `orgId`, `createdBy`, `spentMicroUsd`, в `GET /swarms` — фильтры `?orgId=&createdBy=`, в админке и у супервизора — таблицы роёв с тратами. Это 3–4 задачи в `contracts`, `api-core`, `adapter-postgres`.
 
-  **Рекомендация: (а)**: 014 — только UI поверх готового API. Расход лучше сделать один раз в 025 вместе с балансом ИИ.
-- [ ] **Q-7.** *(из D-38, часть «экран супервизора»)* Счёт платформы на экране супервизора. Данных для него ещё нет: поступлений нет до реальной оплаты, агрегатов `providerCostMicroUsd` нет. *(Claude, 2026-11-01)*
-  **Рекомендация:** не в 014. В D-38 «куда» оставить только 025, экран — вместе с данными.
+  **Рекомендация: (а)**: 014 — UI поверх готового API, расход строится один раз в 025 вместе с балансом ИИ.
+- [ ] **Q-7.** *(из D-38, часть «экран супервизора»)* Счёт платформы у супервизора. Данных нет: поступлений до реальной оплаты нет, агрегатов `providerCostMicroUsd` нет. *(Claude, 2026-11-01)*
+  - **(а)** Не в 014: экран делается в 025 вместе с данными, D-38 адресован 025.
+  - **(б)** В 014 экран-заглушка «нет данных».
+
+  **Рекомендация: (а)**: заглушка ничего не проверяет и потом переделывается.
 - [ ] **Q-8.** Порог NFR-014-1. *(Claude, 2026-11-01)*
-  В роадмапе числа нет. Предложено 250 КБ gzip начального JS каркаса: Angular 22 с роутером и формами — порядка 100–150 КБ gzip, остальное — запас на шапку, страницы входа и компоненты. Варианты: 250 КБ; 200 КБ (строже); без NFR, только замер в журнал.
-  **Рекомендация:** 250 КБ.
+  Числа в роадмапе нет. Варианты:
+  - 250 КБ gzip начального JS каркаса с общими зависимостями;
+  - 200 КБ;
+  - без порога, только замер в журнал.
+
+  Оценка Angular 22 с роутером и формами — порядка 100–150 КБ gzip. Это прикидка, а не замер.
+
+  **Рекомендация:** 250 КБ, после замера в T-19 при необходимости пересмотреть на приёмке.
 
 ## 10. Журнал реализации
 
