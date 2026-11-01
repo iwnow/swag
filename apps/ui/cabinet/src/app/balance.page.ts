@@ -1,21 +1,14 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  DestroyRef,
-  effect,
-  inject,
-  untracked,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import {
   BalancePanelComponent,
   CABINET_STORE,
   PageComponent,
   SESSION_USER,
-  toAngularSignal,
 } from '@swag/ui-angular';
 
 // Спека 013, 4.11 и 014, 4.12: страница «Баланс» рисует `CabinetStore.balance`; организация — из SESSION_USER.
 // Комментарий пополнения в кабинете не обязателен (`requireComment` = false).
+// Данные перечитываются при каждом заходе: конструктор страницы выполняется заново на каждый переход.
 @Component({
   selector: 'app-balance-page',
   imports: [BalancePanelComponent, PageComponent],
@@ -34,11 +27,7 @@ export class BalancePageComponent {
   protected readonly cabinet = inject(CABINET_STORE);
 
   constructor() {
-    const orgId = toAngularSignal(inject(SESSION_USER).orgId, inject(DestroyRef));
-    effect(() => {
-      const id = orgId();
-      untracked(() => void this.cabinet.balance.open(id));
-    });
+    void this.cabinet.balance.open(inject(SESSION_USER).orgId.value);
   }
 
   protected onTopup(input: { amountUsd: string; comment: string }): void {
