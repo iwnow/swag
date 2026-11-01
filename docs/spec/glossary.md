@@ -132,6 +132,9 @@
 | Таймаут `api` к оркестратору | `ORCHESTRATOR_TIMEOUT_MS` | Константа оболочки `api` для `launch` и `stop` (013, 4.9; из N-25). |
 | Резерв бюджета | `budget_holds`, `holdMicroUsd` | В 004 — верхняя оценка стоимости вызова модели, зарезервированная из бюджета роя и агента до обращения к LiteLLM и закрытая списанием (004, 4.3); резерв бюджета роя из баланса — 013. |
 | Фронтенд платформы | `apps/ui/<имя>` | Отдельно собираемое и деплоимое веб-приложение в `apps/ui/`; технология своя у каждого. |
+| Шапка каркаса | `LayoutComponent` | Шапка каркаса: пункты `navigationFor`, email и организация, тема, «Выйти»; «Раздел недоступен», если раздел не загрузился (014, REQ-014-10). |
+| Страница входа каркаса | `LoginPageComponent` | `/login?returnTo=`: вход; при открытой сессии — переход на `safeReturnTo(returnTo)` (014, 4.11). |
+| Загрузка раздела | `loadRoutes`, `RemoteRegistry` | Загрузка `./routes` remote по имени из манифеста через `loadRemoteModule`; `RemoteRegistry` — сервис DI каркаса (`providedIn: 'root'`), `loadRoutes` берёт его через `inject` в injection context `loadChildren`; имени нет — ошибка маршрута (014, 4.4). |
 | Каркас | `apps/ui/shell`, `@swag/shell` | Фронтенд входа, регистрации, приглашения и навигации; подгружает микрофронтенды по правам из `AuthMe` (014). |
 | Микрофронтенд | remote каркаса, `./routes` | Фронтенд, который каркас подгружает во время работы: `cabinet`, `admin`, `supervisor`; экспонирует маршруты `./routes`. Сборка — Native Federation (014, Q-1). |
 | Манифест микрофронтендов | `federation.manifest.json`, `isLocalRemoteUrl`, `RemoteRegistry`, `remote_rejected` | Имя remote → адрес `remoteEntry.json` того же origin под `/mf/`; каркас читает его сам, чужой адрес отбрасывает с предупреждением `remote_rejected`, remote грузится только в `loadChildren` (014, 4.4). |
