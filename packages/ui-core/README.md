@@ -26,23 +26,29 @@
 
 ## Что внутри сейчас
 
-- `src/auth-session.ts` — `createAuthSessionKeeper`, порт `AuthApi`, интерфейс `AuthSessionKeeper` (реэкспорт из `src/index.ts`).
-- `src/index.ts` — `createUiCore`, порты `SwarmsApi`, `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функции `formatLlmCall`, `formatAgentStep`, `unreadMessageIds`, `formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney`, `agentBudgetMicro`, `maxTokensInput`, `swarmFormInput`, `failureReasonText`.
+- `src/access-ui.ts` — `UiArea`, `NavItem`, `canOpen`, `navigationFor` (разделы по `ROLE_PERMISSIONS` и `can`), `UserAction`, `userActions`, `userActionBody` (зеркало `PATCH /auth/users/:id`), `safeReturnTo`, `isLocalRemoteUrl` (014, 4.2). Реэкспорт из `src/index.ts`.
+- `src/auth-session.ts` — `createAuthSessionKeeper`, порт `AuthApi` (вход, обновление, выход, регистрация, подтверждение, приглашение — 024, 014 4.1), интерфейсы `AuthSessionKeeper`, тип `AuthResult` (реэкспорт из `src/index.ts`).
+- `src/auth-forms.ts` — `authErrorText` (таблица 4.6, текст по умолчанию), тексты форм и сообщений 4.6 (`FORM_TEXT`, `REGISTRATION_SENT_TEXT`, `INVITATION_INVALID_TEXT`, `invitationSentText`, `blockConfirmText`, `USER_ACTION_LABEL`), `validateEmailForm`, `validateConfirmForm`, `validateInviteForm` (014, 4.2, 4.6). Ошибки — `FormIssue` из `src/index.ts`.
+- `src/index.ts` — `createUiCore`, порты `SwarmsApi`, `UsersApi`, `OrganizationsApi` (014, 4.3), `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функции `formatLlmCall`, `formatAgentStep`, `unreadMessageIds`, `formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney`, `agentBudgetMicro`, `maxTokensInput`, `swarmFormInput`, `failureReasonText`.
 - `test/ui-core.test.ts` — AC-001-23, AC-016-14, AC-022-23, AC-031-6 (проекция `swarm.created` без `maxTokens`).
 - `test/format-llm-call.test.ts` — AC-002-24, AC-004-27 (строки `formatLlmCall` из 4.8).
 - `test/money-format.test.ts` — AC-004-27 (`formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney`, строки таблиц 4.8, граница окна 60 с).
 - `test/money-input.test.ts` — перевод полей формы (`agentBudgetMicro`, `swarmFormInput`), проверка результата через `SwarmCreateRequest`, тексты причин `failureReasonText` (спека 004, 4.8; T-15); AC-031-5 — лимит ответа роя и агента, `abc` → `NaN` и ошибка `validateForm` (спека 031, T-5).
 - `test/format-agent-step.test.ts` — AC-022-23.
 - `test/unread-message-ids.test.ts` — AC-030-7.
-- `test/auth-session.test.ts` — AC-024-23 (восстановление, вход, один `refresh` на `renew`, один `refresh` на `restore` и `renew`, `onSignedOut`, `logout`, отписка, поздний `refresh` после `logout`/`login`).
+- `test/auth-forms.test.ts` — AC-014-4 (`authErrorText`, тексты 4.6), AC-014-7 (проверки форм регистрации, приглашения и email, порядок ошибок).
+- `test/access-ui.test.ts` — AC-014-2, AC-014-3, AC-014-5, AC-014-6 (разделы, действия над пользователями, адреса remote и возврата).
+- `test/auth-session.test.ts` — AC-024-23 (восстановление, вход, один `refresh` на `renew`, один `refresh` на `restore` и `renew`, `onSignedOut`, `logout`, отписка, поздний `refresh` после `logout`/`login`); AC-014-1 (регистрация, подтверждение, приглашение, поколение при `register`/`confirmRegistration`).
 
 ## Ключевые решения
 
 - Порты, а не `fetch`/`WebSocket` в ядре: адаптеры живут в `apps/ui/cabinet/src/app/api.ts` (T-12, T-13) и в `apps/ui/cabinet/src/app/auth-api.ts` (024, T-16).
+- Формы (014, 4.2, 4.6): проверка — схемой контракта (`RegistrationConfirmRequest`, `InvitationAcceptRequest`, `Email`), тексты полей — по пути ошибки; порядок ошибок фиксирован (`token`, `password`, `repeat`, `organizationName`); `repeat` проверяется отдельно, поверх схемы. Неизвестный путь — текст `validation_error`. Таблица кодов — `Map`, а не объект, чтобы код вроде `constructor` не попадал в прототип.
+- Регистрация и приглашение (014, 4.1): `confirmRegistration` и `acceptInvitation` устроены как `login` (общий `signIn`: поколение меняется до запроса, токен — из ответа); `register` не трогает ни токен, ни поколение. Код ошибки — тот же `error.code` или `'unknown'`.
 - Сессия входа (024, 4.15): токен доступа только в памяти; reject `refresh` в `restore()` и `renew()` — неудача, как `null`; код ошибки входа — `error.code`, иначе `'unknown'`; `logout()` не вызывает `onSignedOut` (выход инициирует вызывающий код), ошибка `api.logout` пробрасывается, токен стирается в любом случае. Поколение сессии (`epoch`) увеличивается в `login`, `logout` и при выходе по неудачному `renew`: `refresh`, начатый до этого, при ответе не пишет токен и считается устаревшим; `renew` в этом случае не вызывает `onSignedOut`. `restore` делит общий `refresh` с `renew`, но при неудаче `onSignedOut` не вызывает.
 - Переподключение: `onError` от потока → `Timers.setTimeout` → `open(id, lastSeq)`; защита от повторов — проверкой `event.seq <= view.lastSeq` до `applyEvent`; событие, не подходящее к состоянию, пропускается.
 - Модель формы роя не дублируется: список моделей UI берёт из `PlatformModel.options` контракта, форма валидируется `SwarmCreateRequest`, значение по умолчанию — из схемы (`chat-small`).
-- Зависимости (`package.json`): `@swag/contracts`, `@swag/api-integration`, `zod`; в исходниках `zod` напрямую не импортируется. Белый список ядра — REQ-001-18.
+- Зависимости (`package.json`): `@swag/contracts`, `@swag/api-integration`, `zod`; `zod` в исходниках — только в `src/access-ui.ts` (схема `UiArea` по 014, 4.2). Белый список ядра — REQ-001-18.
 - Непрочитанное (030) вычисляется из уже существующих событий: `bus.message` и `agent.working` с тем же `messageId`; новых событий платформы нет, проекция роя не меняется.
 - Деньги: целые micro-USD, без `Number`-деления там, где важна точность. `formatUsd` округляет вверх до 4 знаков, остаток в `formatSwarmMoney` — вниз до 4 знаков (остаток не завышается). `formatLlmCall` — 6 знаков, точно, без округления. Окно `spentLastMinute`: `ts > nowMs − 60000` и `ts ≤ nowMs` (событие ровно на `nowMs − 60000` не входит) (спека 004, 4.8).
 - `traceUrl`: шаблон с подстановкой `{traceId}` приходит от фронтенда (`traces.urlTemplate`, обязательная зависимость), ядро не знает адреса Grafana. `traceId` подставляется через `encodeURIComponent` (для hex — без изменений), заменяются все вхождения `{traceId}`.
@@ -60,7 +66,7 @@
 
 - 001 — 4.8, REQ-001-13.
 - 016 — 4.10, REQ-016-13, AC-016-14.
-- 014 — деление `ui-core` по фронтендам (D-11).
+- 014 — деление `ui-core` по фронтендам (D-11), 4.1, AC-014-1 (регистрация и приглашение в сессии); 4.2, REQ-014-3…5, AC-014-2, AC-014-3, AC-014-5, AC-014-6 (доступ, навигация, проверки адресов); 4.3, 4.6, AC-014-4, AC-014-7 (тексты и формы).
 - 024 — 4.15, REQ-024-13 (ядро), AC-024-23.
 - 002 — 4.11, REQ-002-15, AC-002-24.
 - 022 — 4.1 (`PlatformModel`, `AgentDraft.model`), 4.10, REQ-022-15, AC-022-23.

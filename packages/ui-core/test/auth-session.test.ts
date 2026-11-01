@@ -21,6 +21,9 @@ function fakeApi(overrides: Partial<AuthApi> = {}): AuthApi {
     login: vi.fn(async () => session('login-token')),
     refresh: vi.fn(async () => ({ accessToken: 'refreshed-token', expiresIn: 900 })),
     logout: vi.fn(async () => undefined),
+    register: vi.fn(async () => undefined),
+    confirmRegistration: vi.fn(async () => session('confirm-token')),
+    acceptInvitation: vi.fn(async () => session('invite-token')),
     ...overrides,
   };
 }
@@ -155,6 +158,100 @@ describe('auth session keeper', () => {
     pending.resolve({ accessToken: 'late-token', expiresIn: 900 });
 
     await expect(renewed).resolves.toBe(false);
+    expect(keeper.accessToken()).toBe('login-token');
+  });
+
+  it('AC-014-1: confirmRegistration и acceptInvitation с успехом дают ok и токен из ответа', async () => {
+    const confirm = createAuthSessionKeeper(fakeApi());
+    await expect(
+      confirm.confirmRegistration({ token: 't', password: 'password-10', organizationName: 'Org' }),
+    ).resolves.toEqual({ ok: true });
+    expect(confirm.accessToken()).toBe('confirm-token');
+
+    const invite = createAuthSessionKeeper(fakeApi());
+    await expect(invite.acceptInvitation({ token: 't', password: 'password-10' })).resolves.toEqual(
+      { ok: true },
+    );
+    expect(invite.accessToken()).toBe('invite-token');
+  });
+
+  it('AC-014-1: reject invalid_token даёт код и не записывает токен', async () => {
+    const rejecting = { code: 'invalid_token' };
+    const keeper = createAuthSessionKeeper(
+      fakeApi({
+        confirmRegistration: async () => Promise.reject(rejecting),
+        acceptInvitation: async () => Promise.reject(rejecting),
+      }),
+    );
+
+    await expect(
+      keeper.confirmRegistration({
+        token: 'bad',
+        password: 'password-10',
+        organizationName: 'Org',
+      }),
+    ).resolves.toEqual({ ok: false, code: 'invalid_token' });
+    await expect(
+      keeper.acceptInvitation({ token: 'bad', password: 'password-10' }),
+    ).resolves.toEqual({ ok: false, code: 'invalid_token' });
+    expect(keeper.accessToken()).toBeNull();
+  });
+
+  it('AC-014-1: register с успехом даёт ok, с rate_limited — код, токен прежний', async () => {
+    const keeper = createAuthSessionKeeper(fakeApi());
+    await keeper.login('u@example.test', 'pw');
+
+    await expect(keeper.register('new@example.test')).resolves.toEqual({ ok: true });
+    expect(keeper.accessToken()).toBe('login-token');
+
+    const limited = createAuthSessionKeeper(
+      fakeApi({ register: async () => Promise.reject({ code: 'rate_limited' }) }),
+    );
+    await limited.login('u@example.test', 'pw');
+    await expect(limited.register('new@example.test')).resolves.toEqual({
+      ok: false,
+      code: 'rate_limited',
+    });
+    expect(limited.accessToken()).toBe('login-token');
+  });
+
+  it('AC-014-1: refresh, начатый до confirmRegistration, не записывает токен после него', async () => {
+    const pending = deferred<AuthRefreshed | null>();
+    const keeper = createAuthSessionKeeper(fakeApi({ refresh: () => pending.promise }));
+
+    const restored = keeper.restore();
+    await keeper.confirmRegistration({
+      token: 't',
+      password: 'password-10',
+      organizationName: 'Org',
+    });
+    pending.resolve({ accessToken: 'late-token', expiresIn: 900 });
+
+    await expect(restored).resolves.toBe(false);
+    expect(keeper.accessToken()).toBe('confirm-token');
+  });
+
+  it('AC-014-1: register не меняет поколение — refresh, начатый до него, записывает токен', async () => {
+    const pending = deferred<AuthRefreshed | null>();
+    const keeper = createAuthSessionKeeper(fakeApi({ refresh: () => pending.promise }));
+
+    const renewed = keeper.renew();
+    await keeper.register('new@example.test');
+    pending.resolve({ accessToken: 'late-token', expiresIn: 900 });
+
+    await expect(renewed).resolves.toBe(true);
+    expect(keeper.accessToken()).toBe('late-token');
+  });
+
+  it('AC-014-1: reject acceptInvitation при уже выданном токене оставляет прежний токен', async () => {
+    const keeper = createAuthSessionKeeper(
+      fakeApi({ acceptInvitation: async () => Promise.reject({ code: 'invalid_token' }) }),
+    );
+    await keeper.login('u@example.test', 'pw');
+
+    await expect(
+      keeper.acceptInvitation({ token: 'bad', password: 'password-10' }),
+    ).resolves.toEqual({ ok: false, code: 'invalid_token' });
     expect(keeper.accessToken()).toBe('login-token');
   });
 });
