@@ -61,15 +61,20 @@ export function createShellStore({
   };
   const clearErrors = (): void => patch({ error: null, issues: [] });
 
-  // Запрос с busy; отказ пишет текст по коду ошибки.
+  // Запрос с busy; отказ пишет текст по коду ошибки, исключение — общий текст 'unknown'; busy сбрасывается всегда.
   async function attempt(request: () => Promise<AuthResult>): Promise<boolean> {
     patch({ busy: true });
-    const result = await request();
-    if (result.ok) {
+    let result: AuthResult;
+    try {
+      result = await request();
+    } catch {
+      patch({ error: authErrorText('unknown') });
+      return false;
+    } finally {
       patch({ busy: false });
-      return true;
     }
-    patch({ busy: false, error: authErrorText(result.code) });
+    if (result.ok) return true;
+    patch({ error: authErrorText(result.code) });
     return false;
   }
 

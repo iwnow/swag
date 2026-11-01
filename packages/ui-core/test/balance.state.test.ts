@@ -199,4 +199,78 @@ describe('balance state', () => {
     expect(admin.canTopup.value).toBe(true);
     expect(user.canTopup.value).toBe(false);
   });
+
+  it('AC-014-27: повторный more() в полёте не запрашивает вторую страницу', async () => {
+    const pendingMore = deferred<{ entries: BalanceEntry[]; nextBefore: number | null }>();
+    const balance = fakeBalance({
+      listBalanceEntries: vi
+        .fn()
+        .mockResolvedValueOnce({ entries: [ENTRY(1)], nextBefore: 7 })
+        .mockReturnValueOnce(pendingMore.promise),
+    });
+    const state = createBalanceState({ session: fakeSession(), balance });
+    await state.open('a');
+
+    const first = state.more();
+    const second = state.more();
+    pendingMore.resolve({ entries: [ENTRY(2)], nextBefore: null });
+    await Promise.all([first, second]);
+
+    expect(balance.listBalanceEntries).toHaveBeenCalledTimes(2);
+    expect(state.entries.value).toEqual([ENTRY(1), ENTRY(2)]);
+  });
+
+  it('AC-014-27: повторный topup в полёте не отправляет второй запрос', async () => {
+    const pendingTopup = deferred<BalanceEntry>();
+    const balance = fakeBalance({ topup: vi.fn(() => pendingTopup.promise) });
+    const state = createBalanceState({ session: fakeSession(), balance });
+    await state.open('a');
+
+    const first = state.topup({ amountUsd: '1', comment: '' }, false);
+    const second = await state.topup({ amountUsd: '1', comment: '' }, false);
+    pendingTopup.resolve(ENTRY(3));
+
+    expect(second).toBe(false);
+    expect(await first).toBe(true);
+    expect(balance.topup).toHaveBeenCalledTimes(1);
+  });
+
+  it('AC-014-27: more() в полёте, затем open(b) — ответ для a не попадает в записи b', async () => {
+    const pendingMore = deferred<{ entries: BalanceEntry[]; nextBefore: number | null }>();
+    const balance = fakeBalance({
+      listBalanceEntries: vi
+        .fn()
+        .mockResolvedValueOnce({ entries: [ENTRY(1)], nextBefore: 7 })
+        .mockReturnValueOnce(pendingMore.promise)
+        .mockResolvedValueOnce({ entries: [ENTRY(21)], nextBefore: null }),
+    });
+    const state = createBalanceState({ session: fakeSession(), balance });
+    await state.open('a');
+
+    const more = state.more();
+    await state.open('b');
+    pendingMore.resolve({ entries: [ENTRY(11)], nextBefore: 3 });
+    await more;
+
+    expect(state.entries.value).toEqual([ENTRY(21)]);
+    expect(state.nextBefore.value).toBeNull();
+    expect(state.loadingMore.value).toBe(false);
+  });
+
+  it('AC-014-27: topup в полёте, затем open(b) — успех не перечитывает баланс a', async () => {
+    const pendingTopup = deferred<BalanceEntry>();
+    const balance = fakeBalance({ topup: vi.fn(() => pendingTopup.promise) });
+    const state = createBalanceState({ session: fakeSession(), balance });
+    await state.open('a');
+
+    const topup = state.topup({ amountUsd: '1', comment: '' }, false);
+    await state.open('b');
+    pendingTopup.resolve(ENTRY(3));
+    await topup;
+
+    expect(balance.getBalance).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(balance.getBalance).mock.calls.filter(([id]) => id === 'a')).toHaveLength(1);
+    expect(state.view.value).toEqual(viewOf('b'));
+    expect(state.submitting.value).toBe(false);
+  });
 });

@@ -102,4 +102,19 @@ describe('shell store', () => {
     expect(store.theme.value).toBe('light');
     expect(preferences.set).toHaveBeenCalledWith('swag.theme', 'light');
   });
+
+  it('AC-014-22: исключение сессии не оставляет форму занятой', async () => {
+    const session = fakeSession({
+      login: vi.fn(async (): Promise<AuthResult> => {
+        throw new Error('сеть');
+      }),
+    });
+    const store = createShellStore({ session, preferences: fakePreferences() });
+
+    const result = await store.login('u@example.test', 'пароль-один', null);
+
+    expect(result).toBeNull();
+    expect(store.form.value.busy).toBe(false);
+    expect(store.form.value.error).toBe(authErrorText('unknown'));
+  });
 });

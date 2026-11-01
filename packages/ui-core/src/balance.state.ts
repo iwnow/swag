@@ -8,7 +8,7 @@ import {
 import { FORM_TEXT } from './auth-forms.ts';
 import type { BalanceApi } from './ports.ts';
 import type { SessionUserStore } from './session-user.store.ts';
-import { usdToMicro } from './index.ts';
+import { usdToMicro } from './money.ts';
 
 // Спека 014, 4.12 (логика панели баланса 013, 4.11 и 014, 4.7): состояние баланса организации без фреймворка.
 
@@ -99,6 +99,7 @@ export function createBalanceState({
   }
 
   async function more(): Promise<void> {
+    if (loadingMore.value) return;
     const id = orgId.value;
     const before = nextBefore.value;
     if (id === null || before === null) return;
@@ -124,6 +125,7 @@ export function createBalanceState({
     input: { amountUsd: string; comment: string },
     requireComment: boolean,
   ): Promise<boolean> {
+    if (submitting.value) return false;
     const id = orgId.value;
     formError.value = null;
     commentError.value = null;
@@ -149,7 +151,7 @@ export function createBalanceState({
       if (current === generation) formError.value = errorText(failure);
       return false;
     } finally {
-      submitting.value = false;
+      if (current === generation) submitting.value = false;
     }
     if (current === generation) await open(id);
     return true;

@@ -12,6 +12,7 @@ import {
   type UserUpdate,
 } from '@swag/contracts';
 import { applyEvent, type SwarmView } from '@swag/api-integration';
+import { formatUsd, usdToMicro } from './money.ts';
 
 export * from './auth-session.ts';
 export * from './access-ui.ts';
@@ -20,6 +21,7 @@ export * from './ports.ts';
 export * from './session-user.store.ts';
 export * from './balance.state.ts';
 export * from './shell.store.ts';
+export * from './money.ts';
 
 // Спека 001, 4.8. Логика UI: валидация формы, состояние роя из событий, переподключение потока.
 // Angular-компоненты только рисуют и передают действия сюда.
@@ -100,19 +102,6 @@ export function formatAgentStep(data: AgentStepData): string {
   const tools =
     data.toolCalls.length === 0 ? '' : ` → ${data.toolCalls.map((call) => call.name).join(', ')}`;
   return `шаг ${data.stepIndex}${text}${tools}`;
-}
-
-// Спека 004, 4.8: микродоллары → строка с 4 знаками, округление вверх; целочисленная арифметика.
-export function formatUsd(microUsd: number): string {
-  const units = Math.floor((microUsd + 99) / 100);
-  return `$${Math.floor(units / 10000)}.${String(units % 10000).padStart(4, '0')}`;
-}
-
-// Спека 004, 4.8: вход поля «Бюджет, $» → Math.round(usd × 10⁶). Некорректный ввод → NaN, отсекает SwarmCreateRequest.
-export function usdToMicro(usd: string): number {
-  const text = usd.trim();
-  if (!/^\d+(\.\d+)?$/.test(text)) return NaN;
-  return Math.round(Number(text) * 1e6);
 }
 
 // Спека 004, 4.8: charge событий llm.call с ts в (nowMs − 60000, nowMs]; без charge — costMicroUsd ?? 0 (как в 4.7).

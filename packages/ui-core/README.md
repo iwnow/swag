@@ -33,10 +33,11 @@
 - `src/auth-session.ts` — `createAuthSessionKeeper`, порт `AuthApi` (вход, обновление, выход, регистрация, подтверждение, приглашение — 024, 014 4.1), интерфейсы `AuthSessionKeeper`, тип `AuthResult` (реэкспорт из `src/index.ts`).
 - `src/session-user.store.ts` — `createSessionUserStore`, тип `SessionUserStore`, `SessionStatus` (014, 4.12). Внутри один `createAuthSessionKeeper`; сигналы `ReadonlySignal`, менять состояние можно только методами стора.
 - `src/ports.ts` — порты сторов `BalanceApi`, `MeApi`, `Preferences` (014, 4.12). `BalanceApi` — у `balance.state`, `Preferences` — у `shell.store`, `MeApi` — у адаптера каркаса (T-24).
+- `src/money.ts` — `formatUsd`, `usdToMicro` (спека 004, 4.8); отдельный модуль, чтобы `balance.state.ts` не импортировал `index.ts` (цикл). Реэкспорт из `src/index.ts`.
 - `src/balance.state.ts` — `createBalanceState`, тип `BalanceState`, `TOPUP_INVALID_TEXT`, `errorText` (014, 4.12; 013, 4.11). Реэкспорт из `src/index.ts`.
 - `src/shell.store.ts` — `createShellStore`, тип `ShellStore`, `ShellForm`, тип `ThemeMode` (014, 4.12). Реэкспорт из `src/index.ts`.
 - `src/auth-forms.ts` — `authErrorText` (таблица 4.6, текст по умолчанию), тексты форм и сообщений 4.6 (`FORM_TEXT`, `REGISTRATION_SENT_TEXT`, `INVITATION_INVALID_TEXT`, `invitationSentText`, `blockConfirmText`, `USER_ACTION_LABEL`), `validateEmailForm`, `validateConfirmForm`, `validateInviteForm` (014, 4.2, 4.6). Ошибки — `FormIssue` из `src/index.ts`.
-- `src/index.ts` — `createUiCore`, порты `SwarmsApi`, `UsersApi`, `OrganizationsApi` (014, 4.3), `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функции `formatLlmCall`, `formatAgentStep`, `unreadMessageIds`, `formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney`, `agentBudgetMicro`, `maxTokensInput`, `swarmFormInput`, `failureReasonText`.
+- `src/index.ts` — `createUiCore`, порты `SwarmsApi`, `UsersApi`, `OrganizationsApi` (014, 4.3), `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функции `formatLlmCall`, `formatAgentStep`, `unreadMessageIds`, `spentLastMinute`, `formatSwarmMoney`, `agentBudgetMicro`, `maxTokensInput`, `swarmFormInput`, `failureReasonText`.
 - `test/ui-core.test.ts` — AC-001-23, AC-016-14, AC-022-23, AC-031-6 (проекция `swarm.created` без `maxTokens`).
 - `test/format-llm-call.test.ts` — AC-002-24, AC-004-27 (строки `formatLlmCall` из 4.8).
 - `test/money-format.test.ts` — AC-004-27 (`formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney`, строки таблиц 4.8, граница окна 60 с).
@@ -67,6 +68,7 @@
 - Сбой `MeApi.me` (сеть, 5xx) — исключение: `ensureMe` резолвится, `me` и `status` не меняются, кэш загрузки сбрасывается, следующий `ensureMe` повторяет запрос; вход возвращает `ok` (014, 4.12, D-147).
 - `me` снова `null` после `renew` — стор вызывает `logout` хранителя: токен стирается, `status = signed-out` (014, 4.12, D-148).
 - Непрочитанное (030) вычисляется из уже существующих событий: `bus.message` и `agent.working` с тем же `messageId`; новых событий платформы нет, проекция роя не меняется.
+- Защита от повторов (спека 014, 4.12, AC-014-27): `BalanceState.more()` и `topup()` не запускаются, пока предыдущий такой же вызов в полёте; исключение входа в `ShellStore` сбрасывает `busy`, текст ошибки — `authErrorText('unknown')`.
 - Деньги: целые micro-USD, без `Number`-деления там, где важна точность. `formatUsd` округляет вверх до 4 знаков, остаток в `formatSwarmMoney` — вниз до 4 знаков (остаток не завышается). `formatLlmCall` — 6 знаков, точно, без округления. Окно `spentLastMinute`: `ts > nowMs − 60000` и `ts ≤ nowMs` (событие ровно на `nowMs − 60000` не входит) (спека 004, 4.8).
 - `traceUrl`: шаблон с подстановкой `{traceId}` приходит от фронтенда (`traces.urlTemplate`, обязательная зависимость), ядро не знает адреса Grafana. `traceId` подставляется через `encodeURIComponent` (для hex — без изменений), заменяются все вхождения `{traceId}`.
 
