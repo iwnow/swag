@@ -11,11 +11,8 @@
 
 ## Что внутри сейчас
 
-- `src/app/api.ts` — адаптеры портов `ui-core`: REST и WebSocket по относительному пути `/api`; `createSwarmsApi(session)` и `createSwarmStream(session)` кладут `Authorization: Bearer` (REST) и подпротокол `swag.bearer.<token>` (WebSocket); на `401` — `renew()` и один повтор, на закрытие `4401` потока — `renew()`, переподключение (`onError` ui-core) только после удачного обновления; без токена поток не открывается и не переподключается.
-- `src/app/auth-api.ts` — адаптер `AuthApi` из `ui-core` на `fetch` по `/auth` (`credentials: 'same-origin'`); ошибка с полем `code` из тела `{ error: { code } }`.
-- `src/app/api.ts` (баланс, 013, 4.11) — `createBalanceApi(session)`: `getBalance`, `listBalanceEntries(orgId, before)`, `topup`; тот же способ токена и разбора ошибок, что у `/swarms`. Ошибка ответа — `ApiError` с полями `status` и `code` (ветка `402` в форме роя).
-- `src/app/session.ts` — токен `SESSION`: один `AuthSessionKeeper` на приложение; `CurrentUser` — роль и `orgId` из `GET /auth/me` (сигналы `role`, `orgId`; `ensure()`, `clear()`).
-- `src/app/auth-api.ts` — `getMe(token)`: `GET /auth/me` с `Authorization: Bearer`; ответ разбирает `CurrentUser` схемой `AuthMe`.
+- `src/app/api.ts` — адаптеры портов `ui-core` для роёв: `createSwarmsApi(session)` (REST через `createRequest` из `@swag/ui-angular`, basePath `/api`) и `createSwarmStream(session)` (WebSocket: подпротокол `swag.bearer.<token>`; на закрытие `4401` — `renew()`, переподключение (`onError` ui-core) только после удачного обновления; без токена поток не открывается и не переподключается).
+- Из `@swag/ui-angular` (спека 014, 4.7): `SESSION` и `CurrentUser` (роль и `orgId` из `GET /auth/me`), `authApi` и `getMe`, `createBalanceApi` (баланс, 013, 4.11), `HttpError` (ошибка ответа с полями `status` и `code`; ветка `402` в форме роя). Подробности — `packages/ui-angular/README.md`.
 - `src/app/balance.page.ts` — страница `/balance` (спека 013, 4.11).
 - `src/app/auth.guard.ts` — guard маршрутов роёв: токен есть или `restore()` по cookie, иначе `/login`.
 - `src/app/login.page.ts` — страница `/login`: email, пароль, текст ошибки по коду (русский).
@@ -37,7 +34,7 @@
 
 ## Связи
 
-- Логика: `@swag/ui-core`; типы и проекция: `@swag/contracts`, `@swag/api-integration`.
+- Логика: `@swag/ui-core`; сессия, HTTP и адаптеры общих портов: `@swag/ui-angular`; типы и проекция: `@swag/contracts`, `@swag/api-integration`.
 - Бэкенд: `apps/api` через прокси.
 
 ## Ключевые решения
@@ -50,7 +47,7 @@
 - Строка денег обновляется таймером раз в 5 с (`MONEY_TICK_MS` в `swarm.page.ts`) и по каждому событию. Таймер запускается в конструкторе страницы и очищается в `ngOnDestroy`, поэтому на другой странице не работает. Таймер ui-core (`Timers`) для него не используется: он нужен только для переподключения потока.
 - Тексты причин `budget_exceeded` и `gateway_unavailable` — `failureReasonText` из `ui-core` (4.8), прочие причины выводятся как пришли (D-107).
 - Логика вне компонентов: `createUiCore` из `@swag/ui-core` подключается через токен `UI`.
-- Сессия (024, 4.15): `createAuthSessionKeeper` из `@swag/ui-core` в токене `SESSION`. Один `renew()` на все одновременные `401` — в `ui-core` через общий промис. Неудача обновления — `onSignedOut` → `/login`. Трактовка: при закрытии потока `4401` вызывается `renew()`; только при `true` поток сообщает `onError`, и `ui-core` переподключается через 1 с с новым токеном; при `false` переподключения нет, `onSignedOut` уводит на `/login`. Без токена поток не открывается и не сообщает `onError`: сессии нет, `onSignedOut`/guard уведёт на `/login`, бесконечного переподключения нет.
+- Сессия (024, 4.15): `createAuthSessionKeeper` из `@swag/ui-core` в токене `SESSION` (`@swag/ui-angular`). Один `renew()` на все одновременные `401` — общий промис в `createRequest` и в `ui-core`. Неудача обновления — `onSignedOut` → `/login`. Трактовка: при закрытии потока `4401` вызывается `renew()`; только при `true` поток сообщает `onError`, и `ui-core` переподключается через 1 с с новым токеном; при `false` переподключения нет, `onSignedOut` уводит на `/login`. Без токена поток не открывается и не сообщает `onError`: сессии нет, `onSignedOut`/guard уведёт на `/login`, бесконечного переподключения нет.
 - Роль и организация (013, 4.11, решение D-130 от 2026-11-01): кабинет берёт их из `GET /auth/me` (схема `AuthMe` из `@swag/contracts`: `user.role`, `organization.id`), а не из claims токена. Причина: у пользователя будет несколько организаций (D-131), и токену по этому полю не доверяем. `CurrentUser` перечитывает `/auth/me`, когда токен сменился: в guard маршрутов роёв и `/balance` после входа или восстановления сессии, и на каждой навигации (`NavigationEnd`) — после `renew()` новый токен подхватывается на следующем переходе. Выход (`logout`, `onSignedOut`) сбрасывает результат. Ошибка `/auth/me` или ответ не по схеме — пользователь неизвестен: пункта «Баланс» и формы нет, приложение не падает. Пункт «Баланс», `orgId` страницы и форма пополнения (`ROLE_PERMISSIONS[role]` содержит `balance.topup`) — из этого результата. Это только для показа; права проверяет API. Переход на несколько организаций — отдельная спека (D-131).
 - Вход не проверяет `Authorization` сам: guard смотрит только наличие токена в памяти; истёкший токен обновляется на первом `401` от `api`.
 - Dev-сервер и прокси `/api` → `api:3000` (Q-4). Отклонение: в CI сборка `ng build` не запускается (спека требует `npm run check` без UI-шага).
@@ -65,6 +62,6 @@
 - 022 — 4.10, T-15 (форма с моделью, строка шага, граф по кругу; ручная проверка AC-022-25 — в T-17).
 - 002 — 4.11, REQ-002-15 (строка `llm.call` в ленте, T-30).
 - 030 — 4.4, REQ-030-6, T-5 (отметка «не прочитано» в ленте).
-- 014 — каркас и микрофронтенд.
+- 014 — каркас и микрофронтенд; T-6: сессия, HTTP и адаптеры баланса перенесены в `@swag/ui-angular` (4.7).
 - 024 — 4.6, 4.15, REQ-024-13, T-16 (вход, сессия, прокси `/auth`; ручная проверка AC-024-26 — в T-17).
 - 013 — 4.11, REQ-013-11, T-15 (страница «Баланс», пункт в шапке, маршрут `/balance`), T-16 (форма пополнения, отказ `402` в форме роя; ручная проверка AC-013-25 — в T-18).

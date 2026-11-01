@@ -7,7 +7,7 @@ import {
   type BalanceView,
 } from '@swag/contracts';
 import { formatUsd, usdToMicro } from '@swag/ui-core';
-import { CurrentUser } from './session.ts';
+import { CurrentUser } from '@swag/ui-angular';
 import { BALANCE, errorText } from './ui.ts';
 
 const KIND_LABEL: Record<BalanceEntry['kind'], string> = { topup: 'Пополнение', swarm: 'Рой' };

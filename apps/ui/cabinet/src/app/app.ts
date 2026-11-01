@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/c
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
-import { CurrentUser, SESSION } from './session.ts';
+import { CurrentUser, SESSION } from '@swag/ui-angular';
 
 @Component({
   selector: 'app-root',

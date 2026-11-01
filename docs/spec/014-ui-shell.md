@@ -624,14 +624,14 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
 
   Реэкспорт. Тесты — `test/access-ui.test.ts`. Закрывает: REQ-014-3…5, AC-014-2, AC-014-3, AC-014-5, AC-014-6. Готово, когда: тесты зелёные.
 - [x] **T-4.** `packages/ui-core/src/auth-forms.ts`: `authErrorText`, тексты 4.6 константами, `validateConfirmForm`, `validateInviteForm`, `validateEmailForm` на существующем типе `FormIssue`. Порты `UsersApi` и `OrganizationsApi` (4.3) — в `src/index.ts`. Тесты — `test/auth-forms.test.ts`. Закрывает: AC-014-4, AC-014-7. Готово, когда: тесты зелёные.
-- [ ] **T-5.** Каркас пакета `packages/ui-angular`:
+- [x] **T-5.** Каркас пакета `packages/ui-angular`:
   - `package.json` с зависимостями 4.7, `tsconfig.json` по образцу кабинета, ссылка в корневом `tsconfig.json`;
   - README по правилу 7;
   - `src/index.ts` пока пустой;
   - строка в `docs/architecture.md`, раздел «Пакеты»: фронтендовый оболочечный пакет, не ядро.
 
   Закрывает: часть 4.7. Готово, когда: `npm install`, `npm run typecheck` и `npm run arch:check` зелёные.
-- [ ] **T-6.** Перенос в `packages/ui-angular/src`:
+- [x] **T-6.** Перенос в `packages/ui-angular/src`:
   - `session.ts`, где `CurrentUser.me` становится публичным;
   - `http.ts` с `HttpError` и `basePath`;
   - `auth-api.ts` с методами 4.1 на `HttpError`;
