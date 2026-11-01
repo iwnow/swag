@@ -4,6 +4,7 @@ import {
   inject,
   InjectionToken,
   signal,
+  untracked,
   type Provider,
   type Signal,
 } from '@angular/core';
@@ -35,9 +36,11 @@ export type Connected<S> = {
 
 export function toAngularSignal<T>(source: ReadonlySignal<T>, destroyRef: DestroyRef): Signal<T> {
   const bridged = signal(source.peek());
-  const stop = effect(() => {
-    bridged.set(source.value);
-  });
+  const stop = untracked(() =>
+    effect(() => {
+      bridged.set(source.value);
+    }),
+  );
   destroyRef.onDestroy(stop);
   return bridged.asReadonly();
 }

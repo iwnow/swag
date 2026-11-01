@@ -1,4 +1,5 @@
 import {
+  computed,
   createEnvironmentInjector,
   Injector,
   runInInjectionContext,
@@ -108,6 +109,20 @@ describe('connectStore', () => {
     const connected = runInInjectionContext(injector, () => connectStore(store));
 
     expect(connected.items).toBe(store.items);
+  });
+
+  it('AC-014-26: первое чтение поля внутри Angular computed — без NG0600, значение верное и после смены', () => {
+    const store = makeStore();
+    const injector = makeInjector();
+    const connected = runInInjectionContext(injector, () => connectStore(store));
+    const c = computed(() => connected.count() + 1);
+
+    expect(() => c()).not.toThrow();
+    expect(c()).toBe(2);
+
+    store.count.value = 5;
+
+    expect(c()).toBe(6);
   });
 
   it('AC-014-26: сигнал со значением до моста читается сразу', () => {

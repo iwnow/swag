@@ -32,7 +32,15 @@
         "serve": {
           "builder": "@angular/build:dev-server",
           "options": {
-            "proxyConfig": "proxy.conf.json"
+            "proxyConfig": "proxy.conf.json",
+            "prebundle": {
+              "exclude": [
+                "@swag/api-integration",
+                "@swag/contracts",
+                "@swag/ui-angular",
+                "@swag/ui-core"
+              ]
+            }
           },
           "configurations": {
             "development": {
