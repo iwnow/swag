@@ -18,6 +18,8 @@ export * from './access-ui.ts';
 export * from './auth-forms.ts';
 export * from './ports.ts';
 export * from './session-user.store.ts';
+export * from './balance.state.ts';
+export * from './shell.store.ts';
 
 // Спека 001, 4.8. Логика UI: валидация формы, состояние роя из событий, переподключение потока.
 // Angular-компоненты только рисуют и передают действия сюда.
