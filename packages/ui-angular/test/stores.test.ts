@@ -16,7 +16,9 @@ import {
   connectStore,
   provideAdminStore,
   provideCabinetStore,
+  provideSupervisorStore,
   SESSION_USER,
+  SUPERVISOR_STORE,
 } from '../src/stores.ts';
 import { preferences } from '../src/preferences.ts';
 
@@ -225,5 +227,24 @@ describe('provideAdminStore', () => {
     expect(admin.rows()).toEqual([]);
     expect(admin.loaded()).toBe(false);
     expect(typeof admin.load).toBe('function');
+  });
+});
+
+describe('provideSupervisorStore', () => {
+  it('AC-014-26: SUPERVISOR_STORE собирается из SESSION_USER, поля и методы читаются мостом', () => {
+    const injector = createEnvironmentInjector(
+      [
+        { provide: SESSION_USER, useValue: { me: signal(null), role: signal(null) } },
+        ...provideSupervisorStore(),
+      ],
+      Injector.create({ providers: [] }) as EnvironmentInjector,
+    );
+    const supervisor = runInInjectionContext(injector, () => inject(SUPERVISOR_STORE));
+
+    expect(supervisor.organizations()).toEqual([]);
+    expect(supervisor.notFound()).toBe(false);
+    expect(supervisor.balance.canTopup()).toBe(false);
+    expect(typeof supervisor.loadOrganizations).toBe('function');
+    expect(typeof supervisor.topup).toBe('function');
   });
 });

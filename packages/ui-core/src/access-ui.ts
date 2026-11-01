@@ -63,6 +63,16 @@ export function userActions(me: AuthMe, target: ManagedUser): UserAction[] {
   return actions;
 }
 
+export interface UserRow {
+  user: ManagedUser;
+  actions: UserAction[];
+}
+
+// Строки таблиц админки и супервизора: действия считаются от текущего `AuthMe` (null — без действий).
+export function userRows(me: AuthMe | null, users: ManagedUser[]): UserRow[] {
+  return users.map((user) => ({ user, actions: me ? userActions(me, user) : [] }));
+}
+
 export function userActionBody(action: UserAction): UserUpdate {
   switch (action) {
     case 'make_admin':

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isLocalRemoteUrl } from '@swag/ui-core';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -9,6 +10,13 @@ const listFiles = (dir: string, pattern: RegExp): string[] =>
     .map(String)
     .filter((name) => pattern.test(name))
     .map((name) => join(dir, name));
+
+// Каталоги `src` всех фронтендов `apps/ui/*` (кабинет, админка, супервизор, каркас).
+const uiApps = fileURLToPath(new URL('../apps/ui', import.meta.url));
+const uiSrcDirs = readdirSync(uiApps, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => join(uiApps, entry.name, 'src'))
+  .filter((dir) => existsSync(dir));
 
 const css = readFileSync(
   new URL('../packages/ui-angular/styles/tokens.css', import.meta.url),
@@ -134,18 +142,17 @@ describe('цветовые литералы (спека 014, REQ-014-16)', () =>
     new URL('../packages/ui-angular/styles/tokens.css', import.meta.url),
   );
   const sourceDirs = [
-    '../apps/ui/cabinet/src',
-    '../apps/ui/admin/src',
-    '../packages/ui-angular/src',
-    '../packages/ui-angular/styles',
-  ].map((dir) => fileURLToPath(new URL(dir, import.meta.url)));
+    ...uiSrcDirs,
+    fileURLToPath(new URL('../packages/ui-angular/src', import.meta.url)),
+    fileURLToPath(new URL('../packages/ui-angular/styles', import.meta.url)),
+  ];
 
   const sourceFiles = (dir: string): string[] =>
     listFiles(dir, /\.(ts|html|css)$/)
       .filter((file) => !/\.(test|spec)\.ts$/.test(file))
       .filter((file) => file !== tokensFile);
 
-  it('AC-014-10: в кабинете и пакете нет цветовых литералов вне tokens.css', () => {
+  it('AC-014-10: во всех apps/ui/*/src и packages/ui-angular/src нет цветовых литералов вне tokens.css', () => {
     const files = sourceDirs.flatMap(sourceFiles);
     expect(files.length).toBeGreaterThan(0);
     const found = files.flatMap((file) =>
@@ -220,12 +227,6 @@ const frontendViolations = (file: string, text: string): string[] => {
 };
 
 describe('границы фронтендов (спека 014, REQ-014-23, AC-014-26)', () => {
-  const uiApps = fileURLToPath(new URL('../apps/ui', import.meta.url));
-  const uiSrcDirs = readdirSync(uiApps, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => join(uiApps, entry.name, 'src'))
-    .filter((dir) => existsSync(dir));
-
   it('AC-014-26: в apps/ui/*/src нет импортов createRequest, create*Api, authApi, create*Store, @preact/signals-core и вызовов fetch(', () => {
     expect(uiSrcDirs.length).toBeGreaterThan(0);
     const found = uiSrcDirs
@@ -261,5 +262,64 @@ describe('границы фронтендов (спека 014, REQ-014-23, AC-01
       'ui.connectStore(CABINET_STORE);',
     ].join('\n');
     expect(frontendViolations('ok.ts', sample)).toEqual([]);
+  });
+});
+
+// Спека 014, REQ-014-2, AC-014-8: манифест перечисляет remote, каркас не импортирует их исходники.
+const importSpecifiers = (file: string, text: string): string[] => {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+  const found: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
+      found.push(node.moduleSpecifier.text);
+    } else if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      node.arguments[0] &&
+      ts.isStringLiteral(node.arguments[0])
+    ) {
+      found.push(node.arguments[0].text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+};
+
+describe('манифест и границы remote (спека 014, REQ-014-2, AC-014-8)', () => {
+  const manifest: Record<string, string> = JSON.parse(
+    readFileSync(
+      new URL('../apps/ui/shell/public/federation.manifest.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  const shellSrc = fileURLToPath(new URL('../apps/ui/shell/src', import.meta.url));
+  const remoteSources = [
+    'apps/ui/cabinet',
+    'apps/ui/admin',
+    'apps/ui/supervisor',
+    '@swag/cabinet',
+    '@swag/admin',
+    '@swag/supervisor',
+  ];
+
+  it('AC-014-8: манифест — ровно cabinet, admin, supervisor, у каждого адреса isLocalRemoteUrl', () => {
+    expect(Object.keys(manifest).sort()).toEqual(['admin', 'cabinet', 'supervisor']);
+    for (const url of Object.values(manifest)) expect(isLocalRemoteUrl(url)).toBe(true);
+  });
+
+  it('AC-014-8: исходники каркаса не импортируют микрофронтенды', () => {
+    const files = listFiles(shellSrc, /\.ts$/);
+    expect(files.length).toBeGreaterThan(0);
+    const found = files.flatMap((file) =>
+      importSpecifiers(file, readFileSync(file, 'utf8'))
+        .filter((spec) => remoteSources.some((source) => spec.includes(source)))
+        .map((spec) => `${file}: ${spec}`),
+    );
+    expect(found).toEqual([]);
   });
 });

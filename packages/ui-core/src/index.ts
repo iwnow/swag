@@ -10,3 +10,4 @@ export * from './money.ts';
 export * from './format.ts';
 export * from './cabinet.store.ts';
 export * from './admin.store.ts';
+export * from './supervisor.store.ts';

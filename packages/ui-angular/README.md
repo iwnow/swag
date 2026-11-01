@@ -11,7 +11,7 @@
 - `preferences` — порт `Preferences` на `localStorage` в `try/catch` (014, 4.12).
 - `createSwarmsApi(session)`, `createSwarmStream(session)`, `TRACE_URL_TEMPLATE` — адаптеры роёв для `CabinetStore` и ссылка на трейс; переехали из `apps/ui/cabinet` (014, REQ-014-23).
 - `connectStore(store)`, `toAngularSignal(source, destroyRef)`, тип `Connected<S>` — мост сторов `ui-core` в Angular-сигналы (014, 4.12 «Мост в Angular»).
-- `SESSION_USER`, `SHELL_STORE`, `CABINET_STORE`, `ADMIN_STORE` — токены сторов; `provideShellStore()`, `provideCabinetStore()`, `provideAdminStore()` — провайдеры (014, 4.12).
+- `SESSION_USER`, `SHELL_STORE`, `CABINET_STORE`, `ADMIN_STORE`, `SUPERVISOR_STORE` — токены сторов; `provideShellStore()`, `provideCabinetStore()`, `provideAdminStore()`, `provideSupervisorStore()` — провайдеры (014, 4.12).
 - `createBalanceApi(session)` — баланс организации по `/api` (013, 4.11).
 - `createUsersApi(session)`, `createOrganizationsApi(session)` — порты админки и супервизора (014, 4.3) по `/auth` (024, 4.7).
 - `styles/tokens.css` — дизайн-токены 4.8 для светлой и тёмной темы (REQ-014-16, REQ-014-21).
@@ -20,6 +20,7 @@
 
 - `sessionGuard`, `areaGuard(area)` — guard's маршрутов на `SESSION_USER` (014, 4.4, 4.12).
 - `swag-balance-panel` — панель баланса без своего состояния: вход `state`, выходы `more` и `topup` (013, 4.11; 014, 4.12).
+- `swag-user-table` — таблица пользователей админки и супервизора (014, T-16): вход `rows` (`UserRow` из `userRows`), `loaded`; выход `action` `{ userId, action }`; подтверждение блокировки внутри.
 
 ## Что внутри сейчас
 
@@ -28,13 +29,13 @@
 - `src/balance-api.ts` — `createBalanceApi`, тип `BalanceApi`.
 - `src/swarms-api.ts` — `createSwarmsApi(session)` (REST, basePath `/api`), `createSwarmStream(session)` (WebSocket, подпротокол `swag.bearer.<token>`, `4401` → `renew`). Принимают `RequestSession`.
 - `src/preferences.ts` — `preferences` (`Preferences`).
-- `src/stores.ts` — мост: `toAngularSignal`, `connectStore`, тип `Connected<S>`; токены `SESSION_USER` (фабрика — `createSessionUserStore` на `authApi` и `meApi`), `SHELL_STORE`, `CABINET_STORE`, `ADMIN_STORE`; `provideShellStore()`, `provideCabinetStore()`, `provideAdminStore()` (`UsersApi` из `users-api.ts` на `SESSION_USER`); `TRACE_URL_TEMPLATE`.
+- `src/stores.ts` — мост: `toAngularSignal`, `connectStore`, тип `Connected<S>`; токены `SESSION_USER` (фабрика — `createSessionUserStore` на `authApi` и `meApi`), `SHELL_STORE`, `CABINET_STORE`, `ADMIN_STORE`, `SUPERVISOR_STORE`; `provideShellStore()`, `provideCabinetStore()`, `provideAdminStore()`, `provideSupervisorStore()` (`UsersApi`, `OrganizationsApi` из `users-api.ts` и `BalanceApi` на `SESSION_USER`); `TRACE_URL_TEMPLATE`.
 - `test/guards.test.ts` — `redirectOnSignOut` (открытые страницы не уводят на `/login`, закрытые уводят; заглушка роутера разбирает адрес настоящим `DefaultUrlSerializer`).
-- `test/stores.test.ts` — AC-014-26 (мост на Angular injection context из `@angular/core`, без TestBed; `dispose` стора при уничтожении инжектора маршрута; `ADMIN_STORE` собирается из `SESSION_USER`) и тест `preferences`.
+- `test/stores.test.ts` — AC-014-26 (мост на Angular injection context из `@angular/core`, без TestBed; `dispose` стора при уничтожении инжектора маршрута; `ADMIN_STORE` и `SUPERVISOR_STORE` собираются из `SESSION_USER`) и тест `preferences`.
 - `src/users-api.ts` — `createUsersApi`, `createOrganizationsApi`.
 - `styles/tokens.css` — токены: светлая тема в `:root`, тёмная в `:root[data-theme='dark']` и в `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) }`. Проверяет `scripts/ui-config.test.ts` (AC-014-10, контраст).
 - `styles/base.css` — глобальные стили; цвета, шрифты, отступы и радиусы только `var(--swag-…)`.
-- `src/components/button.ts` — директива `button[swag-button]` (`variant`, `disabled`, `busy`), `ButtonVariant`; `field.ts` — `swag-field` (`label`, `error`); `card.ts` — `swag-card` (`title`); `alert.ts` — `swag-alert` (`kind`), `AlertKind`; `table.ts` — `swag-table` (`empty`); `page.ts` — `swag-page` (`title`); `confirm.ts` — `swag-confirm` (`text`; выходы `confirmed`, `cancelled`) на `@angular/cdk/dialog`.
+- `src/components/button.ts` — директива `button[swag-button]` (`variant`, `disabled`, `busy`), `ButtonVariant`; `field.ts` — `swag-field` (`label`, `error`); `card.ts` — `swag-card` (`title`); `alert.ts` — `swag-alert` (`kind`), `AlertKind`; `table.ts` — `swag-table` (`empty`); `page.ts` — `swag-page` (`title`); `confirm.ts` — `swag-confirm` (`text`; выходы `confirmed`, `cancelled`) на `@angular/cdk/dialog`; `user-table.ts` — `swag-user-table` (`rows`, `loaded`; выход `action`), общая таблица пользователей.
 - `src/guards.ts` — `sessionGuard` (`CanMatchFn` для родителя маршрутов: `SESSION_USER.restore()`, без токена — `UrlTree` на `/login?returnTo=`), `areaGuard(area)` (`ensureMe()`, затем `canOpen`; нет доступа — `UrlTree` на `/`), `redirectOnSignOut()` (вызов в injection context: переход с любым статусом `signed-out` на `/login`, если первая навигация уже завершилась и путь текущего адреса не в `OPEN_PATHS` — `/login`, `/signup`, `/signup/confirm`, `/invite`; путь текущего адреса берётся структурным разбором `router.parseUrl` — сегменты первичного outlet через `/`, без query и fragment; `/invitex` — закрытая страница; до первой навигации и при статусе `signed-in` перехода нет). Открытые страницы каркаса без сессии, поэтому выход на них (в том числе «Выйти и продолжить» на `/signup/confirm` и `/invite`, REQ-014-9) не уводит на `/login`. Тест — `test/guards.test.ts`; `effect` Angular в нём заменён моком, колбэк вызывается вручную (без DOM эффект не запускается).
 - `src/balance-panel.ts` — `BalancePanelComponent` (`swag-balance-panel`): вход `state` (`Connected<BalanceState>`), выходы `more` и `topup` (`{ amountUsd, comment }`); состояния нет, проверки и запросы — в сторе.
 - `src/manifest.ts` — `readFederationManifest()`: `fetch` манифеста федерации (014, 4.4). Приложения `apps/ui/*` `fetch` не вызывают (AC-014-26).
@@ -47,10 +48,9 @@
 
 - `createRequest` не зависит от Angular: принимает `RequestSession` (`accessToken`, `renew`), тесты идут в Node без TestBed.
 - Мост (014, 4.12): кэш по ключу поля — `effect` создаётся при первом чтении, повторное чтение отдаёт тот же объект (`Map`). Записи в `connectStore` — `TypeError` (`set`, `defineProperty`, `deleteProperty`): менять состояние можно только методами стора. Примитивы читаются из стора каждый раз, не кэшируются.
-- `connectStore` берёт `DestroyRef` синхронно (`inject(DestroyRef)`), поэтому вызывается в injection context. `dispose()` стора и снятие `effect` вешаются на `DestroyRef` инжектора, где стор предоставлен. Сторы разделов — `provideCabinetStore()`, `provideAdminStore()` и `provideSupervisorStore()` (с T-16) — провайдеры в `providers` корневого маршрута `./routes` remote: стор создаётся при первом заходе в раздел и живёт всю сессию вкладки, потому что каркас инжекторы маршрутов не уничтожает; уничтожаются только компоненты. Актуальность данных — перезагрузка на каждом заходе на экран: страница вызывает загрузку (`loadSwarms`, `openSwarm`, `balance.open`, `load()`) и сбрасывает форму (`resetForm`, `resetInvite`). Решение человека 2026-11-01, одинаково для всех разделов (журнал T-13).
+- `connectStore` берёт `DestroyRef` синхронно (`inject(DestroyRef)`), поэтому вызывается в injection context. `dispose()` стора и снятие `effect` вешаются на `DestroyRef` инжектора, где стор предоставлен. Сторы разделов — `provideCabinetStore()`, `provideAdminStore()` и `provideSupervisorStore()` — провайдеры в `providers` корневого маршрута `./routes` remote: стор создаётся при первом заходе в раздел и живёт всю сессию вкладки, потому что каркас инжекторы маршрутов не уничтожает; уничтожаются только компоненты. Актуальность данных — перезагрузка на каждом заходе на экран: страница вызывает загрузку (`loadSwarms`, `openSwarm`, `balance.open`, `load()`) и сбрасывает форму (`resetForm`, `resetInvite`). Решение человека 2026-11-01, одинаково для всех разделов (журнал T-13).
 - Адаптеры роёв переехали из `apps/ui/cabinet/src/app/api.ts` в пакет без правки логики: приложения не строят адаптеры сами (REQ-014-23). `timers` для `CabinetStore` — `window.setTimeout`/`clearTimeout`, как в `ui.ts` кабинета.
 - `@preact/signals-core` 1.14.5 — точная версия, как в `ui-core` (одна копия на страницу, 4.12).
-- Отклонение: `SUPERVISOR_STORE` и `provideSupervisorStore()` не созданы — стора `SupervisorStore` ещё нет (T-16).
 - Тест моста: `effect` подменяется `vi.fn` через `vi.mock` ради проверки «один `effect` на поле» — без внутренностей preact.
 - Одновременные `401` делят один `renew()` внутри `createRequest` (промис хранится до завершения). Keeper из `ui-core` делит refresh ещё раз — это его собственная гарантия.
 - Неудача `renew()` — ошибка `401` уходит вызывающему; выход из сессии выполняет keeper и вызывает `onSignedOut`. `createRequest` на `onSignedOut` не подписан и сам его не вызывает.
@@ -66,6 +66,7 @@
 - `button[swag-button]` — директива на нативной кнопке, а не элемент `swag-button`: `type` остаётся нативным, submit внутри форм работает без нового входа. `busy` ставит нативный `disabled` и `aria-busy="true"` (D-135). Вид disabled один для всех вариантов: `.swag-button:disabled` в `base.css` с селектором (0,2,0) перебивает варианты.
 - `swag-field` без директивы: после каждого рендера ставит `aria-describedby` (id ошибки) и `aria-invalid` первому проецируемому `input`, `select` или `textarea`. Чужие id в `aria-describedby` сохраняются, снимается только свой. Ошибка выводится с `role="alert"` (D-136).
 - Пустота `swag-table` определяется CSS `:has(tbody tr)` в `base.css`; входа строк нет (D-137).
+- `swag-user-table` выносит разметку пользователей из админки, чтобы супервизор не дублировал её (REQ-014-17, REQ-014-23). Компонент держит только открытое подтверждение блокировки, данные и действия — в сторе (`AdminStore`, `SupervisorStore`).
 - `swag-confirm` открывает диалог в `ngAfterViewInit` и закрывает в `ngOnDestroy`: потребитель показывает компонент через `@if`. Esc и клик по фону — `cancelled`, `confirmed` только по кнопке «Подтвердить». `aria-describedby` диалога указывает на абзац текста, id уникален на экземпляр (D-138).
 - `sessionGuard` вызывает `SESSION_USER.restore()`: один `restore` на стор, повторные вызовы получают тот же промис (014, 4.12). После него без токена уводит на `/login`. `ensureRestored` удалён.
 - `sessionGuard` — `canMatch`, а не `canActivate`: проверка до загрузки remote (014, 4.4).

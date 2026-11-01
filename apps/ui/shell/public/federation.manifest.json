@@ -1,4 +1,5 @@
 {
   "cabinet": "/mf/cabinet/remoteEntry.json",
-  "admin": "/mf/admin/remoteEntry.json"
+  "admin": "/mf/admin/remoteEntry.json",
+  "supervisor": "/mf/supervisor/remoteEntry.json"
 }
