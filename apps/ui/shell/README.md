@@ -17,20 +17,21 @@
 - `src/app/login.page.ts` — `/login?returnTo=`: поля на `swag-field`; форма и вход — `SHELL_STORE.form()` и `SHELL_STORE.login(email, password, returnTo)`; результат не `null` — переход на него; при создании страницы форма сбрасывается (`resetForm()`, форма общая для страниц каркаса). Уже открытая сессия (`SESSION_USER.restore()`) сразу уводит на `returnTo`.
 - `public/federation.manifest.json` — только `cabinet`; записи `admin` и `supervisor` появляются с T-15 и T-16.
 - `federation.config.mjs`, `tsconfig*.json`, `angular.json` — конфиг из журнала T-1 (`spike-shell`, переименован в `shell`), с двумя уточнениями, см. ниже.
-- `proxy.conf.json` — `/api`, `/auth`, `/grafana` и `/mf/<имя>` на контейнеры compose (4.9).
+- `proxy.conf.json` — `/api`, `/auth`, `/grafana` на контейнеры compose и `/mf/cabinet` на `ui-cabinet:4201` (4.9); `/mf/admin` и `/mf/supervisor` добавятся с T-15 и T-16.
 
 ## Как запускать
 
 - `npm run start` в `apps/ui/shell` — `ng serve --configuration container`: host `0.0.0.0`, порт `4200`. Так работает образ `Dockerfile`.
 - `npx ng build` — сборка каркаса с `remoteEntry.json` и манифестом в `dist/shell/browser`.
 
-Remote `cabinet` собирается с T-12, но compose поднимает `ui` без него до T-13: до T-13 раздел `/` в `npm run up` показывает «Раздел недоступен» (ожидаемо, в журнале спеки).
+Compose поднимает `ui` (этот каркас, порт `UI_PORT`) и `ui-cabinet` (remote кабинета, порт не публикуется). `ui` ждёт `ui-cabinet` (`service_healthy`), поэтому после `npm run up` вход и разделы кабинета доступны в браузере через `http://127.0.0.1:4200`.
 
 ## Ключевые решения
 
 - **Native Federation** (Q-1, 014): `shareAll` с `singleton`, `strictVersion`, `requiredVersion: 'auto'`; `@swag/*` — через `sharedMappings` (исходники TS).
 - **`skipList`:** `NG_SKIP_LIST`, `@angular/build|cli|compiler-cli`, `@swag/*` и `@angular/cdk/schematics` (D-141). Без последнего сборка падает: entry point `schematics` тянет `@angular-devkit/core`, которого не бандлит browser-shared.
 - **`@angular/cdk` и `@angular/forms` в `package.json`** каркаса: без них `shareAll` не делит их между каркасом и remote, а `swag-confirm` использует `Dialog` из cdk (D-142).
+- **`prebundle.exclude`** в `serve-original` (как у кабинета, T-25): `@swag/api-integration`, `@swag/contracts`, `@swag/ui-angular`, `@swag/ui-core` не пре-бандлятся, иначе декораторы `@swag/ui-angular` не компилировались и страница была пустой.
 - **`ng serve --host` не работает** с builder'ом `serve` Native Federation (схема его не знает). Host и порт задаются в `serve-original`; `container` — конфигурация для контейнера. Отклонение записано в журнале спеки и в D-143.
 - **`RemoteRegistry` — сервис DI** (`providedIn: 'root'`). `loadChildren` в Angular 22 вызывается в injection context, поэтому `loadRoutes` берёт сервис через `inject` до первого `await`. Манифест читается лениво при первом `loadRoutes`; при ошибке чтения или разбора кэш сбрасывается, следующая навигация пробует снова.
 - **`main.ts` и `bootstrap.ts`** — два файла (D-145).

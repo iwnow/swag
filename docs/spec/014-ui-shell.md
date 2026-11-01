@@ -881,7 +881,7 @@ export interface Preferences {
   - скрипт `start` и `Dockerfile` по 4.9, README.
 
   Закрывает: REQ-014-2, REQ-014-11. Готово, когда: `ng build` кабинета зелёный и в сборке есть `remoteEntry.json`.
-- [ ] **T-13.** *(группа, затем PR группы в `main`)*
+- [x] **T-13.** *(группа, затем PR группы в `main`)*
   - Compose 4.9: `ui` на каркасе, сервис `ui-cabinet`.
   - `infra:check` по 4.10.
   - Корневой README и `apps/ui/README.md`.

@@ -30,7 +30,7 @@
 - `src/index.html` — без `<style>`. Стили `tokens.css` и `base.css` не подключаются: их даёт каркас (`angular.json` кабинета без `styles`).
 - Страницы роёв — `swarm-list.page.ts`, `swarm-new.page.ts`, `swarm.page.ts` (T-25): читают `CABINET_STORE` (сигналы и `form()`) и вызывают его команды (`loadSwarms`, `createSwarm`, `resetForm`, `openSwarm`, `closeSwarm`, `stopSwarm`, `traceUrl`). `swarm-list.page.ts` вызывает `loadSwarms` при каждом заходе: до ответа список пуст. `swarm-new.page.ts` вызывает `resetForm()` при создании страницы: поля пустые, ошибки прошлого захода не показываются. Ввод формы — локальные сигналы страницы; навигация на страницу роя — по `id`, который вернул `createSwarm`. Таймеров, подписок, проверок формы и текстов ошибок на страницах нет.
 - `proxy.conf.json` — `/api` → `api:3000` (снимает префикс; WebSocket включён); `/auth` → `identity:3003` без снятия префикса; `/grafana` → `lgtm:3000` без снятия префикса (Grafana на подпути). `/internal` не проксируется.
-- `Dockerfile` — dev-образ remote (`npm run start`, порт 4201). Сервис `ui-cabinet` и healthcheck `remoteEntry.json` — в compose (T-13).
+- `Dockerfile` — dev-образ remote (`npm run start`, порт 4201). Сервис `ui-cabinet` в compose собирается из него (спека 014, 4.9): порт наружу не публикуется, healthcheck — `remoteEntry.json` на `127.0.0.1:4201`.
 
 ## Ограничения
 

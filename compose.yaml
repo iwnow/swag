@@ -181,20 +181,36 @@ services:
       timeout: 3s
       retries: 30
 
-  # Личный кабинет: `ng serve` с прокси /api → api (Q-4). Только для разработки.
+  # Спека 014, 4.9: каркас фронтенда — `ng serve` с прокси /api, /auth, /grafana и /mf/* (Q-4). Только для разработки.
   ui:
     build:
       context: .
-      dockerfile: apps/ui/cabinet/Dockerfile
+      dockerfile: apps/ui/shell/Dockerfile
     ports:
       - 127.0.0.1:${UI_PORT}:4200
     depends_on:
       api:
         condition: service_healthy
+      identity:
+        condition: service_healthy
+      ui-cabinet:
+        condition: service_healthy
       otel-collector:
         condition: service_started
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:4200/" > /dev/null']
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  # Спека 014, 4.9: микрофронтенд кабинета (Native Federation remote). Порт не публикуется: к нему ходит только каркас через прокси /mf/cabinet.
+  ui-cabinet:
+    build:
+      context: .
+      dockerfile: apps/ui/cabinet/Dockerfile
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:4201/mf/cabinet/remoteEntry.json" > /dev/null']
       interval: 2s
       timeout: 3s
       retries: 60
