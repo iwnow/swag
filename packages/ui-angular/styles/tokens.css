@@ -1,0 +1,72 @@
+:root {
+  --swag-color-bg: #f3f5f7;
+  --swag-color-surface: #ffffff;
+  --swag-color-surface-2: #e8ecf0;
+  --swag-color-text: #172029;
+  --swag-color-text-muted: #4b5a68;
+  --swag-color-border: #c3ccd5;
+  --swag-color-focus: #0a68d6;
+  --swag-color-primary: #0f5f8c;
+  --swag-color-primary-text: #ffffff;
+  --swag-color-danger: #b42318;
+  --swag-color-danger-text: #ffffff;
+  --swag-color-success: #1a7a46;
+  --swag-color-warning: #a35a00;
+
+  --swag-font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --swag-font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --swag-text-sm: 0.8125rem;
+  --swag-text-md: 0.9375rem;
+  --swag-text-lg: 1.125rem;
+  --swag-text-xl: 1.5rem;
+
+  --swag-space-1: 0.25rem;
+  --swag-space-2: 0.5rem;
+  --swag-space-3: 0.75rem;
+  --swag-space-4: 1rem;
+  --swag-space-5: 1.5rem;
+  --swag-space-6: 2.25rem;
+
+  --swag-radius-sm: 3px;
+  --swag-radius-md: 6px;
+
+  --swag-shadow-1: 0 1px 2px #1720291f, 0 2px 6px #17202914;
+}
+
+:root[data-theme='dark'] {
+  --swag-color-bg: #0d1318;
+  --swag-color-surface: #151d24;
+  --swag-color-surface-2: #1e2932;
+  --swag-color-text: #e5ecf1;
+  --swag-color-text-muted: #9bacb9;
+  --swag-color-border: #2f3d49;
+  --swag-color-focus: #6cb6ff;
+  --swag-color-primary: #5bb8e8;
+  --swag-color-primary-text: #05202e;
+  --swag-color-danger: #ff8f84;
+  --swag-color-danger-text: #2d0703;
+  --swag-color-success: #5fcf8e;
+  --swag-color-warning: #f0b34a;
+  --swag-shadow-1: 0 1px 2px #00000066, 0 2px 8px #00000052;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --swag-color-bg: #0d1318;
+    --swag-color-surface: #151d24;
+    --swag-color-surface-2: #1e2932;
+    --swag-color-text: #e5ecf1;
+    --swag-color-text-muted: #9bacb9;
+    --swag-color-border: #2f3d49;
+    --swag-color-focus: #6cb6ff;
+    --swag-color-primary: #5bb8e8;
+    --swag-color-primary-text: #05202e;
+    --swag-color-danger: #ff8f84;
+    --swag-color-danger-text: #2d0703;
+    --swag-color-success: #5fcf8e;
+    --swag-color-warning: #f0b34a;
+    --swag-shadow-1: 0 1px 2px #00000066, 0 2px 8px #00000052;
+  }
+}

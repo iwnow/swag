@@ -646,7 +646,7 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
   Кабинет импортирует перенесённое из пакета, его `api.ts` использует `createRequest(session, '/api')`. Файлы кабинета:
   - сокращаются или удаляются `api.ts`, `session.ts`, `auth-api.ts`;
   - правятся импорты в `swarm-new.page.ts`, `balance.page.ts`, `ui.ts`, `app.config.ts`. Поведение кабинета не меняется. Закрывает: REQ-014-14, REQ-014-15 (код), AC-014-19. Готово, когда: `npm run check` зелёный, в `npm run up` кабинет входит и показывает рои.
-- [ ] **T-7.** *(Sonnet, скилл из Q-3)*
+- [x] **T-7.** *(Sonnet, скилл из Q-3)*
   - Поставить скиллы `frontend-design` и Impeccable в `.claude/skills/`, в README пакета записать коммит источника и лицензию.
   - Скиллом `frontend-design` выбрать значения токенов 4.8 для обеих тем, записать `packages/ui-angular/styles/tokens.css` и обоснование в README.
   - Добавить тест контраста — `scripts/ui-config.test.ts`, первая часть AC-014-10.
@@ -798,6 +798,7 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
 |---|---|---|---|
 | 2026-11-01 | `spec/014-t1` / ab82477 (не сливается) | T-1: проверка федерации на Angular 22.2.3 и `@angular-architects/native-federation` 22.2.4, итоги — ниже. T-1 выполнил Sonnet, а не Haiku: задача проверки технологии (раздел 8, «Исполнитель») | Уточнения 4.5 и 4.9 без смены контракта: файл `federation.config.mjs` вместо `.js` (пакеты `"type": "module"`); `shareAll(cfg, { skipList })` с исключением `@swag/*` и сборочных пакетов; `features.ignoreUnusedDeps: false`; `baseHref` remote в `serve`; `public/` каркаса в `assets`; явный `@angular/compiler-cli` 22.2.3 |
 | 2026-11-01 | `spec/014-t5` / f40122f | T-5: пакет `@swag/ui-angular`. T-6: в пакет перенесены `session.ts`, `http.ts`, `auth-api.ts`, `balance-api.ts`, добавлен `users-api.ts`; кабинет переведён на пакет | Явный `@angular/forms` 22.2.3 в зависимостях `ui-angular`, которого нет в списке 4.7: без него `npm install` падает с ERESOLVE (peer `@angular/cdk` тянет forms 22.2.4). Тело ошибки не JSON даёт `HttpError(status, 'unknown')` вместо прежнего `SyntaxError` в кабинете (по 4.7 и AC-014-19). «Неудача — `onSignedOut`» из 4.7 трактуется так: `createRequest` отдаёт вызывающему 401, `onSignedOut` вызывает сам `AuthSessionKeeper` при неудачном `renew` (как в кабинете до переноса); поэтому `RequestSession` — только `accessToken` и `renew`. Строка T-1 перенесена сюда из таблицы 4.3, куда попала по ошибке |
+| 2026-11-01 | `spec/014-t7` / этот коммит | T-7: скилл `frontend-design` (anthropics/skills, ca45fc4) в `.claude/skills/frontend-design`; `packages/ui-angular/styles/tokens.css` — токены 4.8 для обеих тем, обоснование в README пакета; `scripts/ui-config.test.ts` — первая часть AC-014-10 (контраст, #rrggbb, полнота токенов). В глоссарий добавлена строка «Дизайн-токены» | T-7 выполнил Sonnet, а не Haiku (Q-3). Скилл Impeccable не установлен: его `SKILL.md` и `audit` запускают лаунчер, который скачивает бинарник (D-132). Селекторы тёмной темы в `tokens.css` с одинарными кавычками (`[data-theme='dark']`): так требует prettier, для CSS это то же самое. Шрифты — системные стеки. Тёмная тема продублирована в двух селекторах (CSS не позволяет переиспользовать блок), тест сверяет, что значения совпадают |
 
 ### T-1. Итоги проверки федерации
 
