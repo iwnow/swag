@@ -1,15 +1,6 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { Router, RouterLink, RouterOutlet } from '@angular/router';
 import {
-  NavigationError,
-  NavigationStart,
-  Router,
-  RouterLink,
-  RouterOutlet,
-} from '@angular/router';
-import { filter } from 'rxjs';
-import {
-  AlertComponent,
   ButtonDirective,
   CurrentUser,
   SESSION,
@@ -28,7 +19,7 @@ const THEME_LABEL: Record<ThemeMode, string> = {
 // Спека 014, REQ-014-10: шапка каркаса — пункты по navigationFor, пользователь, тема, выход.
 @Component({
   selector: 'app-layout',
-  imports: [RouterLink, RouterOutlet, AlertComponent, ButtonDirective],
+  imports: [RouterLink, RouterOutlet, ButtonDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <header class="shell-header">
@@ -54,9 +45,6 @@ const THEME_LABEL: Record<ThemeMode, string> = {
       </div>
     </header>
     <main>
-      @if (unavailable()) {
-        <swag-alert kind="error">Раздел недоступен</swag-alert>
-      }
       <router-outlet />
     </main>
   `,
@@ -105,18 +93,6 @@ export class LayoutComponent {
     if (me === null) return null;
     return me.organization === null ? me.user.email : `${me.user.email} · ${me.organization.name}`;
   });
-  // Раздел, который не загрузился (remote не подключён или недоступен), — текст вместо страницы.
-  protected readonly unavailable = signal(false);
-
-  constructor() {
-    this.router.events
-      .pipe(
-        filter((event) => event instanceof NavigationStart || event instanceof NavigationError),
-        takeUntilDestroyed(),
-      )
-      .subscribe((event) => this.unavailable.set(event instanceof NavigationError));
-  }
-
   protected setTheme(event: Event): void {
     const value = (event.target as HTMLSelectElement).value;
     const mode = THEME_MODES.find((candidate) => candidate === value);
