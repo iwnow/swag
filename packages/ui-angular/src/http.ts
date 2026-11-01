@@ -25,7 +25,7 @@ export async function httpError(response: Response): Promise<HttpError> {
   );
 }
 
-export type RequestSession = Pick<AuthSessionKeeper, 'accessToken' | 'renew' | 'onSignedOut'>;
+export type RequestSession = Pick<AuthSessionKeeper, 'accessToken' | 'renew'>;
 
 // Спека 024, 4.15 и 014, 4.7: Bearer-токен сессии; на 401 — один renew и повтор. Одновременные 401 делят один renew.
 // Неудача renew — keeper сам выводит пользователя (onSignedOut), здесь ошибка 401 уходит вызывающему.

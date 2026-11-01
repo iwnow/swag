@@ -26,7 +26,7 @@ Guard'ы, компоненты, тема и стили — в задачах T-7
 
 ## Ключевые решения
 
-- `createRequest` не зависит от Angular: принимает `RequestSession` (`accessToken`, `renew`, `onSignedOut`), тесты идут в Node без TestBed.
+- `createRequest` не зависит от Angular: принимает `RequestSession` (`accessToken`, `renew`), тесты идут в Node без TestBed.
 - Одновременные `401` делят один `renew()` внутри `createRequest` (промис хранится до завершения). Keeper из `ui-core` делит refresh ещё раз — это его собственная гарантия.
 - Неудача `renew()` — ошибка `401` уходит вызывающему; выход из сессии выполняет keeper и вызывает `onSignedOut`. `createRequest` на `onSignedOut` не подписан и сам его не вызывает.
 - `authApi` не использует `createRequest`: у входа и обновления нет Bearer, а `refresh` сам вызывается keeper'ом (иначе цикл).

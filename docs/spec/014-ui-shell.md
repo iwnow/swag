@@ -173,7 +173,6 @@ export function isLocalRemoteUrl(url: string): boolean;
 
 | `area` | `label` | `path` | `canOpen` — `true`, когда |
 |---|---|---|---|
-| 2026-11-01 | `spec/014-t1` / ab82477 (не сливается) | T-1: проверка федерации на Angular 22.2.3 и `@angular-architects/native-federation` 22.2.4, итоги — ниже. T-1 выполнил Sonnet, а не Haiku: задача проверки технологии (раздел 8, «Исполнитель») | Уточнения 4.5 и 4.9 без смены контракта: файл `federation.config.mjs` вместо `.js` (пакеты `"type": "module"`); `shareAll(cfg, { skipList })` с исключением `@swag/*` и сборочных пакетов; `features.ignoreUnusedDeps: false`; `baseHref` remote в `serve`; `public/` каркаса в `assets`; явный `@angular/compiler-cli` 22.2.3 |
 | `swarms` | Рои | `/` | есть `swarm.read` |
 | `balance` | Баланс | `/balance` | есть `balance.read` и `me.organization !== null` |
 | `admin` | Админка | `/admin/users` | есть `user.manage` и `me.user.role = 'admin'` |
@@ -797,6 +796,8 @@ IDENTITY_INVITE_URL=http://127.0.0.1:4200/invite
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+| 2026-11-01 | `spec/014-t1` / ab82477 (не сливается) | T-1: проверка федерации на Angular 22.2.3 и `@angular-architects/native-federation` 22.2.4, итоги — ниже. T-1 выполнил Sonnet, а не Haiku: задача проверки технологии (раздел 8, «Исполнитель») | Уточнения 4.5 и 4.9 без смены контракта: файл `federation.config.mjs` вместо `.js` (пакеты `"type": "module"`); `shareAll(cfg, { skipList })` с исключением `@swag/*` и сборочных пакетов; `features.ignoreUnusedDeps: false`; `baseHref` remote в `serve`; `public/` каркаса в `assets`; явный `@angular/compiler-cli` 22.2.3 |
+| 2026-11-01 | `spec/014-t5` / f40122f | T-5: пакет `@swag/ui-angular`. T-6: в пакет перенесены `session.ts`, `http.ts`, `auth-api.ts`, `balance-api.ts`, добавлен `users-api.ts`; кабинет переведён на пакет | Явный `@angular/forms` 22.2.3 в зависимостях `ui-angular`, которого нет в списке 4.7: без него `npm install` падает с ERESOLVE (peer `@angular/cdk` тянет forms 22.2.4). Тело ошибки не JSON даёт `HttpError(status, 'unknown')` вместо прежнего `SyntaxError` в кабинете (по 4.7 и AC-014-19). «Неудача — `onSignedOut`» из 4.7 трактуется так: `createRequest` отдаёт вызывающему 401, `onSignedOut` вызывает сам `AuthSessionKeeper` при неудачном `renew` (как в кабинете до переноса); поэтому `RequestSession` — только `accessToken` и `renew`. Строка T-1 перенесена сюда из таблицы 4.3, куда попала по ошибке |
 
 ### T-1. Итоги проверки федерации
 

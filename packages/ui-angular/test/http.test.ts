@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createRequest, HttpError, type RequestSession } from '../src/http.ts';
+import { createRequest, HttpError } from '../src/http.ts';
 
 const json = (status: number, body?: unknown): Response =>
   new Response(body === undefined ? null : JSON.stringify(body), {
@@ -20,7 +20,7 @@ function makeSession() {
       }),
   );
   const onSignedOut = vi.fn(() => () => undefined);
-  const session: RequestSession = { accessToken: () => token, renew, onSignedOut };
+  const session = { accessToken: () => token, renew, onSignedOut };
   return { session, renew, onSignedOut };
 }
 
@@ -80,5 +80,56 @@ describe('createRequest', () => {
 
     expect(results).toEqual([{ ok: true }, { ok: true }]);
     expect(renew).toHaveBeenCalledTimes(1);
+  });
+
+  it('AC-014-19: 401, renew → false — reject HttpError 401 без повтора', async () => {
+    const { session, renew } = makeSession();
+    renew.mockResolvedValueOnce(false);
+    const fetchMock = vi.fn(async () => json(401, { error: { code: 'unauthorized' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const error = await createRequest(session, '/api')('GET', '/swarms').catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error).toMatchObject({ status: 401 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(renew).toHaveBeenCalledTimes(1);
+  });
+
+  it('AC-014-19: 500 без тела — HttpError { status: 500, code: unknown }', async () => {
+    const { session } = makeSession();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 500 })),
+    );
+
+    const error = await createRequest(session, '/api')('GET', '/swarms').catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error).toMatchObject({ status: 500, code: 'unknown' });
+  });
+
+  it('AC-014-19: 500 с телом не JSON — HttpError { status: 500, code: unknown }', async () => {
+    const { session } = makeSession();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('oops', { status: 500 })),
+    );
+
+    const error = await createRequest(session, '/api')('GET', '/swarms').catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error).toMatchObject({ status: 500, code: 'unknown' });
+  });
+
+  it('AC-014-19: basePath /auth и путь /me — fetch на /auth/me', async () => {
+    const { session } = makeSession();
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => json(200, { ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await createRequest(session, '/auth')<{ ok: boolean }>('GET', '/me');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/auth/me');
   });
 });
