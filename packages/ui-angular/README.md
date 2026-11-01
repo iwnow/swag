@@ -46,10 +46,10 @@
 
 - `createRequest` не зависит от Angular: принимает `RequestSession` (`accessToken`, `renew`), тесты идут в Node без TestBed.
 - Мост (014, 4.12): кэш по ключу поля — `effect` создаётся при первом чтении, повторное чтение отдаёт тот же объект (`Map`). Записи в `connectStore` — `TypeError` (`set`, `defineProperty`, `deleteProperty`): менять состояние можно только методами стора. Примитивы читаются из стора каждый раз, не кэшируются.
-- `connectStore` берёт `DestroyRef` синхронно (`inject(DestroyRef)`), поэтому вызывается в injection context. `dispose()` стора и снятие `effect` вешаются на тот же `DestroyRef` инжектора провайдера.
+- `connectStore` берёт `DestroyRef` синхронно (`inject(DestroyRef)`), поэтому вызывается в injection context. `dispose()` стора и снятие `effect` вешаются на `DestroyRef` инжектора, где стор предоставлен (например, `provideCabinetStore()` в `providers` маршрута раздела). Этот инжектор уничтожается при уничтожении своего контекста; каркас инжекторы маршрутов при уходе из раздела не уничтожает, поэтому стор раздела живёт до закрытия вкладки (решение человека 2026-11-01, журнал T-13).
 - Адаптеры роёв переехали из `apps/ui/cabinet/src/app/api.ts` в пакет без правки логики: приложения не строят адаптеры сами (REQ-014-23). `timers` для `CabinetStore` — `window.setTimeout`/`clearTimeout`, как в `ui.ts` кабинета.
 - `@preact/signals-core` 1.14.5 — точная версия, как в `ui-core` (одна копия на страницу, 4.12).
-- Отклонение: `ADMIN_STORE` и `SUPERVISOR_STORE` и их провайдеры не созданы — сторов `AdminStore`/`SupervisorStore` ещё нет (T-12/T-13).
+- Отклонение: `ADMIN_STORE` и `SUPERVISOR_STORE` и их провайдеры не созданы — сторов `AdminStore`/`SupervisorStore` ещё нет (T-15/T-16).
 - Тест моста: `effect` подменяется `vi.fn` через `vi.mock` ради проверки «один `effect` на поле» — без внутренностей preact.
 - Одновременные `401` делят один `renew()` внутри `createRequest` (промис хранится до завершения). Keeper из `ui-core` делит refresh ещё раз — это его собственная гарантия.
 - Неудача `renew()` — ошибка `401` уходит вызывающему; выход из сессии выполняет keeper и вызывает `onSignedOut`. `createRequest` на `onSignedOut` не подписан и сам его не вызывает.

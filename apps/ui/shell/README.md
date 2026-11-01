@@ -17,7 +17,7 @@
 - `src/app/login.page.ts` — `/login?returnTo=`: поля на `swag-field`; форма и вход — `SHELL_STORE.form()` и `SHELL_STORE.login(email, password, returnTo)`; результат не `null` — переход на него; при создании страницы форма сбрасывается (`resetForm()`, форма общая для страниц каркаса). Уже открытая сессия (`SESSION_USER.restore()`) сразу уводит на `returnTo`.
 - `public/federation.manifest.json` — только `cabinet`; записи `admin` и `supervisor` появляются с T-15 и T-16.
 - `federation.config.mjs`, `tsconfig*.json`, `angular.json` — конфиг из журнала T-1 (`spike-shell`, переименован в `shell`), с двумя уточнениями, см. ниже.
-- `proxy.conf.json` — `/api`, `/auth`, `/grafana` на контейнеры compose и `/mf/cabinet` на `ui-cabinet:4201` (4.9); `/mf/admin` и `/mf/supervisor` добавятся с T-15 и T-16.
+- `proxy.conf.json` — `/api`, `/auth`, `/grafana` на контейнеры compose, `/mf/cabinet` на `ui-cabinet:4201`, `/mf/admin` на `ui-admin:4202` и `/mf/supervisor` на `ui-supervisor:4203` (4.9): записи прокси уже есть. Сервисов `ui-admin` и `ui-supervisor` в compose пока нет (T-15, T-16) — до них пункты «Админка» и «Организации» показывают «Раздел недоступен».
 
 ## Как запускать
 
