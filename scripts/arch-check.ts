@@ -5,6 +5,16 @@ import ts from 'typescript';
 
 export const CORE_ALLOWED_PACKAGES = ['zod', '@swag/contracts', '@swag/api-integration'];
 
+// Спека 014, REQ-014-25, Q-9: сигналы сторов UI; только главная точка входа, без подпутей.
+export const UI_CORE_EXTRA_PACKAGES = ['@preact/signals-core'];
+
+// Разрешённые точные имена пакета по имени каталога; дополнительные имена — только для ui-core.
+export function allowedPackagesFor(dirName: string): string[] {
+  return dirName === 'ui-core'
+    ? [...CORE_ALLOWED_PACKAGES, ...UI_CORE_EXTRA_PACKAGES]
+    : CORE_ALLOWED_PACKAGES;
+}
+
 // Спека 001, REQ-001-15 и N-3: эти пакеты проверяются правилами ядра, хотя не называются `*-core`.
 export const KERNEL_EXTRA_PACKAGES = ['contracts', 'api-integration'];
 
@@ -17,10 +27,12 @@ interface PackageJson {
   peerDependencies?: Record<string, string>;
 }
 
-function isAllowedSpecifier(specifier: string): boolean {
+function isAllowedSpecifier(specifier: string, allowed: readonly string[]): boolean {
   if (specifier.startsWith('./') || specifier.startsWith('../')) return true;
-  return CORE_ALLOWED_PACKAGES.some(
-    (name) => specifier === name || specifier.startsWith(`${name}/`),
+  return allowed.some(
+    (name) =>
+      specifier === name ||
+      (CORE_ALLOWED_PACKAGES.includes(name) && specifier.startsWith(`${name}/`)),
   );
 }
 
@@ -88,15 +100,15 @@ export function archCheck(root: string): string[] {
       ...Object.keys(pkg.dependencies ?? {}),
       ...Object.keys(pkg.peerDependencies ?? {}),
     ];
+    const allowed = allowedPackagesFor(entry.name);
     for (const dep of deps) {
-      if (!CORE_ALLOWED_PACKAGES.includes(dep))
-        violations.push(`${name}: запрещённая зависимость ${dep}`);
+      if (!allowed.includes(dep)) violations.push(`${name}: запрещённая зависимость ${dep}`);
     }
 
     for (const file of listTsFiles(join(dir, 'src'))) {
       const path = relative(root, file).split('\\').join('/');
       for (const { specifier, line } of collectImports(file)) {
-        if (!isAllowedSpecifier(specifier)) {
+        if (!isAllowedSpecifier(specifier, allowed)) {
           violations.push(`${name}: ${path}:${line} — запрещённый импорт ${specifier}`);
         }
       }

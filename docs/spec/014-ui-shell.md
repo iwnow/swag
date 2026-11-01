@@ -845,7 +845,7 @@ export interface Preferences {
   - `proxy.conf.json` 4.9, `Dockerfile`, README.
 
   Закрывает: REQ-014-1, REQ-014-3, REQ-014-5, REQ-014-10. Готово, когда: `ng build` каркаса и `npm run check` зелёные.
-- [ ] **T-21.** *(Q-9)* Основа сторов в `packages/ui-core`:
+- [x] **T-21.** *(Q-9)* Основа сторов в `packages/ui-core`:
   - `@preact/signals-core` 1.14.5 в `dependencies`;
   - белый список `ui-core` в `scripts/arch-check.ts` и тесты AC-014-26 (часть `arch-check`);
   - исключение в `docs/architecture.md`, правило 2 «Правила ядра»;

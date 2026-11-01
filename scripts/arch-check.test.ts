@@ -120,4 +120,53 @@ describe('arch:check', () => {
     });
     expect(good.code).toBe(0);
   });
+
+  it('AC-014-26: ui-core импортирует @preact/signals-core и зависит от него — нарушений нет', () => {
+    const { code, output } = check({
+      'packages/ui-core/package.json': JSON.stringify({
+        name: '@swag/ui-core',
+        dependencies: { zod: '4.6.7', '@preact/signals-core': '1.14.5' },
+      }),
+      'packages/ui-core/src/index.ts':
+        "import { signal } from '@preact/signals-core';\nexport const count = signal(0);\n",
+    });
+    expect(output).toContain('нарушений нет');
+    expect(code).toBe(0);
+  });
+
+  it('AC-014-26: ui-core импортирует @angular/core или подпуть @preact/signals-core — нарушение', () => {
+    const { code, output } = check({
+      'packages/ui-core/package.json': JSON.stringify({
+        name: '@swag/ui-core',
+        dependencies: { '@preact/signals-core': '1.14.5' },
+      }),
+      'packages/ui-core/src/angular.ts':
+        "import { Injectable } from '@angular/core';\nexport { Injectable };\n",
+      'packages/ui-core/src/sub.ts':
+        "import { signal } from '@preact/signals-core/x';\nexport { signal };\n",
+    });
+    expect(code).toBe(1);
+    expect(output).toContain(
+      '@swag/ui-core: packages/ui-core/src/angular.ts:1 — запрещённый импорт @angular/core',
+    );
+    expect(output).toContain(
+      '@swag/ui-core: packages/ui-core/src/sub.ts:1 — запрещённый импорт @preact/signals-core/x',
+    );
+  });
+
+  it('AC-014-26: другое ядро импортирует @preact/signals-core — нарушение', () => {
+    const { code, output } = check({
+      'packages/foo-core/package.json': JSON.stringify({
+        name: '@swag/foo-core',
+        dependencies: { zod: '4.6.7', '@preact/signals-core': '1.14.5' },
+      }),
+      'packages/foo-core/src/index.ts':
+        "import { signal } from '@preact/signals-core';\nexport { signal };\n",
+    });
+    expect(code).toBe(1);
+    expect(output).toContain('@swag/foo-core: запрещённая зависимость @preact/signals-core');
+    expect(output).toContain(
+      '@swag/foo-core: packages/foo-core/src/index.ts:1 — запрещённый импорт @preact/signals-core',
+    );
+  });
 });
