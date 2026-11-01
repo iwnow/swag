@@ -8,3 +8,4 @@ export * from './balance.state.ts';
 export * from './shell.store.ts';
 export * from './money.ts';
 export * from './cabinet.store.ts';
+export * from './admin.store.ts';

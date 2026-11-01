@@ -32,7 +32,7 @@ export interface AuthSessionKeeper {
 }
 
 // Трактовка: код берётся из `error.code` (строка), иначе `'unknown'`.
-function errorCode(error: unknown): string {
+export function errorCode(error: unknown): string {
   const code = (error as { code?: unknown } | null)?.code;
   return typeof code === 'string' ? code : 'unknown';
 }

@@ -9,9 +9,11 @@ import {
   type Signal,
 } from '@angular/core';
 import {
+  createAdminStore,
   createCabinetStore,
   createSessionUserStore,
   createShellStore,
+  type AdminStore,
   type CabinetStore,
   type SessionUserStore,
   type ShellStore,
@@ -21,6 +23,7 @@ import { authApi, meApi } from './auth-api.ts';
 import { createBalanceApi } from './balance-api.ts';
 import { preferences } from './preferences.ts';
 import { createSwarmsApi, createSwarmStream } from './swarms-api.ts';
+import { createUsersApi } from './users-api.ts';
 
 // Спека 014, 4.12 «Мост в Angular»: сторы ui-core (preact signals) → Angular-сигналы.
 
@@ -115,6 +118,7 @@ export const SESSION_USER = new InjectionToken<SessionUserStore>('session-user-s
 
 export const SHELL_STORE = new InjectionToken<Connected<ShellStore>>('shell-store');
 export const CABINET_STORE = new InjectionToken<Connected<CabinetStore>>('cabinet-store');
+export const ADMIN_STORE = new InjectionToken<Connected<AdminStore>>('admin-store');
 
 export function provideShellStore(): Provider[] {
   return [
@@ -144,6 +148,21 @@ export function provideCabinetStore(): Provider[] {
         destroyRef.onDestroy(() => store.dispose());
         return connectStore(store, destroyRef);
       },
+    },
+  ];
+}
+
+export function provideAdminStore(): Provider[] {
+  return [
+    {
+      provide: ADMIN_STORE,
+      useFactory: () =>
+        connectStore(
+          createAdminStore({
+            session: inject(SESSION_USER),
+            users: createUsersApi(inject(SESSION_USER)),
+          }),
+        ),
     },
   ];
 }

@@ -10,7 +10,14 @@ import {
 import { effect, signal } from '@preact/signals-core';
 import { createCabinetStore } from '@swag/ui-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CABINET_STORE, connectStore, provideCabinetStore, SESSION_USER } from '../src/stores.ts';
+import {
+  ADMIN_STORE,
+  CABINET_STORE,
+  connectStore,
+  provideAdminStore,
+  provideCabinetStore,
+  SESSION_USER,
+} from '../src/stores.ts';
 import { preferences } from '../src/preferences.ts';
 
 vi.mock('@preact/signals-core', async (importOriginal) => {
@@ -204,5 +211,19 @@ describe('provideCabinetStore', () => {
     injector.destroy();
 
     expect(dispose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('provideAdminStore', () => {
+  it('AC-014-26: ADMIN_STORE собирается из SESSION_USER, поля читаются мостом', () => {
+    const injector = createEnvironmentInjector(
+      [{ provide: SESSION_USER, useValue: { me: signal(null) } }, ...provideAdminStore()],
+      Injector.create({ providers: [] }) as EnvironmentInjector,
+    );
+    const admin = runInInjectionContext(injector, () => inject(ADMIN_STORE));
+
+    expect(admin.rows()).toEqual([]);
+    expect(admin.loaded()).toBe(false);
+    expect(typeof admin.load).toBe('function');
   });
 });
