@@ -1,0 +1,16 @@
+{
+  "name": "@swag/node-host",
+  "version": "0.0.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "dependencies": {
+    "@swag/contracts": "0.0.0",
+    "@swag/node-example": "0.0.0",
+    "@swag/node-sdk": "0.0.0",
+    "undici": "8.12.3"
+  },
+  "scripts": {
+    "start": "node src/main.ts"
+  }
+}

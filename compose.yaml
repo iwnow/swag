@@ -406,6 +406,14 @@ services:
       context: .
       dockerfile: apps/agent/Dockerfile
 
+  # Спека 026, 4.8 и 4.11: образ песочницы узла. Не запускается в `npm run up`: контейнеры создаёт оркестратор; собирается `npm run node-host:image`.
+  node-host:
+    profiles: [node-host]
+    image: swag-node-host:dev
+    build:
+      context: .
+      dockerfile: apps/node-host/Dockerfile
+
 volumes:
   postgres-data:
   nats-data:
