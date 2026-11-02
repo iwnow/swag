@@ -16,6 +16,7 @@
 ## Что внутри сейчас
 
 - `createApiCore(deps)` с портами `SwarmStore` (асинхронный), `OrchestratorClient`, `Billing`, `Clock`, `IdGenerator`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`.
+- Порт `SecretStore` (спека 026, 4.6): `list`, `put`, `delete` для секретов организации. Только тип и экспорт: в `ApiCoreDeps` он пока не входит, операции `listSecrets`, `putSecret`, `deleteSecret` — T-8. Реализация — `createPostgresSecretStore` в `adapter-postgres`.
 - Порт `Billing` (013, 4.4): `reserve(orgId, swarmId, amountMicroUsd)` → `'ok' | 'insufficient'` (сбой — исключение), `settle(swarmId, spentMicroUsd)`, `holds()`. Обязательная зависимость `ApiCoreDeps`; реализацию передаёт оболочка.
 - Порт `nodeTypes: NodeRegistry` (021, 4.6) из `@swag/api-integration`: обязательная зависимость `ApiCoreDeps`, реестр собирает оболочка.
 - Операции (все асинхронные): `createSwarm(actor, body)`, `listSwarms(actor)`, `getSwarm(actor, id)`, `getEvents(actor, id, after)`, `stopSwarm(actor, id)`, `subscribe(actor, swarmId, after, listener)`, `stopSwarmsOfUser(userId)`, `ingestEvent`, `ingestMessage`, `closeInterrupted`, `settlePending`; синхронные `info`, `listNodeTypes(actor)` → `{ items }` и `getNodeType(actor, ref)` → манифест.

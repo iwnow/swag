@@ -67,6 +67,17 @@ export interface OrchestratorBus {
   // подписку на swarm.*.events оболочка делает сама и передаёт события в core.handleEvent
 }
 
+// Спека 026, 4.10. Секреты организации для вызова узла: только имена из credentials; значения живут в памяти вызова.
+export interface SecretReader {
+  read(orgId: string, names: readonly string[]): Promise<Record<string, string>>; // отдаёт только найденные имена
+}
+
+// Спека 026, 4.5, 4.10. Состояние узла по (orgId, stateKey, key); value null — удалить ключ.
+export interface NodeStateStore {
+  get(orgId: string, stateKey: string, key: string): Promise<string | null>;
+  set(orgId: string, stateKey: string, key: string, value: string | null, now: Date): Promise<void>;
+}
+
 export interface OrchestratorCoreDeps {
   version: string; // передаёт оболочка: ядро не читает package.json
   sandboxes: SandboxProvider;
