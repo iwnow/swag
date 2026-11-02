@@ -5,7 +5,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ApiCore, Billing, OrchestratorClient } from '@swag/api-core';
 import { buildApp } from '../src/app.ts';
 import { startApiCore } from '../src/start.ts';
-import { body, bearer, makeBilling, makeStartedAuth, silentLog, T } from './support.ts';
+import {
+  body,
+  bearer,
+  emptyNodeTypes,
+  makeBilling,
+  makeStartedAuth,
+  silentLog,
+  T,
+} from './support.ts';
 
 // Баланс один на весь файл, как Postgres между перезапусками: фабрика и маршруты берут один экземпляр.
 const funded = await makeBilling();
@@ -38,6 +46,7 @@ describe.skipIf(!url)('история роёв на Postgres', () => {
         ids: { uuid: () => randomUUID() },
         log: silentLog,
         trace: { currentTraceId: () => null },
+        nodeTypes: emptyNodeTypes(),
         limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
       },
     );

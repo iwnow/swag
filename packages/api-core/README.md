@@ -8,6 +8,7 @@
 - Принять события роя (`swarm.*.events`) и сообщения агентов (`swarm.*.agent.*.inbox`): валидировать, назначить сквозной `seq`, превратить сообщение в `bus.message`. Событие `llm.call` от `llm-gateway` (спека 002) принимается и хранится так же, как остальные события из шины.
 - Отдать события с `seq > after` и подписать на новые (поток WebSocket) без пропусков и повторов.
 - Остановить рой; рой в финальном статусе — `swarm_finished`.
+- Отдать каталог типов узлов (021, 4.6): список последних версий и манифест по `type@version`; право `node.read`.
 - Решить, что видит вызывающий (024): видимость роя по `Actor`, права по `can`, скрытие `providerCostMicroUsd` от не супервизора, остановка роёв пользователя при его блокировке.
 
 `Actor` (`userId`, `orgId`, `role`, `permissions`) собирает оболочка из проверенного токена (`actorFromClaims` из `@swag/contracts`); ядро его не проверяет и не ходит за ролью в хранилище. Исключение — системные пути без `Actor` (`ingestEvent`, `ingestMessage`, `stopSwarmsOfUser`), см. ниже.
@@ -16,10 +17,11 @@
 
 - `createApiCore(deps)` с портами `SwarmStore` (асинхронный), `OrchestratorClient`, `Billing`, `Clock`, `IdGenerator`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`.
 - Порт `Billing` (013, 4.4): `reserve(orgId, swarmId, amountMicroUsd)` → `'ok' | 'insufficient'` (сбой — исключение), `settle(swarmId, spentMicroUsd)`, `holds()`. Обязательная зависимость `ApiCoreDeps`; реализацию передаёт оболочка.
-- Операции (все асинхронные): `createSwarm(actor, body)`, `listSwarms(actor)`, `getSwarm(actor, id)`, `getEvents(actor, id, after)`, `stopSwarm(actor, id)`, `subscribe(actor, swarmId, after, listener)`, `stopSwarmsOfUser(userId)`, `ingestEvent`, `ingestMessage`, `closeInterrupted`, `settlePending`; синхронная `info`.
+- Порт `nodeTypes: NodeRegistry` (021, 4.6) из `@swag/api-integration`: обязательная зависимость `ApiCoreDeps`, реестр собирает оболочка.
+- Операции (все асинхронные): `createSwarm(actor, body)`, `listSwarms(actor)`, `getSwarm(actor, id)`, `getEvents(actor, id, after)`, `stopSwarm(actor, id)`, `subscribe(actor, swarmId, after, listener)`, `stopSwarmsOfUser(userId)`, `ingestEvent`, `ingestMessage`, `closeInterrupted`, `settlePending`; синхронные `info`, `listNodeTypes(actor)` → `{ items }` и `getNodeType(actor, ref)` → манифест.
 - Видимость (024, правило 1) — `visible(actor, view)`: `supervisor` видит всё; `admin` — рои своей организации (`view.orgId === actor.orgId`); `user` — рои, где `view.createdBy === actor.userId`. Рой до 024 (`orgId` и `createdBy` = `null`) виден только супервизору. Поля роя сравниваются с `?? null`, поэтому проекция без полей не даёт случайного совпадения.
 - Невидимый и несуществующий рой — `not_found` с одним текстом (`Рой {id} не найден`); `listSwarms` возвращает только видимые.
-- Права (024, правило 3) проверяются до разбора тела: `createSwarm` — `swarm.create`, `getSwarm`/`getEvents`/`listSwarms`/`subscribe` — `swarm.read`, `stopSwarm` — `swarm.stop`; нет права — `forbidden`. `listSwarms` без права возвращает пустой список (сигнатура без `Result`).
+- Права (024, правило 3) проверяются до разбора тела: `createSwarm` — `swarm.create`, `getSwarm`/`getEvents`/`listSwarms`/`subscribe` — `swarm.read`, `stopSwarm` — `swarm.stop`; нет права — `forbidden`. `listNodeTypes` и `getNodeType` — `node.read` (021, 4.6). `getNodeType`: тип не найден или ссылка не по `NodeTypeRef` — `not_found` с текстом `Тип узла не найден`. `listSwarms` без права возвращает пустой список (сигнатура без `Result`).
 - `createSwarm` пишет в `swarm.created` `orgId` и `createdBy` из `actor`. Порядок после проверок 004/024/031 (013, 4.4): `actor.orgId === null` → `forbidden` (до лимита); место под `MAX_ACTIVE_SWARMS` (`reserving`) с `try/finally`: место освобождается сразу после успешной записи `swarm.created` (D-129), на путях отказа до неё — в том же `finally`; `billing.reserve(orgId, swarmId, budgetMicroUsd)` до записи `swarm.created`, `insufficient` → `insufficient_balance` (`balance is not enough for budget`), событий нет; `swarm.created` не записан → `billing.settle(swarmId, 0)` (сбой — лог `error` `billing_settle_failed`) и прежняя ошибка; сбой `orchestrator.launch` → `orchestrator.stop(swarmId)` (сбой — лог `warn` `launch_stop_failed`), затем `swarm.failed`. Закрытие резерва (`commit`, 013, 4.4): после записи и рассылки итогового события `swarm.completed`, `swarm.stopped` или `swarm.failed` ядро вызывает `billing.settle(swarmId, finalSpent(event, view))`. Сумма — `spentMicroUsd` события, иначе проекция после события (лог `warn` `balance_settled_from_events`). Сбой чтения проекции или `settle` — лог `error` `billing_settle_failed`, запись остаётся. Закрывают все пути: `ingestEvent`, сбой запуска, `closeInterrupted`, остановки.
 - Добор при старте (013, 4.4, REQ-013-8): `settlePending()` проходит по `billing.holds()`. Роя нет в хранилище — `settle(swarmId, 0)`. Рой в итоговом статусе — закрывает первое итоговое событие в `store.events(swarmId, 0)` (D-127: как `commit`, повторное или позднее итоговое событие с другой суммой не учитывается), сумма через `finalSpent`. Рой не в итоговом статусе — резерв не трогается и в результат не входит. Сбой одного резерва — лог `error` `billing_settle_failed`, остальные продолжаются. Возвращает число закрытых резервов. Итоговый статус без итогового события в хранилище — тоже сбой этого резерва (ошибка `итоговое событие роя не найдено`), резерв останется до следующего добора.
 - Скрытие стоимости (024, правило 5): `getEvents` и `subscribe` для не супервизора отдают `llm.call` с `providerCostMicroUsd = null`; в хранилище событие не меняется.
@@ -28,7 +30,7 @@
 - Лимит ответа (031, 4.3): `deps.limits.maxTokens` (из `AGENT_MAX_TOKENS_LIMIT`). `maxTokens` роя или агента больше предела — `validation_error` `max_tokens exceeds AGENT_MAX_TOKENS_LIMIT`; проверка идёт после бюджетов и до лимита активных роёв. `maxTokens` роя пишется в `swarm.created` и в `SwarmLaunch`, у агентов — свой из черновика.
 - `closeInterrupted()` (REQ-003-6): вызывается оболочкой при старте, до подписок NATS (T-7). Для каждого роя в `starting` или `running` вызывает `orchestrator.stop` и записывает `swarm.failed` с `reason: 'api_restarted'` (`source: 'api'`, `agentId` и `traceId` — `null`). Ошибка `stop` пишется `warn` `interrupted stop failed` и не мешает закрытию. Возвращает число закрытых роёв (записи, которые не прошли, не считаются); в конце — `info` `interrupted swarms closed` с `count`. Закрытые рои не держат лимит `MAX_ACTIVE_SWARMS`.
 - Логи по таблице 4.8 спеки 016: `info swarm created`, `error orchestrator unavailable`, `warn event dropped` / `message dropped` с `reason` (`invalid_schema`, `created_from_bus`, `unknown_swarm`, `not_applicable`); `warn interrupted stop failed`, `info interrupted swarms closed`.
-- Тесты: `test/api-core.test.ts` — AC-000-16, AC-001-3…8, AC-001-10, AC-002-26, AC-003-4…6, AC-004-2, AC-013-8, AC-013-9, AC-013-11…14, AC-013-15 (ядро), AC-013-16 (`settlePending`, два теста), D-127 (`settlePending`, первое итоговое событие), D-129 (место под лимит во время launch), AC-013-17, AC-016-4, AC-016-7, AC-031-2, AC-031-3, AC-024-16 (ядро), AC-024-17, AC-024-18 (ядро), AC-024-21 (ядро). Общий фейк `Billing` — `test/fake-billing.ts` (безлимитный, пишет `reserves` и `settles`, задаёт ответ `reserve` и сбой `settle`, список `held` для `holds`).
+- Тесты: `test/api-core.test.ts` — AC-000-16, AC-001-3…8, AC-001-10, AC-002-26, AC-003-4…6, AC-004-2, AC-013-8, AC-013-9, AC-013-11…14, AC-013-15 (ядро), AC-013-16 (`settlePending`, два теста), D-127 (`settlePending`, первое итоговое событие), D-129 (место под лимит во время launch), AC-013-17, AC-016-4, AC-016-7, AC-031-2, AC-031-3, AC-024-16 (ядро), AC-024-17, AC-024-18 (ядро), AC-024-21 (ядро), AC-021-20 (каталог типов узлов в ядре). Общий фейк `Billing` — `test/fake-billing.ts` (безлимитный, пишет `reserves` и `settles`, задаёт ответ `reserve` и сбой `settle`, список `held` для `holds`).
 
 ## Ограничения
 
@@ -46,7 +48,7 @@
 
 - Оболочка: `apps/api`.
 - Адаптеры: `@swag/adapter-memory` (хранилище для тестов ядра), `@swag/adapter-orchestrator-http` (оркестратор). Хранилище на Postgres — `@swag/adapter-postgres` (спека 003, T-6).
-- Использует: `@swag/contracts`, `@swag/api-integration` (проекция роя, `FINAL_SWARM_STATUSES`).
+- Использует: `@swag/contracts`, `@swag/api-integration` (проекция роя, `FINAL_SWARM_STATUSES`, тип `NodeRegistry`).
 
 ## Ключевые решения
 
@@ -62,6 +64,7 @@
 - `traceId` (016, Q-1): ядро берёт его из обязательного порта `TraceContext` для событий, которые строит само (`swarm.created`, `swarm.failed`, `bus.message`), и переносит в конверт как непрозрачную строку. Событие из шины хранится с тем `traceId`, с которым его опубликовали. OpenTelemetry ядро не знает.
 - Итоговый статус роя окончательный (003, REQ-003-7): `stopSwarm` и проверка финальности используют `FINAL_SWARM_STATUSES` из `api-integration`.
 - В логах только id, числа и перечисления: текст задачи, ролей и сообщений в контекст не попадает (016, Q-4). Ошибка — в поле `err`.
+- Каталог типов узлов (021, 4.6): `listNodeTypes` и `getNodeType` синхронны, реестр в памяти. Все роли имеют `node.read`, поэтому отказ по праву здесь недостижим по HTTP, но проверка остаётся в ядре (AC-021-20).
 - Отклонение: `stopSwarm` при ошибке оркестратора (например, 404) отдаёт исключение, а не код ошибки API — в 4.5.3 такого кода нет. Вопрос к приёмке.
 
 ## Спеки
@@ -74,4 +77,5 @@
 - 003 — асинхронный порт, очередь записи, подписка с буфером (REQ-003-3, REQ-003-4, AC-003-4, AC-003-5); закрытие прерванных роёв — T-4.
 - 013 — резерв в `createSwarm` (4.4, T-8), закрытие на итоговом событии в `commit` (4.4, T-9), добор незакрытых резервов `settlePending` (4.4, T-10).
 - 016 — порты `Logger` и `TraceContext`, логи 4.8.
+- 021 — каталог типов узлов: `listNodeTypes`, `getNodeType`, право `node.read` (4.6, T-8, AC-021-20).
 - 024 — `Actor` в операциях, видимость роёв, права, владелец в `swarm.created`, скрытие `providerCostMicroUsd`, `stopSwarmsOfUser` (4.4, REQ-024-3, -4, -5, -10 в ядре).

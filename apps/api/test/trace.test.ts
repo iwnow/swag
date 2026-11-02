@@ -14,7 +14,16 @@ import {
 import { LogRecord, type PlatformEventInput } from '@swag/contracts';
 import { buildApp } from '../src/app.ts';
 import { buildApp as buildOrchestratorApp } from '../../orchestrator/src/app.ts';
-import { actorOf, body, bearer, makeBilling, makeStartedAuth, T, WHO } from './support.ts';
+import {
+  actorOf,
+  body,
+  bearer,
+  emptyNodeTypes,
+  makeBilling,
+  makeStartedAuth,
+  T,
+  WHO,
+} from './support.ts';
 
 const ADMIN = actorOf(WHO.adminA);
 
@@ -105,6 +114,7 @@ async function stack() {
     ids,
     log: current.logger,
     trace: current.trace,
+    nodeTypes: emptyNodeTypes(),
     limits: { maxActiveSwarms: 5, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
     billing,
   });

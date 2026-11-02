@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { ALL_EVENTS, ALL_INBOXES } from '@swag/contracts';
 import { ApiConfig, BaseConfig, loadConfig } from '@swag/config';
+import { createNodeRegistry } from '@swag/api-integration';
 import { createBillingCore, type BillingCore } from '@swag/billing-core';
 import { createJoseVerifier } from '@swag/adapter-jose';
 import { createPostgresBalanceStore } from '@swag/adapter-postgres';
@@ -63,6 +64,10 @@ const orgs = createOrgDirectory({
   timeoutMs: IDENTITY_TIMEOUT_MS,
 });
 
+// Спека 021, T-8: реестр типов узлов пуст до T-11, когда загрузка пакетов из NODE_PACKAGES появится в старте.
+const nodeTypes = createNodeRegistry([]);
+if (!nodeTypes.ok) throw new Error(nodeTypes.error.code);
+
 // Миграции до приёма запросов, рои прерванного перезапуска закрыты до подписок (спека 003, 4.5).
 // Ядро баланса собирается фабрикой на пуле; маршрутам нужен тот же экземпляр (спека 013, 4.9).
 let billing: BillingCore | undefined;
@@ -89,6 +94,7 @@ const { core, pool } = await startApiCore(
     ids: { uuid: () => randomUUID() },
     log,
     trace: telemetry.trace,
+    nodeTypes: nodeTypes.registry,
     limits: {
       maxActiveSwarms: config.MAX_ACTIVE_SWARMS,
       maxBudgetMicroUsd: config.SWARM_MAX_BUDGET_MICRO_USD,

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createMemorySwarmStore } from '@swag/adapter-memory';
+import { createNodeRegistry, type NodeRegistry } from '@swag/api-integration';
 import {
+  NodeManifest,
   ROLE_PERMISSIONS,
   type Actor,
   type PlatformEvent,
@@ -50,6 +52,41 @@ const actorOf = (role: Role, userId: string, orgId: string | null): Actor => ({
 const ACTOR = actorOf('user', USER_U1, ORG_A);
 const codeOf = (r: Result<unknown>): string => (r.ok ? 'ok' : r.error.code);
 
+// Спека 021, 4.4: манифест example/echo@1.0.0 (как в swag-node.json).
+const ECHO = NodeManifest.parse({
+  type: 'example/echo',
+  version: '1.0.0',
+  kind: 'program',
+  title: 'Эхо',
+  description: 'Пример программы: возвращает входной текст с префиксом из настроек.',
+  settings: {
+    type: 'object',
+    properties: { prefix: { type: 'string', maxLength: 40, default: '' } },
+    additionalProperties: false,
+  },
+  credentials: [],
+  inputs: {
+    type: 'object',
+    properties: { text: { type: 'string', maxLength: 4000 } },
+    required: ['text'],
+    additionalProperties: false,
+  },
+  outputs: {
+    type: 'object',
+    properties: { text: { type: 'string' } },
+    required: ['text'],
+    additionalProperties: false,
+  },
+  operations: [],
+  egress: [],
+});
+
+function registryOf(manifests: readonly NodeManifest[]): NodeRegistry {
+  const created = createNodeRegistry(manifests);
+  if (!created.ok) throw new Error(created.error.code);
+  return created.registry;
+}
+
 interface Entry {
   level: 'debug' | 'info' | 'warn' | 'error';
   msg: string;
@@ -83,6 +120,7 @@ function setup(
     maxActiveSwarms?: number;
     store?: SwarmStore;
     billing?: FakeBilling;
+    nodeTypes?: NodeRegistry;
   } = {},
 ) {
   const billing = options.billing ?? fakeBilling();
@@ -123,6 +161,7 @@ function setup(
     ids: { uuid: () => uuid(++counter) },
     log,
     trace: { currentTraceId: () => traceState.current },
+    nodeTypes: options.nodeTypes ?? registryOf([]),
     limits: {
       maxActiveSwarms: options.maxActiveSwarms ?? 3,
       maxBudgetMicroUsd: 5000000,
@@ -1437,5 +1476,49 @@ describe('api-core — спека 013: закрытие резерва на ит
       msg: 'billing_settle_failed',
       ctx: { swarmId: b, err: error },
     });
+  });
+});
+
+describe('api-core — спека 021: каталог типов узлов', () => {
+  it('AC-021-20: без права node.read listNodeTypes и getNodeType отвечают forbidden', () => {
+    const { core } = setup({ nodeTypes: registryOf([ECHO]) });
+    const noRights: Actor = { ...ACTOR, permissions: [] };
+    expect(codeOf(core.listNodeTypes(noRights))).toBe('forbidden');
+    expect(codeOf(core.getNodeType(noRights, 'example/echo@1.0.0'))).toBe('forbidden');
+  });
+
+  it('AC-021-20: listNodeTypes отдаёт записи реестра по одной на тип', () => {
+    const { core } = setup({ nodeTypes: registryOf([ECHO]) });
+    expect(core.listNodeTypes(ACTOR)).toEqual({
+      ok: true,
+      value: {
+        items: [
+          {
+            type: 'example/echo',
+            version: '1.0.0',
+            versions: ['1.0.0'],
+            kind: 'program',
+            title: 'Эхо',
+            description: 'Пример программы: возвращает входной текст с префиксом из настроек.',
+          },
+        ],
+      },
+    });
+  });
+
+  it('AC-021-20: getNodeType отдаёт манифест по type@version; неизвестный тип и ссылка не по NodeTypeRef — not_found', () => {
+    const { core } = setup({ nodeTypes: registryOf([ECHO]) });
+    expect(core.getNodeType(ACTOR, 'example/echo@1.0.0')).toEqual({ ok: true, value: ECHO });
+    for (const ref of ['example/echo@2.0.0', 'не ссылка']) {
+      expect(core.getNodeType(ACTOR, ref)).toEqual({
+        ok: false,
+        error: { code: 'not_found', message: 'Тип узла не найден' },
+      });
+    }
+  });
+
+  it('AC-021-20: пустой реестр — listNodeTypes отдаёт пустой список', () => {
+    const { core } = setup();
+    expect(core.listNodeTypes(ACTOR)).toEqual({ ok: true, value: { items: [] } });
   });
 });
