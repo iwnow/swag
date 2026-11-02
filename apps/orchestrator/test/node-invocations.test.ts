@@ -65,6 +65,20 @@ describe('POST /node-invocations (спека 026, 4.10)', () => {
     await app.close();
   });
 
+  it('AC-026-21: тело не JSON — 400 validation_error, ядро не вызвано', async () => {
+    const { app, received } = setup();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/node-invocations',
+      headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+      payload: '{not json',
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('validation_error');
+    expect(received).toHaveLength(0);
+    await app.close();
+  });
+
   it('AC-026-21: с верным телом — 200 с результатом ядра, тело доходит до ядра', async () => {
     const { app, received } = setup();
     const response = await app.inject({
