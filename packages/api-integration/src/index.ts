@@ -3,6 +3,8 @@ export {
   createNodeRegistry,
   type NodeRegistry,
   type NodeRegistryError,
+  type NodeSchemaTarget,
   type SettingsIssue,
   type SettingsResult,
+  type ValueResult,
 } from './node-registry.ts';

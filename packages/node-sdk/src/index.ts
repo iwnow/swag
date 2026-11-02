@@ -2,6 +2,7 @@ import {
   NodeManifest,
   type EgressHost,
   type NodeCredential,
+  type NodeErrorCode,
   type NodeTypeName,
   type NodeTypeVersion,
   type OperationAccess,
@@ -30,13 +31,8 @@ export interface NodeContext<S> {
   signal: AbortSignal;
 }
 
-export type NodeErrorCode =
-  | 'secret_not_declared'
-  | 'egress_denied'
-  | 'invalid_settings'
-  | 'invalid_input'
-  | 'invalid_output'
-  | 'unknown_operation';
+// D-160 (а): коды ошибок узла берутся из контракта, SDK их не дублирует.
+export type { NodeErrorCode };
 
 export class NodeError extends Error {
   readonly code: NodeErrorCode;

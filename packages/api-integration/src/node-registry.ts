@@ -26,15 +26,40 @@ export type SettingsResult =
         { code: 'node_type_not_found' } | { code: 'invalid_settings'; issues: SettingsIssue[] };
     };
 
+// Спека 026, 4.2: куда относится значение — вход, выход или вход/выход операции коннектора.
+export type NodeSchemaTarget =
+  | { place: 'inputs' }
+  | { place: 'outputs' }
+  | { place: 'operation'; name: string; io: 'input' | 'output' };
+
+export type ValueResult =
+  | { ok: true; value: unknown } // результат parse схемы
+  | {
+      ok: false;
+      error:
+        | { code: 'node_type_not_found' }
+        | { code: 'schema_not_found' }
+        | { code: 'invalid_value'; issues: SettingsIssue[] };
+    };
+
 export interface NodeRegistry {
   list(): NodeTypeSummary[];
   get(ref: string): NodeManifest | null;
   validateSettings(ref: string, settings: unknown): SettingsResult;
+  validate(ref: string, target: NodeSchemaTarget, value: unknown): ValueResult;
+}
+
+// Схемы строятся один раз при создании реестра (021, 4.2; 026, 4.2). null в манифесте — схемы нет.
+interface Schemas {
+  settings: z.ZodType;
+  inputs: z.ZodType | null;
+  outputs: z.ZodType | null;
+  operations: Map<string, { input: z.ZodType; output: z.ZodType }>;
 }
 
 interface Entry {
   manifest: NodeManifest;
-  settings: z.ZodType;
+  schemas: Schemas;
 }
 
 export function createNodeRegistry(
@@ -52,32 +77,48 @@ export function createNodeRegistry(
     const ref = nodeTypeRef(manifest.type, manifest.version);
     const compiled = compileManifest(ref, manifest);
     if (!compiled.ok) return compiled;
-    entries.set(ref, { manifest, settings: compiled.settings });
+    entries.set(ref, { manifest, schemas: compiled.schemas });
   }
 
   return { ok: true, registry: createRegistry(entries) };
 }
 
-type Compiled = { ok: true; settings: z.ZodType } | { ok: false; error: NodeRegistryError };
+type Compiled = { ok: true; schemas: Schemas } | { ok: false; error: NodeRegistryError };
 
-// Схемы inputs, outputs и операций проверяются на поддержку и не хранятся: в реестре нужна только проверка настроек.
+// Порядок проверки поддержки: settings, inputs, outputs, затем входы и выходы операций по порядку манифеста.
 function compileManifest(ref: NodeTypeRef, manifest: NodeManifest): Compiled {
   const settings = toZod(ref, 'settings', manifest.settings);
   if (!settings.ok) return settings;
-  const schemas: [string, Record<string, unknown> | null][] = [
-    ['inputs', manifest.inputs],
-    ['outputs', manifest.outputs],
-    ...manifest.operations.flatMap((op): [string, Record<string, unknown>][] => [
-      [`operations.${op.name}.input`, op.input],
-      [`operations.${op.name}.output`, op.output],
-    ]),
-  ];
-  for (const [schema, json] of schemas) {
-    if (json === null) continue;
-    const compiled = toZod(ref, schema, json);
-    if (!compiled.ok) return compiled;
+  const inputs = compileOptional(ref, 'inputs', manifest.inputs);
+  if (!inputs.ok) return inputs;
+  const outputs = compileOptional(ref, 'outputs', manifest.outputs);
+  if (!outputs.ok) return outputs;
+  const operations = new Map<string, { input: z.ZodType; output: z.ZodType }>();
+  for (const op of manifest.operations) {
+    const input = toZod(ref, `operations.${op.name}.input`, op.input);
+    if (!input.ok) return input;
+    const output = toZod(ref, `operations.${op.name}.output`, op.output);
+    if (!output.ok) return output;
+    operations.set(op.name, { input: input.schema, output: output.schema });
   }
-  return { ok: true, settings: settings.schema };
+  return {
+    ok: true,
+    schemas: {
+      settings: settings.schema,
+      inputs: inputs.schema,
+      outputs: outputs.schema,
+      operations,
+    },
+  };
+}
+
+function compileOptional(
+  ref: NodeTypeRef,
+  schema: string,
+  json: Record<string, unknown> | null,
+): { ok: true; schema: z.ZodType | null } | { ok: false; error: NodeRegistryError } {
+  if (json === null) return { ok: true, schema: null };
+  return toZod(ref, schema, json);
 }
 
 function toZod(
@@ -107,15 +148,40 @@ function createRegistry(entries: Map<string, Entry>): NodeRegistry {
     validateSettings(ref, settings) {
       const entry = lookup(ref);
       if (!entry) return { ok: false, error: { code: 'node_type_not_found' } };
-      const result = entry.settings.safeParse(settings);
-      if (result.success) return { ok: true, settings: result.data as Record<string, unknown> };
-      const issues = result.error.issues.map((issue) => ({
-        path: issue.path.map(String).join('.'),
-        message: issue.message,
-      }));
-      return { ok: false, error: { code: 'invalid_settings', issues } };
+      const result = checkValue(entry.schemas.settings, settings);
+      if (result.ok) return { ok: true, settings: result.value as Record<string, unknown> };
+      return { ok: false, error: { code: 'invalid_settings', issues: result.error.issues } };
+    },
+    validate(ref, target, value) {
+      const entry = lookup(ref);
+      if (!entry) return { ok: false, error: { code: 'node_type_not_found' } };
+      const schema = schemaFor(entry.schemas, target);
+      if (!schema) return { ok: false, error: { code: 'schema_not_found' } };
+      const result = checkValue(schema, value);
+      if (result.ok) return result;
+      return { ok: false, error: { code: 'invalid_value', issues: result.error.issues } };
     },
   };
+}
+
+function schemaFor(schemas: Schemas, target: NodeSchemaTarget): z.ZodType | null {
+  if (target.place === 'inputs') return schemas.inputs;
+  if (target.place === 'outputs') return schemas.outputs;
+  return schemas.operations.get(target.name)?.[target.io] ?? null;
+}
+
+// Один путь проверки для настроек и значений (026, 4.2): ошибки Zod — SettingsIssue.
+function checkValue(
+  schema: z.ZodType,
+  value: unknown,
+): { ok: true; value: unknown } | { ok: false; error: { issues: SettingsIssue[] } } {
+  const result = schema.safeParse(value);
+  if (result.success) return { ok: true, value: result.data };
+  const issues = result.error.issues.map((issue) => ({
+    path: issue.path.map(String).join('.'),
+    message: issue.message,
+  }));
+  return { ok: false, error: { issues } };
 }
 
 // REQ-021-6: одна запись на type — последняя версия; типы по возрастанию type.

@@ -207,4 +207,79 @@ describe('реестр типов узлов', () => {
     });
     expect(items[1]).toMatchObject({ version: '1.0.0', versions: ['1.0.0'], kind: 'llm-agent' });
   });
+
+  it('AC-026-2: validate — invalid_value с issues, schema_not_found, node_type_not_found, верное значение после parse', () => {
+    const connector = manifest(
+      {
+        operations: [
+          operation({
+            name: 'list',
+            input: {
+              type: 'object',
+              properties: { limit: { type: 'integer', default: 10 } },
+              additionalProperties: false,
+            },
+            output: {
+              type: 'object',
+              properties: { ok: { type: 'boolean' } },
+              required: ['ok'],
+              additionalProperties: false,
+            },
+          }),
+        ],
+      },
+      CONNECTOR,
+    );
+    const created = createNodeRegistry([manifest({}), connector]);
+    if (!created.ok) throw new Error('реестр не создан');
+    const { registry } = created;
+
+    const badOutput = registry.validate('example/echo@1.0.0', { place: 'outputs' }, { text: 1 });
+    expect(badOutput).toEqual({
+      ok: false,
+      error: { code: 'invalid_value', issues: [expect.objectContaining({ path: 'text' })] },
+    });
+    expect(
+      registry.validate(
+        'example/connector@1.0.0',
+        { place: 'operation', name: 'list', io: 'output' },
+        { ok: 'да' },
+      ),
+    ).toMatchObject({ ok: false, error: { code: 'invalid_value', issues: [expect.anything()] } });
+
+    expect(
+      registry.validate(
+        'example/connector@1.0.0',
+        { place: 'operation', name: 'missing', io: 'input' },
+        {},
+      ),
+    ).toEqual({ ok: false, error: { code: 'schema_not_found' } });
+    expect(registry.validate('example/connector@1.0.0', { place: 'inputs' }, {})).toEqual({
+      ok: false,
+      error: { code: 'schema_not_found' },
+    });
+    expect(
+      registry.validate('example/echo@1.0.0', { place: 'operation', name: 'run', io: 'input' }, {}),
+    ).toEqual({
+      ok: false,
+      error: { code: 'schema_not_found' },
+    });
+
+    expect(registry.validate('example/echo@2.0.0', { place: 'inputs' }, {})).toEqual({
+      ok: false,
+      error: { code: 'node_type_not_found' },
+    });
+
+    expect(
+      registry.validate(
+        'example/connector@1.0.0',
+        { place: 'operation', name: 'list', io: 'input' },
+        {},
+      ),
+    ).toEqual({ ok: true, value: { limit: 10 } });
+    expect(registry.validate('example/echo@1.0.0', { place: 'outputs' }, { text: 'ok' })).toEqual({
+      ok: true,
+      value: { text: 'ok' },
+    });
+  });
 });
