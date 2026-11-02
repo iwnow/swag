@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.ts';
-import { loadNodeRegistry } from '../src/node-types.ts';
+import { loadNodeRegistry } from '@swag/node-packages';
 import { bearer, makeApi, makeBilling, makeStartedAuth, T } from './support.ts';
 
 // Спека 021, 4.8: маршруты каталога через реальный загрузчик и реальное разрешение пакетов (exports), без подмены resolve.

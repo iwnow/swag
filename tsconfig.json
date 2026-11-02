@@ -10,6 +10,7 @@
     { "path": "packages/node-example" },
     { "path": "packages/node-llm-agent" },
     { "path": "packages/api-integration" },
+    { "path": "packages/node-packages" },
     { "path": "packages/api-core" },
     { "path": "packages/billing-core" },
     { "path": "packages/identity-core" },

@@ -10,7 +10,7 @@ import { connectNatsBus } from '@swag/adapter-nats';
 import { startTelemetry, tracedHttpServer } from '@swag/adapter-telemetry';
 import { buildApp } from './app.ts';
 import { createAuthenticator } from './auth.ts';
-import { bootNodeRegistry } from './node-types.ts';
+import { bootNodeRegistry } from '@swag/node-packages';
 import { createOrgDirectory } from './organizations.ts';
 import { createRevocationSync, fetchTokenRevocations } from './revocations.ts';
 import { createBlockHandler, createStreamRegistry } from './streams.ts';
