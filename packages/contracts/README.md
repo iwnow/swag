@@ -1,6 +1,6 @@
 # @swag/contracts
 
-Общие схемы Zod и типы, которыми обмениваются сервисы и ядра: запрос на рой, рой, агент, запуск роя, сообщение шины, события платформы, subjects NATS, `ServiceInfo`, `traceId`, схема структурного лога, контракты LLM Gateway (каталог моделей, использование токенов, ошибки, вызывающий, деньги и списания, регистрация роя) и контракты identity (регистрация, вход, токены, коды ошибок), права и вызывающий (`Actor`, `Permission`, `can`), управление пользователями (приглашения, список, смена роли и блокировка, отзывы токенов) и баланс организации (пополнение, журнал, остаток).
+Общие схемы Zod и типы, которыми обмениваются сервисы и ядра: запрос на рой, рой, агент, запуск роя, сообщение шины, события платформы, subjects NATS, `ServiceInfo`, `traceId`, схема структурного лога, контракты LLM Gateway (каталог моделей, использование токенов, ошибки, вызывающий, деньги и списания, регистрация роя) и контракты identity (регистрация, вход, токены, коды ошибок), права и вызывающий (`Actor`, `Permission`, `can`), управление пользователями (приглашения, список, смена роли и блокировка, отзывы токенов), баланс организации (пополнение, журнал, остаток) и манифест типа узла (`NodeManifest`, ссылка `type@version`).
 
 ## Задачи
 
@@ -10,6 +10,7 @@
 - Баланс организации из [спеки 013, раздел 4.1](../../docs/spec/013-balance.md#41-swagcontracts): `billing.ts`; права `balance.read` и `balance.topup` в `access.ts`; `spentMicroUsd` в итоговых событиях роя и `heldMicroUsd` в `LlmSwarmClosed`.
 - Управление пользователями из [спеки 024, раздел 4.2](../../docs/spec/024-organizations-access.md#42-swagcontracts-дополнения-srcauthts): дополнения `auth.ts` — коды `forbidden`, `not_found`, `user_blocked`, `OrgRole`, `ManagedUser`, `UserList`, `InvitationRequest`, `InvitationAcceptRequest`, `UserUpdate`, `OrganizationSummary`, `OrganizationList`, `TokenRevocation`, `TokenRevocationList`.
 - Контракты identity из [спеки 012, раздел 4.1](../../docs/spec/012-identity-signup-login.md#41-swagcontracts-файл-srcauthts): `auth.ts` — `UserId`, `OrgId`, `Role`, `Email`, `Password`, `OrganizationName`, запросы регистрации, подтверждения и входа, `AccessTokenClaims`, `AuthSession`, `AuthRefreshed`, `AuthMe`, `AuthErrorCode`.
+- Манифест узла из [спеки 021, раздел 4.1](../../docs/spec/021-node-contract-registry.md#41-swagcontracts-nodets): `node.ts` — `NodeManifest` с правилами вида (4.1.2, 4.1.3), `nodeTypeRef`, `parseNodeTypeRef`, `NodeTypeSummary`, `NodeTypeList`; право `node.read` в `access.ts` (021, 4.6).
 - Контракты LLM Gateway из [спеки 002, раздел 4.1](../../docs/spec/002-llm-gateway.md#41-packagescontractssrcllmts-и-изменения-существующих-схем): `llm.ts`; событие `llm.call` в `events.ts`, источник и сервис `llm-gateway`.
 - Типы выводятся из схем (`z.infer`), отдельно их не пишут.
 
@@ -19,9 +20,10 @@
 - `bus.ts` — `BusMessage`, subjects `inboxSubject`, `eventsSubject`, `ALL_INBOXES`, `ALL_EVENTS`.
 - `events.ts` — `TraceId`, `PlatformEventInput` (дискриминированное объединение по `type`, в конверте `traceId: TraceId | null`; вариант `llm.call` с `LlmCallData`, источник `llm-gateway`; `agent.step`, `agent.idle`; `swarm.created` с необязательными бюджетами и `maxTokens` роя и агентов, `orgId` и `createdBy` (024, 4.3), у событий до 004 и 031 их нет; причины `agent_failed`, `api_restarted`, `budget_exceeded` и `gateway_unavailable` в `swarm.failed`), `PlatformEvent` (с `seq`).
 - `auth.ts` — схемы identity (012, 4.1). `Email` — `trim`, нижний регистр, не больше 254 символов; `Password` — от 10 до 128 символов без `trim` (Q-10); `OrganizationName` — от 1 до 200 символов после `trim`; `AccessTokenClaims` — `iss: swag-identity`, `aud: swag`, `org` — `null` у supervisor.
-- `access.ts` — `Permission` (`swarm.create`, `swarm.read`, `swarm.stop`, `user.manage`, `organization.read`, `balance.read`, `balance.topup`), `ROLE_PERMISSIONS` (таблица роль → права), `Actor` (`userId`, `orgId`, `role`, `permissions`), `actorFromClaims` (из `AccessTokenClaims`: `sub`, `org`, `role`), `can`.
+- `access.ts` — `Permission` (`swarm.create`, `swarm.read`, `swarm.stop`, `user.manage`, `organization.read`, `balance.read`, `balance.topup`, `node.read`), `ROLE_PERMISSIONS` (таблица роль → права), `Actor` (`userId`, `orgId`, `role`, `permissions`), `actorFromClaims` (из `AccessTokenClaims`: `sub`, `org`, `role`), `can`.
 - `billing.ts` — `TopupMicroUsd` (целое 1…1 000 000 000), `TopupRequest` (`comment` по умолчанию `null`, пустая строка не проходит), `BalanceView`, `BalanceEntryKind` (`topup`, `swarm`), `BalanceEntry`, `BalanceEntryList` (с `nextBefore`).
 - `auth.ts` — дополнения 024: `OrgRole` (`user`, `admin`), `ManagedUser`, `UserList`, `InvitationRequest`, `InvitationAcceptRequest`, `UserUpdate` (хотя бы одно поле), `OrganizationSummary`, `OrganizationList`, `TokenRevocation`, `TokenRevocationList`.
+- `node.ts` — `NodeKind` (шесть видов), `NodeTypeName` (`<пространство>/<имя>`), `NodeTypeVersion` (semver без пререлиза), `NodeTypeRef` и `nodeTypeRef` / `parseNodeTypeRef`, `JsonSchema`, `SettingsSchema`, `NodeOperation`, `NodeCredential` (только имя и вид), `EgressHost`, `NodeManifest` (строгий объект плюс `checkKindRules`), `NodeTypeSummary`, `NodeTypeList`.
 - `log.ts` — `LogLevel`, `ServiceName` (с `llm-gateway` и `identity`), `LogError`, `LogRecord`.
 - `service-info.ts` — `ServiceInfo` (`service` с `llm-gateway` и `identity`).
 - `llm.ts` — `ModelId`, `PricePerMTok`, `ModelPrices`, `CatalogModel` (с `openRouterModel`), `ModelCatalog` (`models.json`), `MicroUsd`, `BudgetMicroUsd` (1…1_000_000_000), `MaxTokens` (целое 1…1_000_000, лимит ответа агента, 031), `LlmUsage`, `GatewayErrorCode` (с кодами 403 и 402 из 004), `ChargeBasis`, `LlmCharge`, `LlmCallStatus`, `LlmCallData` (с `charge`, необязательным), `PlatformModel` (`chat-small`, `chat-large`), заголовки `SWARM_ID_HEADER`, `AGENT_ID_HEADER`. `LlmSwarmRegistration` и `LlmSwarmClosed` намеренно лежат в `swarm.ts`, а не здесь: `swarm.ts` импортирует `llm.ts`, обратный импорт дал бы цикл.
@@ -31,6 +33,7 @@
 - Схемы и типы, а также чистые правила над ними. Логики предметной области здесь нет, кроме проверок формы.
 - Зависимости — только `zod`. Правила ядра проверяет `arch:check` (REQ-001-15, N-3).
 - Лимиты длин полей (`max(4000)`, `max(500)`, `max(40)`, `max(8)`) — предложение, утверждено в Q-3.
+- Пороги манифеста узла (имя до 40 символов, `title` до 80, `description` до 2000, до 32 операций, 8 credentials, 16 хостов `egress`) — Q-4 (021).
 
 ## Связи
 
@@ -52,6 +55,8 @@
 - Баланс (013, 4.1): `billing.ts` импортирует `auth.ts`, `llm.ts` и `swarm.ts`; обратного импорта нет, цикла нет. `spentMicroUsd` в `swarm.completed`, `swarm.stopped` и `swarm.failed` необязательно: события до 013 и события, которые записал `api` без ответа gateway, его не несут.
 - Деньги: `LlmCharge` — то же, что запись ledger; `charge` в `LlmCallData` необязателен, потому что события до 004 его не несут. `costMicroUsd` остаётся стоимостью по `usage`.
 - Регистрация роя: `LlmSwarmRegistration` и `LlmSwarmClosed` лежат в `swarm.ts`, а не в `llm.ts` по 004, 4.1: `llm.ts` не должен импортировать `swarm.ts` (цикл из-за `AgentId` и `SwarmId`). Это отклонение от буквы 4.1, которое принято при реализации T-1 — тот же приём, что у `LlmCaller`.
+- Манифест узла (021, 4.1): правила вида и совпадение `credentials` со `settings` проверяет `superRefine` поверх строгого объекта, сообщения issue — дословно из таблиц 4.1.2 и 4.1.3. Отдельной ветки для `human` в схеме нет: его манифест проверяется той же таблицей, что `llm-agent`.
+- Манифест узла (021, 4.1): секрет в манифесте — только `NodeCredential` с именем и видом, значения полей нет (Q-7, REQ-021-16); `egress` — хост без схемы, IP и `localhost`, с опциональным `*.` и punycode-TLD (Q-4).
 - 022: `PlatformModel` в `llm.ts`; `model` агента и `ENTRY_AGENT_ID` в `swarm.ts`; `agent.step`, `agent.idle` и причина `agent_failed` (4.1). `LlmCaller` переехал из `llm.ts` в `swarm.ts`: `swarm.ts` импортирует `PlatformModel` из `llm.ts`, обратный импорт `llm.ts` → `swarm.ts` дал бы цикл модулей.
 
 ## Спеки
