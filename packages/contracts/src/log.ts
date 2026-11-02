@@ -6,7 +6,14 @@ import { AgentId, SwarmId } from './swarm.ts';
 export const LogLevel = z.enum(['debug', 'info', 'warn', 'error']);
 export type LogLevel = z.infer<typeof LogLevel>;
 
-export const ServiceName = z.enum(['api', 'orchestrator', 'agent', 'llm-gateway', 'identity']);
+export const ServiceName = z.enum([
+  'api',
+  'orchestrator',
+  'agent',
+  'llm-gateway',
+  'identity',
+  'egress-proxy',
+]);
 export type ServiceName = z.infer<typeof ServiceName>;
 
 export const LogError = z.strictObject({
