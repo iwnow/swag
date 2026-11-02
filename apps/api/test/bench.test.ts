@@ -7,7 +7,18 @@ import { createMemorySwarmStore } from '@swag/adapter-memory';
 import { createPostgresBalanceStore, runMigrations } from '@swag/adapter-postgres';
 import { createBillingCore, type BillingCore } from '@swag/billing-core';
 import { buildApp } from '../src/app.ts';
-import { actorOf, bearer, body, makeApi, makeAuth, ORG_A, silentLog, T, WHO } from './support.ts';
+import {
+  actorOf,
+  bearer,
+  body,
+  emptyNodeTypes,
+  makeApi,
+  makeAuth,
+  ORG_A,
+  silentLog,
+  T,
+  WHO,
+} from './support.ts';
 
 // NFR-024-2: проверка токена добавляет к p95 GET /swarms/:id не больше 5 мс. Запуск: API_BENCH=1 npx vitest run apps/api/test/bench.test.ts.
 // NFR-013-1: резерв добавляет к p95 POST /swarms не больше 5 мс; с Postgres — POSTGRES_TEST_URL.
@@ -150,6 +161,7 @@ async function swarmApp(
     ids: { uuid: () => randomUUID() },
     log: silentLog,
     trace: { currentTraceId: () => null },
+    nodeTypes: emptyNodeTypes(),
     limits: { maxActiveSwarms: 10_000, maxBudgetMicroUsd: 5_000_000, maxTokens: 65536 },
   });
   return buildApp(core, routes, {}, auth);

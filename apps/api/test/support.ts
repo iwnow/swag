@@ -6,6 +6,7 @@ import {
   type OrchestratorClient,
   type SwarmStore,
 } from '@swag/api-core';
+import { createNodeRegistry, type NodeRegistry } from '@swag/api-integration';
 import { createMemoryBalanceStore, createMemorySwarmStore } from '@swag/adapter-memory';
 import { createBillingCore, type BillingCore, type OrgDirectory } from '@swag/billing-core';
 import { createJoseSigner, createJoseVerifier } from '@swag/adapter-jose';
@@ -70,10 +71,18 @@ export async function makeApi(
     ids: { uuid: () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}` },
     log: options.log ?? silentLog,
     trace: { currentTraceId: () => null },
+    nodeTypes: emptyNodeTypes(),
     limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
     billing,
   });
   return { core, billing };
+}
+
+// Спека 021, T-8: пустой реестр до T-11 (загрузка пакетов узлов в api).
+export function emptyNodeTypes(): NodeRegistry {
+  const created = createNodeRegistry([]);
+  if (!created.ok) throw new Error(created.error.code);
+  return created.registry;
 }
 
 export const body = (count: number) => ({

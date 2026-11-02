@@ -1,5 +1,7 @@
 import {
   BusMessage,
+  NodeManifest,
+  NodeTypeList,
   PlatformEventInput,
   SwarmCreateRequest,
   can,
@@ -11,7 +13,7 @@ import {
   type SwarmLaunch,
   type SwarmSummary,
 } from '@swag/contracts';
-import { FINAL_SWARM_STATUSES, type SwarmView } from '@swag/api-integration';
+import { FINAL_SWARM_STATUSES, type NodeRegistry, type SwarmView } from '@swag/api-integration';
 
 // Спека 001, 4.5.4. Порты объявляет ядро; адаптеры передаёт оболочка.
 
@@ -69,6 +71,7 @@ export interface ApiCoreDeps {
   ids: IdGenerator;
   log: Logger;
   trace: TraceContext;
+  nodeTypes: NodeRegistry; // спека 021, 4.6: каталог из @swag/api-integration; реестр собирает оболочка (4.7)
   limits: { maxActiveSwarms: number; maxBudgetMicroUsd: number; maxTokens: number }; // maxBudgetMicroUsd — SWARM_MAX_BUDGET_MICRO_USD (004, 4.7); maxTokens — AGENT_MAX_TOKENS_LIMIT (031, 4.2)
 }
 
@@ -98,6 +101,8 @@ export interface ApiCore {
   ingestMessage(raw: unknown): Promise<void>; // из swarm.*.agent.*.inbox → bus.message
   closeInterrupted(): Promise<number>; // REQ-003-6; число закрытых роёв
   settlePending(): Promise<number>; // 013, REQ-013-8; число закрытых резервов
+  listNodeTypes(actor: Actor): Result<NodeTypeList>; // 021, 4.6; реестр в памяти — синхронно
+  getNodeType(actor: Actor, ref: string): Result<NodeManifest>;
 }
 
 // Подписчик роя: пока читается история, события копятся в buffer; потом уходят напрямую.
@@ -397,6 +402,18 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
       log.info('user_swarms_stopped', { userId, count: stopped });
       if (errors.length > 0) throw new AggregateError(errors, 'user swarms stop failed');
       return stopped;
+    },
+
+    // Спека 021, 4.6. У всех ролей есть node.read, но проверка права остаётся в ядре (AC-021-20).
+    listNodeTypes(actor) {
+      if (!can(actor, 'node.read')) return fail('forbidden', 'Нет права на чтение каталога узлов');
+      return ok({ items: deps.nodeTypes.list() });
+    },
+
+    getNodeType(actor, ref) {
+      if (!can(actor, 'node.read')) return fail('forbidden', 'Нет права на чтение каталога узлов');
+      const manifest = deps.nodeTypes.get(ref);
+      return manifest ? ok(manifest) : fail('not_found', 'Тип узла не найден');
     },
 
     async ingestEvent(raw) {
