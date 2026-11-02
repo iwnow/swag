@@ -46,7 +46,7 @@
 | Реестр скиллов | `SkillRegistry` | Хранилище и каталог скиллов. |
 | Узел | `Node`, `nodeId` | Элемент графа процесса: экземпляр типа узла с настройками. Виды — триггер, канал, коннектор, LLM-агент, программа, человек. |
 | Вид узла | `NodeKind` | `trigger`, `channel`, `connector`, `llm-agent`, `program`, `human`; задаёт операции, которые узел реализует. |
-| Тип узла | `NodeType`, `type@version` | Плагин узла из реестра: манифест и код. Граф ссылается на тип с версией. |
+| Тип узла | `NodeTypeRef`, `type@version` | Плагин узла из реестра: манифест и код. Граф ссылается на тип с версией. |
 | Манифест узла | `NodeManifest` | Описание типа узла: вид, схемы настроек, входа, выхода и операций, credentials, `egress`. |
 | Реестр узлов | `NodeRegistry`, `createNodeRegistry`, `validateSettings`, `SettingsResult`, `SettingsIssue`, `NodeRegistryError`, `node_type_duplicate`, `node_schema_unsupported`, `node_type_not_found`, `invalid_settings` | Каталог типов узлов в памяти: список последних версий, манифест по `type@version`, проверка настроек по схеме `settings` через `z.fromJSONSchema`; в `@swag/api-integration` (021, 4.2). |
 | Контекст исполнения узла | `NodeContext` | Всё, что видит код узла: `settings`, `secrets.get`, `http.fetch` в пределах `egress`, `log`, `state`, `signal`; тип — в `@swag/node-sdk` (021, 4.3), реализация на платформе — 026. |
@@ -55,7 +55,7 @@
 | Части манифеста узла | `NodeOperation`, `OperationAccess`, `NodeCredential`, `CredentialKind`, `EgressHost`, `JsonSchema`, `SettingsSchema` | Операция коннектора с доступом `read` / `write` / `destructive`, объявление доступа к внешней системе `api-key` / `oauth2` без значения, хост выхода, JSON Schema как данные (021, 4.1). |
 | Запись каталога узлов | `NodeTypeSummary`, `NodeTypeList`, `listNodeTypes`, `getNodeType`, `node.read`, `ApiCoreDeps.nodeTypes` | Последняя версия типа со списком версий; ответ `GET /node-types`; право читать каталог (021, 4.6, 4.8). |
 | Определение узла | `defineNode`, `NodeDefinition`, `SettingsOf`, `TriggerDefinition`, `ChannelDefinition`, `ConnectorDefinition`, `OperationDefinition`, `ProgramDefinition`, `BuiltinDefinition`, `PollResult`, `toManifest` | Узел в TypeScript: схемы Zod и обработчики по виду; `toManifest` выгружает его в `NodeManifest` (021, 4.3). |
-| Ошибка узла | `NodeError`, `NodeErrorCode`, `secret_not_declared`, `egress_denied`, `invalid_input`, `invalid_output`, `unknown_operation` | Ошибка контекста и обвязки узла (021, 4.3). |
+| Ошибка узла | `NodeError`, `NodeErrorCode`, `secret_not_declared`, `egress_denied`, `invalid_settings`, `invalid_input`, `invalid_output`, `unknown_operation` | Ошибка контекста и обвязки узла (021, 4.3). |
 | Тестовая обвязка узла | `@swag/node-sdk/testing`, `createTestContext`, `TestContext`, `TestContextOptions`, `runNode`, `runOperation`, `runPoll`, `runSend` | Запуск обработчиков узла без платформы с проверкой схем, секретов и `egress` (021, 4.3). |
 | Пакет узла | `@swag/node-<имя>`, `swag-node.json`, `@swag/node-llm-agent`, `@swag/node-example`, `nodes:manifest` | npm-пакет с определением узла и выгруженным манифестом; `swag/llm-agent@1.0.0`, `example/echo@1.0.0`; команда выгрузки манифестов (021, 4.4, 4.5). |
 | Загрузка типов узлов | `NODE_PACKAGES`, `loadNodeRegistry`, `bootNodeRegistry`, `LoadNodeTypesOptions`, `NodeTypesLoadError`, `node_manifest_invalid` | `api` при старте читает `swag-node.json` перечисленных пакетов без импорта их кода; ошибка — лог `node_manifest_invalid` и выход до подключения к Postgres и NATS (021, 4.7). |
