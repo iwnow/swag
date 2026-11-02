@@ -227,6 +227,18 @@ describe('манифест узла', () => {
       NodeManifest.safeParse(manifest('program', { settings: SCHEMA, credentials: [CREDENTIAL] }))
         .success,
     ).toBe(true);
+    for (const properties of [[], 'x']) {
+      const result = NodeManifest.safeParse(
+        manifest('program', {
+          settings: { type: 'object', properties },
+          credentials: [CREDENTIAL],
+        }),
+      );
+      expect(result.success, JSON.stringify(properties)).toBe(true);
+      expect(result.error?.issues ?? []).not.toContainEqual(
+        expect.objectContaining({ path: ['settings'] }),
+      );
+    }
   });
 
   it('REQ-021-16: credential несёт имя и вид, значение в нём — ошибка', () => {
@@ -262,8 +274,13 @@ describe('манифест узла', () => {
       'Api.example.com',
       'https://api.example.com',
       'api.example.com:70000',
+      'user@api.example.com',
+      'example',
+      '*.',
+      '*.com',
     ]) {
       expect(EgressHost.safeParse(host).success, host).toBe(false);
     }
+    expect(EgressHost.safeParse('api.xn--p1ai').success).toBe(true);
   });
 });
