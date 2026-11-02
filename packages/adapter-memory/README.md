@@ -18,6 +18,7 @@
 - `createMemoryRateLimiter({ now })` — `RateLimiter` с фиксированным окном; геттер `size` для проверки роста памяти.
 - `test/identity-store.contract.ts` — общий набор тестов хранилища `identityStoreContract(name, makeStore)` (AC-012-30, AC-024-4, AC-013-20 для `findOrganizationById`). Вызывается из `test/identity-store.test.ts` здесь и из теста Postgres-хранилища. Использует только методы `IdentityStore`; набор не требует пустой базы: токены, email и id уникальны на каждый прогон. Проверка `hasSupervisor() === false` на пустом хранилище — только в `test/identity-store.test.ts` (память).
 - `createMemoryBalanceStore()` — `BalanceStore` (спека 013, 4.2): `balance`, `entries`, `topup`, `reserve`, `settle`, `holds`. Строка организации появляется при первом пополнении; `id` записей — общий счётчик от 1 на все организации; `ts` — строка как передана. Каждая операция синхронна внутри async-функции: проверка и запись не разделены `await`.
+- `createMemorySecretStore()` — `SecretStore` из `api-core` (спека 026, 4.6, T-8): `list`, `put`, `delete` по организации. Значение секрета не хранит — только имя, подсказку и время обновления; подсказка — последние 4 символа при длине значения от 16, иначе `null`, как в Postgres. `list` отдаёт список, отсортированный по имени.
 - `test/balance-store.contract.ts` — общий набор `balanceStoreContract(name, makeStore)` (AC-013-1, AC-013-11, AC-013-12 и проверки пагинации, `insufficient`, повтора `swarmId`, `holds`). Вызывается из `test/balance-store.test.ts` здесь и из теста Postgres-хранилища баланса.
 - Тесты: `test/identity-store.test.ts` (общий набор на памяти и `hasSupervisor === false` на пустом хранилище), `test/rate-limiter.test.ts` (AC-012-14, REQ-012-17), `test/mailer.test.ts`.
 
@@ -35,7 +36,7 @@
 
 ## Связи
 
-- Порты: `SwarmStore` из `@swag/api-core`, `IdentityStore`, `Mailer`, `RateLimiter` из `@swag/identity-core`, `BalanceStore` из `@swag/billing-core` (только типы).
+- Порты: `SwarmStore` из `@swag/api-core`, `IdentityStore`, `Mailer`, `RateLimiter` из `@swag/identity-core`, `BalanceStore` из `@swag/billing-core` (только типы), `SecretStore` из `@swag/api-core` (тип порта).
 - Использует: `@swag/api-core` (типы), `@swag/api-integration`, `@swag/billing-core` (типы), `@swag/contracts`, `@swag/identity-core`.
 - Потребители: тесты `packages/api-core`, `apps/api`; тесты `identity-core` (T-6…T-10) и общий набор хранилища (T-11); тесты `billing-core` и общий набор хранилища баланса (спека 013).
 
@@ -55,3 +56,4 @@
 - 003 — REQ-003-10: тот же асинхронный порт, остаётся для тестов ядра.
 - 012 — 4.3, 4.7, 4.8; задача T-5 (REQ-012-17, AC-012-14, AC-012-30 — память).
 - 024 — 4.9, 4.11; задачи T-5 (AC-024-4 — память, `test/identity-store.contract.ts`).
+- 026 — 4.6, T-8: `createMemorySecretStore` (реализация `SecretStore`).
