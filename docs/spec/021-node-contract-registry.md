@@ -585,7 +585,7 @@ NODE_PACKAGES: z
 
 Выполняются по порядку. После каждой задачи — коммит; `npm run typecheck` и тесты зелёные на каждом коммите. Пакет — README в том же коммите.
 
-- [ ] **T-1.** `packages/contracts/src/node.ts` по 4.1 с `checkKindRules`, `nodeTypeRef`, `parseNodeTypeRef`; экспорт из `index.ts`; тесты `packages/contracts/test/node.test.ts`. Закрывает: REQ-021-1, REQ-021-2, REQ-021-3 (схема), REQ-021-16, AC-021-1, AC-021-2, AC-021-3, AC-021-22. Готово, когда: тесты зелёные, README `contracts` дополнен.
+- [x] **T-1.** `packages/contracts/src/node.ts` по 4.1 с `checkKindRules`, `nodeTypeRef`, `parseNodeTypeRef`; экспорт из `index.ts`; тесты `packages/contracts/test/node.test.ts`. Закрывает: REQ-021-1, REQ-021-2, REQ-021-3 (схема), REQ-021-16, AC-021-1, AC-021-2, AC-021-3, AC-021-22. Готово, когда: тесты зелёные, README `contracts` дополнен.
 - [ ] **T-2.** `packages/contracts/src/access.ts`: право `node.read` у трёх ролей по 4.6; тест в `packages/contracts/test/access.test.ts`. Закрывает: AC-021-21. Готово, когда: тест зелёный, прежние тесты доступа зелёные.
 - [ ] **T-3.** `packages/api-integration/src/node-registry.ts` по 4.2, экспорт из `index.ts`; тесты `packages/api-integration/test/node-registry.test.ts` с манифестами-литералами. Закрывает: REQ-021-4, REQ-021-5, REQ-021-6, AC-021-5, AC-021-6, AC-021-7, AC-021-8. Готово, когда: тесты зелёные, README `api-integration` дополнен.
 - [ ] **T-4.** Пакет `packages/node-sdk`: `package.json`, `tsconfig.json`, строка в корневом `tsconfig.json` по 4.3; `src/index.ts` — типы, `NodeError`, `defineNode`, `toManifest`; тесты `test/manifest.test.ts` и `test/types.test.ts`. Закрывает: REQ-021-7, REQ-021-8, AC-021-10, AC-021-23. Готово, когда: тесты и typecheck зелёные, README по схеме CLAUDE.md.
