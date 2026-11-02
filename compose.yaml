@@ -4,6 +4,9 @@ name: swag
 # Спека 002, 4.8: сеть `llm` — выход LiteLLM к провайдерам; `litellm` и `llm-fake` в ней одни, их не видно из default.
 networks:
   llm:
+  nodes:
+    name: swag-nodes
+    internal: true
 
 services:
   postgres:
@@ -57,6 +60,8 @@ services:
       IDENTITY_JWT_PUBLIC_KEY: ${IDENTITY_JWT_PUBLIC_KEY}
       IDENTITY_JWT_KID: ${IDENTITY_JWT_KID}
       ORCHESTRATOR_TOKEN: ${ORCHESTRATOR_TOKEN}
+      # Спека 026, 4.11: ключ шифра секретов организаций (AES-256-GCM).
+      SECRETS_KEY: ${SECRETS_KEY}
       API_REVOCATION_POLL_MS: ${API_REVOCATION_POLL_MS:-5000}
       API_REVOCATION_MAX_STALE_MS: ${API_REVOCATION_MAX_STALE_MS:-30000}
       # Спека 021, 4.9: пакеты узлов для каталога типов; пусто — каталог без типов.
@@ -162,6 +167,16 @@ services:
       TELEMETRY_FLUSH_TIMEOUT_MS: ${TELEMETRY_FLUSH_TIMEOUT_MS:-2000}
       # Спека 024, 4.13–4.14: Bearer-токен, который проверяет оркестратор.
       ORCHESTRATOR_TOKEN: ${ORCHESTRATOR_TOKEN}
+      # Спека 026, 4.11: секреты организаций, исполнение узлов и исходящий прокси. В сеть `nodes` оркестратор не входит.
+      SECRETS_KEY: ${SECRETS_KEY}
+      NODE_PACKAGES: ${NODE_PACKAGES:-}
+      NODE_TEMPLATE: ${NODE_TEMPLATE}
+      DOCKER_NODE_NETWORK: ${DOCKER_NODE_NETWORK}
+      NODE_EGRESS_PROXY_URL: ${NODE_EGRESS_PROXY_URL}
+      EGRESS_PROXY_KEY: ${EGRESS_PROXY_KEY}
+      NODE_INVOKE_TIMEOUT_MS: ${NODE_INVOKE_TIMEOUT_MS:-30000}
+      NODE_ABORT_GRACE_MS: ${NODE_ABORT_GRACE_MS:-1000}
+      NODE_FRAME_MAX_BYTES: ${NODE_FRAME_MAX_BYTES:-1048576}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     # Сокет на хосте принадлежит группе docker/root; пользователь node без этой группы получает EACCES.

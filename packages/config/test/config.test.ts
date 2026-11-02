@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { z } from 'zod';
 import {
   AgentConfig,
+  EgressProxyConfig,
   ApiConfig,
   BaseConfig,
   ConfigError,
@@ -24,6 +25,8 @@ const validEnv = {
 
 const gatewayToken = 'swag-local-gateway-token-not-secret-000';
 const serviceToken = 'swag-local-service-token-not-secret-0000';
+// Спека 026, 4.11: фейковый ключ шифра (32 байта в base64); в .env.example ключ пустой.
+const fakeKey = Buffer.alloc(32, 7).toString('base64');
 
 // Спека 002, 4.8 и 4.9: примеры окружения шлюза; `.env.example` и `.env.llm.example` вместе проходят разбор.
 const gatewayExamples = (): Record<string, string> => ({
@@ -62,8 +65,13 @@ const orchestratorEnv = {
   AGENT_MAX_TOKENS: '2048',
   LLM_GATEWAY_TOKEN: gatewayToken,
   DOCKER_AGENT_LLM_GATEWAY_URL: 'http://llm-gateway:3002/v1',
+  NODE_TEMPLATE: 'swag-node-host:dev',
+  DOCKER_NODE_NETWORK: 'swag-nodes',
+  NODE_EGRESS_PROXY_URL: 'http://egress-proxy:3128',
+  EGRESS_PROXY_KEY: fakeKey,
   LLM_GATEWAY_URL: 'http://llm-gateway:3002',
   ORCHESTRATOR_TOKEN: serviceToken,
+  SECRETS_KEY: fakeKey,
 };
 
 // Спека 024, 4.14: env api с новыми переменными доступа; ключ проверки — фейк, в .env.example он пустой.
@@ -79,6 +87,7 @@ const apiEnv = {
   IDENTITY_JWT_PUBLIC_KEY: 'fake-ed25519-public-key-for-tests',
   IDENTITY_JWT_KID: 'dev-1',
   ORCHESTRATOR_TOKEN: serviceToken,
+  SECRETS_KEY: fakeKey,
 };
 
 describe('loadConfig', () => {
@@ -296,7 +305,13 @@ describe('loadConfig', () => {
     const example = parseEnv(
       readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8'),
     );
-    expect(loadConfig(OrchestratorConfig, example).AGENT_MAX_STEPS).toBe(20);
+    expect(
+      loadConfig(OrchestratorConfig, {
+        ...example,
+        SECRETS_KEY: fakeKey,
+        EGRESS_PROXY_KEY: fakeKey,
+      }).AGENT_MAX_STEPS,
+    ).toBe(20);
     expect(example).not.toHaveProperty('AGENT_NEXT');
     expect(example).not.toHaveProperty('AGENT_STEP_DELAY_MS');
   });
@@ -460,7 +475,11 @@ describe('AC-024-2: конфиг доступа', () => {
       readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8'),
     );
     expect(() =>
-      loadConfig(ApiConfig, { ...example, IDENTITY_JWT_PUBLIC_KEY: 'fake-key' }),
+      loadConfig(ApiConfig, {
+        ...example,
+        IDENTITY_JWT_PUBLIC_KEY: 'fake-key',
+        SECRETS_KEY: fakeKey,
+      }),
     ).not.toThrow();
     expect(() => loadConfig(ApiConfig, example)).toThrow('  IDENTITY_JWT_PUBLIC_KEY: ');
   });
@@ -496,7 +515,45 @@ describe('AC-021-24: NODE_PACKAGES', () => {
       readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8'),
     );
     expect(
-      loadConfig(ApiConfig, { ...example, IDENTITY_JWT_PUBLIC_KEY: 'fake-key' }).NODE_PACKAGES,
+      loadConfig(ApiConfig, {
+        ...example,
+        IDENTITY_JWT_PUBLIC_KEY: 'fake-key',
+        SECRETS_KEY: fakeKey,
+      }).NODE_PACKAGES,
     ).toEqual(['@swag/node-llm-agent', '@swag/node-example']);
+  });
+});
+
+describe('AC-026-22: ключи шифра и настройки исполнения узлов', () => {
+  const keyEnv = (): Record<string, string> => ({
+    ...parseEnv(readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8')),
+    SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
+    EGRESS_PROXY_KEY: Buffer.alloc(32, 9).toString('base64'),
+    IDENTITY_JWT_PUBLIC_KEY: 'fake-key',
+  });
+
+  it('AC-026-22: значения из .env.example с фейковыми ключами проходят ApiConfig, OrchestratorConfig и EgressProxyConfig', () => {
+    const env = keyEnv();
+    expect(() => loadConfig(ApiConfig, env)).not.toThrow();
+    expect(() => loadConfig(OrchestratorConfig, env)).not.toThrow();
+    expect(() => loadConfig(EgressProxyConfig, env)).not.toThrow();
+  });
+
+  it.each([
+    ['ApiConfig', ApiConfig, 'SECRETS_KEY'],
+    ['OrchestratorConfig', OrchestratorConfig, 'SECRETS_KEY'],
+    ['OrchestratorConfig', OrchestratorConfig, 'EGRESS_PROXY_KEY'],
+    ['EgressProxyConfig', EgressProxyConfig, 'EGRESS_PROXY_KEY'],
+  ] as const)('AC-026-22: %s — %s пустой, 16 байт или не base64 — ошибка', (_name, schema, key) => {
+    for (const bad of ['', Buffer.alloc(16, 7).toString('base64'), 'не-base64!']) {
+      expect(() => loadConfig(schema, { ...keyEnv(), [key]: bad })).toThrow(`  ${key}: `);
+    }
+  });
+
+  it('AC-026-22: NODE_INVOKE_TIMEOUT_MS = 500 — ошибка; по умолчанию 30000', () => {
+    expect(() =>
+      loadConfig(OrchestratorConfig, { ...keyEnv(), NODE_INVOKE_TIMEOUT_MS: '500' }),
+    ).toThrow('  NODE_INVOKE_TIMEOUT_MS: ');
+    expect(loadConfig(OrchestratorConfig, keyEnv()).NODE_INVOKE_TIMEOUT_MS).toBe(30000);
   });
 });

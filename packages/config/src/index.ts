@@ -13,6 +13,24 @@ const FlushTimeoutMs = PositiveInt.default(2000); // TELEMETRY_FLUSH_TIMEOUT_MS
 // Спека 024, 4.14: тот же формат для внутренних токенов сервисов (identity, оркестратор).
 const ServiceToken = z.string().min(32);
 const AgentPeerEnv = z.object({ id: AgentId, name: z.string().min(1), role: z.string().min(1) });
+// Спека 026, 4.11: ключ шифра — base64 ровно 32 байта, канонический (как в createAesGcmCipher, adapter-crypto).
+const SecretKey = z.string().refine((value) => {
+  const key = Buffer.from(value, 'base64');
+  return key.length === 32 && key.toString('base64') === value;
+}, 'ожидался base64 ровно 32 байта');
+// Спека 021, 4.9 (Q-6): пакеты узлов через запятую; пустое значение — пустой список.
+const NodePackages = z
+  .string()
+  .default('')
+  .transform((value) => (value.trim() === '' ? [] : value.split(',').map((name) => name.trim())))
+  .pipe(
+    z
+      .array(z.string().min(1, 'NODE_PACKAGES: empty package name'))
+      .refine(
+        (names) => new Set(names).size === names.length,
+        'NODE_PACKAGES: duplicate package name',
+      ),
+  );
 
 export const BaseConfig = z.object({
   DATABASE_URL: z.string().url(),
@@ -43,19 +61,10 @@ export const ApiConfig = BaseConfig.extend({
   ORCHESTRATOR_TOKEN: ServiceToken,
   API_REVOCATION_POLL_MS: z.coerce.number().int().min(1000).default(5000),
   API_REVOCATION_MAX_STALE_MS: z.coerce.number().int().min(1000).default(30000),
+  // Спека 026, 4.11: ключ шифра секретов организаций.
+  SECRETS_KEY: SecretKey,
   // Спека 021, 4.9 (Q-6): пакеты узлов, чьи типы попадают в реестр; пустое значение — реестр без типов.
-  NODE_PACKAGES: z
-    .string()
-    .default('')
-    .transform((value) => (value.trim() === '' ? [] : value.split(',').map((name) => name.trim())))
-    .pipe(
-      z
-        .array(z.string().min(1, 'NODE_PACKAGES: empty package name'))
-        .refine(
-          (names) => new Set(names).size === names.length,
-          'NODE_PACKAGES: duplicate package name',
-        ),
-    ),
+  NODE_PACKAGES: NodePackages,
 });
 export type ApiConfig = z.infer<typeof ApiConfig>;
 
@@ -76,8 +85,29 @@ export const OrchestratorConfig = BaseConfig.extend({
   SWARM_TIMEOUT_MS: PositiveInt,
   // Спека 024, 4.13–4.14: Bearer-токен, которым api вызывает оркестратор.
   ORCHESTRATOR_TOKEN: ServiceToken,
+  // Спека 026, 4.11: секреты организаций, исполнение узлов и исходящий прокси.
+  SECRETS_KEY: SecretKey,
+  NODE_PACKAGES: NodePackages,
+  NODE_TEMPLATE: z.string().min(1),
+  DOCKER_NODE_NETWORK: z.string().min(1),
+  NODE_EGRESS_PROXY_URL: z.string().url(),
+  EGRESS_PROXY_KEY: SecretKey,
+  NODE_INVOKE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(30000),
+  NODE_ABORT_GRACE_MS: PositiveInt.default(1000),
+  NODE_FRAME_MAX_BYTES: z.coerce.number().int().min(1).default(1048576),
 });
 export type OrchestratorConfig = z.infer<typeof OrchestratorConfig>;
+
+// Спека 026, 4.11: исходящий прокси узлов. Без DATABASE_URL: данных в БД у прокси нет.
+export const EgressProxyConfig = z.object({
+  EGRESS_PROXY_KEY: SecretKey,
+  EGRESS_PROXY_PORT: Port.default(3128),
+  EGRESS_PROXY_HEALTH_PORT: Port.default(3129),
+  OTEL_EXPORTER_OTLP_ENDPOINT: OptionalUrl,
+  LOG_LEVEL: LogLevel.default('info'),
+  TELEMETRY_FLUSH_TIMEOUT_MS: FlushTimeoutMs,
+});
+export type EgressProxyConfig = z.infer<typeof EgressProxyConfig>;
 
 // Порты UI на 127.0.0.1 — только для проверки инфраструктуры (infra:check) и запуска на хосте (ui:dev); сам UI переменных не читает.
 // Спека 014, 4.9–4.10: порты микрофронтендов кабинета, админки и супервизора (по умолчанию 4201, 4202, 4203).
