@@ -8,3 +8,4 @@ export * from './auth.ts';
 export * from './access.ts';
 export * from './billing.ts';
 export * from './node.ts';
+export * from './node-invocation.ts';

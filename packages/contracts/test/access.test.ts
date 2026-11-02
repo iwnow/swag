@@ -35,6 +35,7 @@ const EXPECTED: Record<Role, Permission[]> = {
     'balance.read',
     'balance.topup',
     'node.read',
+    'secret.manage',
   ],
   supervisor: [
     'swarm.read',
@@ -74,6 +75,12 @@ describe('права и вызывающий', () => {
 
   it('AC-024-1: у supervisor нет swarm.create', () => {
     expect(can(actorFromClaims(claims('supervisor')), 'swarm.create')).toBe(false);
+  });
+
+  it('REQ-026-8: secret.manage есть только у admin', () => {
+    for (const role of ['user', 'admin', 'supervisor'] as const) {
+      expect(can(actorFromClaims(claims(role)), 'secret.manage'), role).toBe(role === 'admin');
+    }
   });
 
   it('AC-021-21: у каждой роли есть node.read', () => {

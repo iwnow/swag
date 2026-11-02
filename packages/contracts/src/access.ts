@@ -11,6 +11,7 @@ export const Permission = z.enum([
   'balance.read',
   'balance.topup',
   'node.read', // 021, 4.6: каталог типов узлов
+  'secret.manage', // 026, 4.6: секреты организации
 ]);
 export type Permission = z.infer<typeof Permission>;
 
@@ -24,6 +25,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'balance.read',
     'balance.topup',
     'node.read',
+    'secret.manage',
   ],
   supervisor: [
     'swarm.read',
