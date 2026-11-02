@@ -40,6 +40,7 @@ try {
   config = await fail('config invalid', error);
 }
 
+// isPublic в проде не передаётся: проверка адреса — isPublicAddress из ядра (D-162).
 const core = createEgressProxyCore({
   grants: createEgressGrants(config.EGRESS_PROXY_KEY),
   resolver: {

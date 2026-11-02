@@ -39,7 +39,7 @@ export async function startEgressProxy(options: {
     clients.add(client);
     client.on('close', () => clients.delete(client));
     client.on('error', () => client.destroy());
-    void tunnel(options.core, req, client, head);
+    void tunnel(options.core, req, client, head).catch(() => client.destroy());
   });
   proxy.on('request', (_req, res) => {
     res.writeHead(405, { Connection: 'close' }).end();
@@ -70,31 +70,35 @@ async function tunnel(
   client: Duplex,
   head: Buffer,
 ): Promise<void> {
+  // Закрытие клиента до и во время authorize отменяет и последующий connect к upstream.
+  const abort = new AbortController();
+  client.once('close', () => abort.abort());
+
   const decision = await core.authorize(
     req.method ?? '',
     req.url ?? '',
     req.headers['proxy-authorization'],
   );
+  if (client.destroyed) return;
   if (!decision.ok) {
     const { status } = decision;
     client.end(`HTTP/1.1 ${status} ${REASON_PHRASES[status]}\r\nConnection: close\r\n\r\n`);
     return;
   }
 
-  const upstream = connect(decision.port, decision.address);
+  const socket = connect({ port: decision.port, host: decision.address, signal: abort.signal });
   let established = false;
-  upstream.once('connect', () => {
+  socket.once('connect', () => {
     established = true;
     client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-    if (head.length > 0) upstream.write(head);
-    client.pipe(upstream).pipe(client);
+    if (head.length > 0) socket.write(head);
+    client.pipe(socket).pipe(client);
   });
-  upstream.on('error', () => {
+  socket.on('error', () => {
     if (established) client.destroy();
     else client.end('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n');
   });
-  client.on('close', () => upstream.destroy());
-  upstream.on('close', () => client.destroy());
+  socket.on('close', () => client.destroy());
 }
 
 function listen(server: Server, host: string, port: number): Promise<number> {

@@ -71,6 +71,22 @@ function readHead(socket: Socket): Promise<{ head: string; rest: Buffer }> {
   });
 }
 
+// Дочитывает `length` байт: сначала остаток из заголовка, затем новые данные сокета.
+function readBytes(socket: Socket, initial: Buffer, length: number): Promise<string> {
+  return new Promise((resolve) => {
+    let buffered = initial;
+    const done = () => resolve(buffered.subarray(0, length).toString('utf8'));
+    if (buffered.length >= length) return done();
+    const onData = (chunk: Buffer) => {
+      buffered = Buffer.concat([buffered, chunk]);
+      if (buffered.length < length) return;
+      socket.off('data', onData);
+      done();
+    };
+    socket.on('data', onData);
+  });
+}
+
 function open(port: number = proxy.port): Promise<Socket> {
   return new Promise((resolve, reject) => {
     const socket = new Socket();
@@ -108,6 +124,25 @@ describe('egress-proxy shell', () => {
     socket.write(connectRequest(`other.test:${echoPort}`));
     const { head } = await readHead(socket);
     expect(head.startsWith('HTTP/1.1 403 Forbidden')).toBe(true);
+  });
+
+  it('AC-026-11: данные, пришедшие вместе с CONNECT, доходят до upstream', async () => {
+    const socket = await open();
+    const payload = 'first payload bytes';
+    socket.write(connectRequest(`allowed.test:${echoPort}`) + payload);
+    const { head, rest } = await readHead(socket);
+    expect(head.startsWith('HTTP/1.1 200 Connection Established')).toBe(true);
+    expect(await readBytes(socket, rest, payload.length)).toBe(payload);
+  });
+
+  it('AC-026-11: после отказа 403 сокет клиента закрыт', async () => {
+    const socket = await open();
+    const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()));
+    socket.write(connectRequest(`other.test:${echoPort}`));
+    const { head } = await readHead(socket);
+    expect(head.startsWith('HTTP/1.1 403 Forbidden')).toBe(true);
+    await closed;
+    expect(socket.destroyed).toBe(true);
   });
 
   it('AC-026-11: CONNECT без верного токена → 407', async () => {
