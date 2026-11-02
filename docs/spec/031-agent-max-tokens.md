@@ -1,11 +1,11 @@
 ---
 id: "031"
 title: Лимит ответа агента
-status: review
+status: done
 roadmap_stage: 4
 depends_on: ["004"]
 superseded_by: null
-updated: 2026-10-30
+updated: 2026-11-02
 ---
 
 # 031. Лимит ответа агента
