@@ -1,5 +1,5 @@
 import type { SecretStore, SwarmStore } from '@swag/api-core';
-import { applyEvent, type SwarmView } from '@swag/api-integration';
+import { applyEvent, createNodeRegistry, type SwarmView } from '@swag/api-integration';
 import type { BalanceStore } from '@swag/billing-core';
 import type { BalanceEntry, PlatformEvent, SecretSummary } from '@swag/contracts';
 import type {
@@ -429,6 +429,32 @@ export function createMemorySecretStore(): SecretStore {
 
     async delete(orgId, name) {
       return ofOrg(orgId).delete(name);
+    },
+  };
+}
+
+// Спека 026, 4.10: порты узлов для оболочек и тестов без узлов. Реестр пуст, песочница не создаётся.
+export function createMemoryNodePorts() {
+  const registry = createNodeRegistry([]);
+  if (!registry.ok) throw new Error('пустой реестр узлов не собран');
+  return {
+    nodes: { registry: registry.registry, packageOf: (): null => null },
+    nodeSandboxes: {
+      run: async (): Promise<never> => {
+        throw new Error('узлы не подключены');
+      },
+      remove: async () => undefined,
+      list: async () => [],
+    },
+    secrets: { read: async () => ({}) },
+    nodeState: { get: async () => null, set: async () => undefined },
+    egressGrants: { issue: () => '' },
+    node: {
+      template: '',
+      egressProxyUrl: '',
+      timeoutMs: 30000,
+      abortGraceMs: 1000,
+      frameMaxBytes: 1048576,
     },
   };
 }

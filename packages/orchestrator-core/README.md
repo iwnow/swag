@@ -11,12 +11,15 @@
   - `agent.failed` любого агента в `running` → `swarm.failed` с `reason: agent_failed`, `detail: "<agentId>: <reason>"`; причина `model_error:swarm_budget_exceeded` или `model_error:agent_budget_exceeded` → `swarm.failed` с `reason: budget_exceeded`, `detail: "<agentId>: <код>"` (004, 4.6);
   - `stop` → `swarm.stopped`; таймаут роя → `swarm.failed` (`swarm_timeout`).
     Везде: удалить песочницы, `agent.stopped` по каждому агенту, `llmSwarms.close` (сбой — лог `warn gateway_close_failed`, рой завершается), затем событие роя. Число из `close` (`spentMicroUsd`, 013, 4.6) попадает в `data` события роя; `null` (404) или сбой — поля нет.
-- `cleanupOrphans`: удалить песочницы платформы прошлого запуска.
+- `cleanupOrphans`: удалить песочницы платформы прошлого запуска, в том числе песочницы узлов (`swag.kind=node`, 026, 4.10).
+- `invokeNode(invocation)` (спека 026, 4.10): один вызов узла. Шаг 1 — проверки реестра до песочницы (тип, вид, вид вызова, операция, настройки, вход, набор `credentials`, секреты организации); далее песочница с метками, кадр `invoke` с секретами только из `credentials` манифеста, чтение кадров по 4.8, `abort` по дедлайну и грейсу, проверка выхода по схемам манифеста, `remove` в `finally`, вымарывание значений секретов в `msg`, ключах и значениях `data` и в сообщениях ошибок результата (до обрезки), лог `info node invoke` (пишется и при исключении, с `ok:false`). Код — `src/node-invoke.ts`, фабрика `createInvokeNode`.
 
 ## Что внутри сейчас
 
 - `createOrchestratorCore(deps)` с портами `SandboxProvider`, `OrchestratorBus`, `Timers`, `Clock`, `IdGenerator`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`.
-- Порты узлов (спека 026, 4.5, 4.10): `SecretReader` (`read(orgId, names)` — только найденные имена) и `NodeStateStore` (`get`, `set` с `null` как удалением). Только типы и экспорт: в зависимости ядра они пока не входят, вызов узла `invokeNode` — T-14. Реализации — `createPostgresSecretStore` и `createPostgresNodeState` в `adapter-postgres`.
+- Порты узлов (спека 026, 4.5, 4.9, 4.10): `SecretReader` (`read(orgId, names)` — только найденные имена), `NodeStateStore` (`get`, `set` с `null` как удалением) и `NodeSandboxes` (`run`, `remove`, `list`; типы `NodeSandboxSpec`, `NodeSandboxSession`). Реализации — `createPostgresSecretStore`, `createPostgresNodeState` в `adapter-postgres` и `createDockerNodeSandboxes` в `adapter-docker`.
+- Зависимости вызова узла — `NodeInvokeDeps` (`nodes`, `nodeSandboxes`, `secrets`, `nodeState`, `egressGrants`, `node`), входят в `OrchestratorCoreDeps`. `invokeNode` возвращает результат с кодом; исключение бросает только сбой чтения секретов (D-168): до броска пишутся `error node secrets read failed` и `info node invoke` с `ok:false`.
+- Тесты узлов: `test/invoke-node.test.ts` — AC-026-12…17, AC-026-23 (проверки реестра, метки и шаблон песочницы, кадры и байты, `sandbox_failed`, сбой `remove`, выходы по схемам, `abort` в дедлайн, вымарывание); фейки портов узлов, ручные таймеры и часы, которые двигает `run` — `test/node-fakes.ts`.
 - `deps.agent` — `{ template, maxSteps, maxTokens, llmGatewayToken, flushTimeoutMs }`: значения env агента, которые ставит ядро. `maxTokens` — умолчание `AGENT_MAX_TOKENS` оркестратора, используется, когда у агента и роя лимита нет (031, 4.4).
 - Порт `LlmSwarms` (`register`, `close: Promise<number | null>`) — `deps.llmSwarms`; реализация — `@swag/adapter-gateway-http`.
 - Env песочницы агента (4.8): `SWARM_ID`, `AGENT_ID`, `AGENT_NAME`, `AGENT_ROLE`, `AGENT_MODEL`, `AGENT_PEERS` (JSON `{id,name,role}` остальных агентов роя), `AGENT_ENTRY`, `AGENT_MAX_STEPS`, `AGENT_MAX_TOKENS` (031, 4.4: `maxTokens` агента, иначе роя, иначе `deps.agent.maxTokens`), `LLM_GATEWAY_TOKEN`, `TELEMETRY_FLUSH_TIMEOUT_MS`. Адресов NATS, OTLP и gateway ядро не знает — их добавляет адаптер.
@@ -27,7 +30,7 @@
 
 Правила ядра ([архитектура](../../docs/architecture.md), [спека 000, 4.2](../../docs/spec/000-foundation.md#42-правила-ядра-и-оболочки)):
 
-- Зависимости — `@swag/contracts`.
+- Зависимости — `@swag/contracts`, `@swag/api-integration` (тип реестра узлов), `zod` (форма выхода `poll`).
 - Нет окружения и инфраструктуры. Шаблон песочницы и значения env приходят через `deps`; из запроса не принимаются.
 - `agent.failed` отслеживается только в `running`. Падение агента до старта роя завершает рой по таймаутам.
 - `TRACEPARENT` ядро не ставит: порт `TraceContext` отдаёт только `traceId`, см. решения.
@@ -43,6 +46,12 @@
 - Фазы роя внутри ядра: `creating` → `waiting` → `running` → `finished`. Переход в `running` делается до первого `await`, поэтому параллельные `agent.started` не отправят задачу дважды (T-6).
 - Завершение — одна функция `finish`: песочницы → `agent.stopped` по всем агентам запуска → событие роя; повторный вызов ничего не делает (4.6.2).
 - Песочница, созданная уже после `finish`, удаляется сразу (гонка остановки с созданием).
+- Длина кадра в байтах UTF-8 считается функцией без `Buffer` и `TextEncoder`: этих типов нет в `lib` ядра (D-167). `arch:check` проверяет только импорты, глобалы он не видит.
+- Таймауты вызова узла — порт `Timers`: `abort` уходит ровно в `deadline` по часам ядра, задержка `max(0, deadline - now)`, а не через `timeoutMs` после старта таймера (часы могут уйти вперёд во время `run`); сбой отправки `abort` пишется `warn node abort send failed`, грейс-таймер всё равно ставится; по истечении `abortGraceMs` — `timeout`; `result` в грейсе принимается (AC-026-15).
+- Кадры после первого `result` не читаются и не дают `protocol_error`: результат уже принят (D-173).
+- Строка кадра, которую оболочка песочницы не смогла разбить по лимиту, приходит маркером и даёт `protocol_error` (D-172).
+- Лимиты состояния 4.5 считаются по `length` строки; `state.set` с `null` удаляет ключ (AC-026-17).
+- `cleanupOrphans` удаляет сначала песочницы узлов, затем агентские: агентская выборка по `swag.kind` в Docker их уже не видит, счёт без двойного учёта (D-169).
 - Итог роя — только от агента-входа (022, 4.9, Q-3). Ответы остальных агентов ядро не учитывает: их ждёт агент-вход через `agent-core`.
 - Падение любого агента в `running` — `swarm.failed` с `agent_failed` (022, Q-3); `detail` — `"<agentId>: <reason>"` буквально из 4.9.
 - Отказ по бюджету (`model_error:*_budget_exceeded` из gateway) — `swarm.failed` `budget_exceeded` (004, 4.6, REQ-004-16); остальные `model_error:<код>` остаются `agent_failed`.
@@ -65,4 +74,5 @@
 - 016 — порты `Logger` и `TraceContext`, логи 4.8.
 - 022 — 4.8 (env агента), 4.9 (завершение и падение роя), REQ-022-10, REQ-022-11, AC-022-17, AC-022-18.
 - 031 — 4.4 (выбор `AGENT_MAX_TOKENS` агента: агент → рой → умолчание оркестратора); REQ-031-4, AC-031-4.
+- 026 — 4.9 (порт `NodeSandboxes`), 4.10 (`invokeNode`, `cleanupOrphans`); REQ-026-1…5, REQ-026-9…12, AC-026-12…17, AC-026-23.
 - 005 — тёплый пул, лимиты, reaper; 007 — изоляция шины; 008 — устойчивость агента.

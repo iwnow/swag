@@ -6,8 +6,11 @@ import {
   type LlmSwarmRegistration,
   type AgentId,
   type AgentSpec,
+  type NodeInvocation,
+  type NodeInvocationResult,
   type ServiceInfo,
 } from '@swag/contracts';
+import { createInvokeNode, type NodeInvokeDeps } from './node-invoke.ts';
 
 // Спека 001, 4.6.2 и 4.6.3. Порты объявляет ядро; адаптеры передаёт оболочка.
 
@@ -78,7 +81,24 @@ export interface NodeStateStore {
   set(orgId: string, stateKey: string, key: string, value: string | null, now: Date): Promise<void>;
 }
 
-export interface OrchestratorCoreDeps {
+// Спека 026, 4.9. Песочница одного вызова узла: stdin/stdout строками JSON, без env с секретами.
+export interface NodeSandboxSpec {
+  template: string; // NODE_TEMPLATE
+  metadata: Record<string, string>; // swag.kind=node, swag.invocation, swag.org
+}
+export interface NodeSandboxSession {
+  sandboxId: string;
+  write(line: string): void; // добавляет "\n"
+  lines: AsyncIterable<string>; // stdout построчно; заканчивается с выходом процесса
+}
+export interface NodeSandboxes {
+  run(spec: NodeSandboxSpec): Promise<NodeSandboxSession>; // создаёт, подключает stdio, запускает
+  remove(sandboxId: string): Promise<void>; // нет такой — не ошибка
+  list(match: Record<string, string | true>): Promise<string[]>;
+}
+
+// Спека 026, 4.10: порты вызова узла — NodeInvokeDeps; остальные зависимости ядра — ниже.
+export interface OrchestratorCoreDeps extends NodeInvokeDeps {
   version: string; // передаёт оболочка: ядро не читает package.json
   sandboxes: SandboxProvider;
   bus: OrchestratorBus;
@@ -113,6 +133,8 @@ export interface OrchestratorCore {
   stop(swarmId: string): Promise<Result<void>>;
   handleEvent(raw: unknown): Promise<void>; // реагирует на agent.started, agent.result и agent.failed
   cleanupOrphans(): Promise<number>; // число удалённых песочниц
+  // Спека 026, 4.10: один вызов узла; всегда результат, не исключение (кроме сбоя хранилища секретов).
+  invokeNode(invocation: NodeInvocation): Promise<NodeInvocationResult>;
 }
 
 type Phase = 'creating' | 'waiting' | 'running' | 'finished';
@@ -157,6 +179,7 @@ const fail = (code: string, message: string, issues?: OrchestratorError['issues'
 export function createOrchestratorCore(deps: OrchestratorCoreDeps): OrchestratorCore {
   const { sandboxes, bus, clock, timers, ids, log, trace, llmSwarms } = deps;
   const runs = new Map<string, Run>();
+  const invokeNode = createInvokeNode(deps);
 
   // traceId — из порта: таймеры и обработчики событий выполняются в контексте запуска роя (REQ-016-2).
   const envelope = (swarmId: string, agentId: AgentId | null) => ({
@@ -430,9 +453,14 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
     },
 
     async cleanupOrphans() {
-      const ids = await sandboxes.list({ 'swag.kind': true });
-      for (const id of ids) await sandboxes.remove(id);
-      return ids.length;
+      // Сначала песочницы узлов: агентская выборка по 'swag.kind' их уже не вернёт (без двойного счёта).
+      const nodeIds = await deps.nodeSandboxes.list({ 'swag.kind': 'node' });
+      for (const id of nodeIds) await deps.nodeSandboxes.remove(id);
+      const agentIds = await sandboxes.list({ 'swag.kind': true });
+      for (const id of agentIds) await sandboxes.remove(id);
+      return nodeIds.length + agentIds.length;
     },
+
+    invokeNode,
   };
 }

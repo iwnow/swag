@@ -8,6 +8,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@swag/contracts": "0.0.0"
+    "@swag/api-integration": "0.0.0",
+    "@swag/contracts": "0.0.0",
+    "zod": "4.6.7"
   }
 }
