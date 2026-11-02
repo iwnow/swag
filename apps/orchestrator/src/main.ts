@@ -4,9 +4,13 @@ import { createOrchestratorCore, type OrchestratorBus } from '@swag/orchestrator
 import { ALL_EVENTS, eventsSubject, inboxSubject } from '@swag/contracts';
 import { BaseConfig, OrchestratorConfig, loadConfig } from '@swag/config';
 import { connectNatsBus } from '@swag/adapter-nats';
-import { createDockerSandboxProvider } from '@swag/adapter-docker';
+import { createDockerNodeSandboxes, createDockerSandboxProvider } from '@swag/adapter-docker';
 import { createGatewaySwarms } from '@swag/adapter-gateway-http';
+import { createAesGcmCipher, createEgressGrants } from '@swag/adapter-crypto';
+import { createPostgresNodeState, createPostgresSecretStore } from '@swag/adapter-postgres';
 import { startTelemetry, tracedHttpServer } from '@swag/adapter-telemetry';
+import { bootNodePackages } from '@swag/node-packages';
+import pg from 'pg';
 import { buildApp } from './app.ts';
 
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
@@ -44,6 +48,13 @@ try {
   config = await fail('config invalid', error);
 }
 
+// Спека 026, 4.10: реестр узлов загружается до подключения к Docker и Postgres.
+const nodePackages = await bootNodePackages(config.NODE_PACKAGES, {
+  log,
+  fail: () => fail('node packages invalid', undefined),
+});
+const pool = new pg.Pool({ connectionString: config.DATABASE_URL });
+
 const bus = await connectNatsBus({
   url: config.NATS_URL,
   warn: (message) => log.warn('bus warning', { reason: message }),
@@ -80,6 +91,18 @@ const core = createOrchestratorCore({
   llmSwarms,
   log,
   trace: telemetry.trace,
+  nodes: nodePackages,
+  nodeSandboxes: createDockerNodeSandboxes({ network: config.DOCKER_NODE_NETWORK, log }),
+  secrets: createPostgresSecretStore(pool, createAesGcmCipher(config.SECRETS_KEY)),
+  nodeState: createPostgresNodeState(pool),
+  egressGrants: createEgressGrants(config.EGRESS_PROXY_KEY),
+  node: {
+    template: config.NODE_TEMPLATE,
+    egressProxyUrl: config.NODE_EGRESS_PROXY_URL,
+    timeoutMs: config.NODE_INVOKE_TIMEOUT_MS,
+    abortGraceMs: config.NODE_ABORT_GRACE_MS,
+    frameMaxBytes: config.NODE_FRAME_MAX_BYTES,
+  },
   agent: {
     template: config.AGENT_TEMPLATE,
     maxSteps: config.AGENT_MAX_STEPS,
@@ -120,6 +143,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       void app
         .close()
         .then(() => bus.close())
+        .then(() => pool.end())
         .then(() => telemetry.shutdown())
         .then(() => process.exit(0)),
   );

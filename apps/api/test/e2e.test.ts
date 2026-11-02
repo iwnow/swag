@@ -21,7 +21,11 @@ import {
 } from '@swag/orchestrator-core';
 import { unreadMessageIds } from '@swag/ui-core';
 import { actorOf, emptyNodeTypes, WHO } from './support.ts';
-import { createMemorySecretStore, createMemorySwarmStore } from '@swag/adapter-memory';
+import {
+  createMemoryNodePorts,
+  createMemorySecretStore,
+  createMemorySwarmStore,
+} from '@swag/adapter-memory';
 import { createMemoryExporters, startTelemetry, type Telemetry } from '@swag/adapter-telemetry';
 import { AgentConfig, loadConfig } from '@swag/config';
 import {
@@ -231,6 +235,7 @@ function world(log: Logger, trace: TraceContext, script: Script = team) {
       flushTimeoutMs: 500,
     },
     timeouts: { agentStartMs: 5000, swarmMs: 60000 },
+    ...createMemoryNodePorts(),
   });
   hub.subscribe(ALL_EVENTS, (raw) => void orchestrator.handleEvent(raw));
 

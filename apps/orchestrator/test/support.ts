@@ -1,3 +1,4 @@
+import { createMemoryNodePorts } from '@swag/adapter-memory';
 import {
   createOrchestratorCore,
   type SandboxProvider,
@@ -41,5 +42,6 @@ export function makeCore(sandboxes: Map<string, SandboxSpec>) {
       flushTimeoutMs: 2000,
     },
     timeouts: { agentStartMs: 30000, swarmMs: 300000 },
+    ...createMemoryNodePorts(),
   });
 }

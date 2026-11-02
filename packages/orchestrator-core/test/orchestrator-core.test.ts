@@ -9,6 +9,7 @@ import {
   type SandboxProvider,
   type SandboxSpec,
 } from '../src/index.ts';
+import { nodeHarness } from './node-fakes.ts';
 
 const SWARM = '0b6f6d2e-6a4c-4c3e-9f5e-111111111111';
 const TEMPLATE = 'swag-agent:test';
@@ -137,6 +138,7 @@ function setup(
       flushTimeoutMs: 2000,
     },
     timeouts: { agentStartMs: options.agentStartMs ?? 30000, swarmMs: options.swarmMs ?? 300000 },
+    ...nodeHarness().nodeDeps,
   });
   return {
     core,
