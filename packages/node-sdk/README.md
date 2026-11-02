@@ -16,7 +16,7 @@ SDK для авторов узлов: определение узла на TypeS
 ### `src/*`
 
 - `src/index.ts` — типы определений (`TriggerDefinition`, `ChannelDefinition`, `ConnectorDefinition`, `OperationDefinition`, `ProgramDefinition`, `BuiltinDefinition`, `NodeDefinition`), `SettingsOf`, `PollResult`, `NodeContext`, `NodeError`, `NodeErrorCode` (реэкспорт из `@swag/contracts`), `defineNode`, `toManifest`.
-- `src/runtime.ts` — `invokeNode` (проверки входа, выхода, событий и вида вызова, все правила вызова обработчика), `parseSettings` (проверка настроек, `invalid_settings`).
+- `src/runtime.ts` — `invokeNode` (проверки входа, выхода и событий, соответствие вида вызова виду узла), `parseSettings` (проверка настроек, `invalid_settings`).
 - `src/testing.ts` — `createTestContext`, `TestContext`, `TestContextOptions`, `runNode`, `runOperation`, `runPoll`, `runSend`. Эти функции вызывают `invokeNode`, своих проверок не содержат.
 
 ### `test/*`
@@ -84,7 +84,7 @@ await runNode(echo, ctx, { text: 'hi' }); // { text: '> hi' }
 - Проверки вызова живут в `runtime.ts`, а не в обвязке: `invokeNode` — единственное место, где вход, выход, события и вид вызова проверяются схемами определения (REQ-026-15). `testing.ts` вызывает его, поэтому тесты обвязки и `apps/node-host` ведут себя одинаково.
 - `NodeErrorCode` берётся из `@swag/contracts` (D-160, трактовка (а)): SDK не держит свой список кодов, и новый код появляется в одном месте.
 - Вид вызова, который не подходит виду узла (например `operation` у программы), — `unknown_operation`, а не отдельный код: тот же код, что у неизвестной операции (спека 026, 4.3).
-- Сверка хоста — одна функция `egressMatches` из `@swag/contracts` (REQ-026-13): тестовая обвязка и прокси используют одно правило. `http.fetch` пропускает только `https:`; пустой порт в адресе — 443. Прочие адреса — `egress_denied` до вызова `options.fetch`. Без `options.fetch` ответ — `501` без сети.
+- Сверка хоста — одна функция `egressMatches` из `@swag/contracts` (REQ-026-13): тестовая обвязка и прокси используют одно правило. `http.fetch` пропускает только `https:`; пустой порт в адресе — 443, поэтому запись `host:443` совпадает с `https://host/` (раньше не совпадала ни с чем: отклонение в журнале 026 T-2). Прочие адреса — `egress_denied` до вызова `options.fetch`. Без `options.fetch` ответ — `501` без сети.
 - Тестовая обвязка, `runPoll`: каждое событие из `poll` проверяется по схеме `outputs` определения, неверное событие — `invalid_output`.
 
 ## Спеки

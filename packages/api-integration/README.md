@@ -12,7 +12,7 @@
 ## Что внутри сейчас
 
 - `src/swarm-view.ts` — тип `SwarmView` (агенты с `model` и `steps`, деньги: `budgetMicroUsd`, `spentMicroUsd`), `applyEvent`, `projectSwarm`, `FINAL_SWARM_STATUSES` (итоговые статусы роя `completed`, `stopped`, `failed`; используются ядром `api-core`), поля владельца `orgId` и `createdBy` (024, 4.3). Правила — спека 022, 4.6 (с 022 заменяют таблицу 4.4 спеки 001 в части `bus.message`, `agent.step`, `agent.idle`).
-- `src/node-registry.ts` — `createNodeRegistry`, `NodeRegistry`, `SettingsResult`, `SettingsIssue`, `NodeRegistryError`. `NodeSchemaTarget`, `ValueResult`. Все схемы манифеста (`settings`, `inputs`, `outputs`, входы и выходы операций) компилируются `z.fromJSONSchema` при создании реестра и хранятся в нём.
+- `src/node-registry.ts` — `createNodeRegistry`, `NodeRegistry`, `NodeSchemaTarget`, `SettingsResult`, `SettingsIssue`, `ValueResult`, `NodeRegistryError`. Все схемы манифеста (`settings`, `inputs`, `outputs`, входы и выходы операций) компилируются `z.fromJSONSchema` при создании реестра и хранятся в нём.
 - `test/swarm-view.test.ts` — AC-001-2 (таблица 4.4 с правками 4.6, рёбра при создании пустые), AC-022-2 (`steps`, рёбра по сообщениям, `bus.message` не меняет статус, `agent.idle` и `done`) и AC-003-7 (итоговый статус роя окончателен).
 - `test/node-registry.test.ts` — AC-021-5 (повтор `type@version`), AC-021-6 (схемы, которые `fromJSONSchema` не принимает: внешний `$ref`, `not`, `if/then`), AC-021-7 (`validateSettings`, `get`, `node_type_not_found`), AC-021-8 (`list`, порядок версий), AC-026-2 (`validate`: `invalid_value` с `issues`, `schema_not_found`, `node_type_not_found`, значение после parse). Манифесты — литералы, проходящие `NodeManifest.parse`.
 
