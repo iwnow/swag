@@ -74,7 +74,7 @@ export function createTestContext<D extends NodeDefinition>(
     settings,
     secrets: {
       async get(name) {
-        const value = secrets[name];
+        const value = Object.hasOwn(secrets, name) ? secrets[name] : undefined;
         if (!declared.has(name) || value === undefined) {
           throw new NodeError('secret_not_declared', `секрет ${name} не объявлен или не передан`);
         }
@@ -132,10 +132,9 @@ export async function runOperation<S extends Settings>(
   ctx: TestContext<z.output<S>>,
   input: unknown,
 ): Promise<unknown> {
-  if (!Object.hasOwn(definition.operations, name)) {
-    throw new NodeError('unknown_operation', `операция ${name} не объявлена`);
-  }
-  const operation = definition.operations[name];
+  const operation = Object.hasOwn(definition.operations, name)
+    ? definition.operations[name]
+    : undefined;
   if (!operation) throw new NodeError('unknown_operation', `операция ${name} не объявлена`);
   const parsed = check('invalid_input', operation.input, input);
   const output = await operation.execute(parsed, ctx);
@@ -143,7 +142,8 @@ export async function runOperation<S extends Settings>(
 }
 
 export async function runPoll<S extends Settings, E>(
-  definition: TriggerDefinition<S, E> | ChannelDefinition<S, E, unknown>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- исходящий тип канала не нужен для poll, 021 4.3
+  definition: TriggerDefinition<S, E> | ChannelDefinition<S, E, any>,
   ctx: TestContext<z.output<S>>,
   cursor: string | null,
 ): Promise<PollResult<E>> {

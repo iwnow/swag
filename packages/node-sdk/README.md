@@ -12,10 +12,15 @@ SDK для авторов узлов: определение узла на TypeS
 
 ## Что внутри сейчас
 
+### `src/*`
+
 - `src/index.ts` — типы определений (`TriggerDefinition`, `ChannelDefinition`, `ConnectorDefinition`, `OperationDefinition`, `ProgramDefinition`, `BuiltinDefinition`, `NodeDefinition`), `SettingsOf`, `PollResult`, `NodeContext`, `NodeError`, `defineNode`, `toManifest`.
+- `src/testing.ts` — `createTestContext`, `TestContext`, `TestContextOptions`, `runNode`, `runOperation`, `runPoll`, `runSend`.
+
+### `test/*`
+
 - `test/manifest.test.ts` — AC-021-10: манифест коннектора с двумя операциями (порядок, `access`, `$schema`, `required` у `default`), `credentials` и `egress` по умолчанию, `ZodError` у коннектора без операций.
 - `test/types.test.ts` — AC-021-23: тип `ctx.settings.prefix` — `string`, присвоение числа и обращение к несуществующему полю входа — ошибки типов (`@ts-expect-error`).
-- `src/testing.ts` — `createTestContext`, `TestContext`, `TestContextOptions`, `runNode`, `runOperation`, `runPoll`, `runSend`.
 - `test/fixtures.ts` — фикстуры: копия `example/echo`, программа с неверным выходом, коннектор с секретом и `egress`, канал и канал с неверным событием.
 - `test/testing.test.ts` — AC-021-11 (echo, вход и настройки), AC-021-12 (выход), AC-021-13 (секреты и `egress`, без сети при отказе), AC-021-14 (канал: `poll`, `send`, состояние).
 
@@ -50,15 +55,14 @@ const ctx = createTestContext(echo, { settings: { prefix: '> ' } });
 await runNode(echo, ctx, { text: 'hi' }); // { text: '> hi' }
 ```
 
-`createTestContext` проверяет настройки по схеме `settings` (ошибка `invalid_settings`). Секрет доступен только из `credentials` определения и только если передан в `secrets` (иначе `secret_not_declared`). `http.fetch` пропускает только `https:` и адреса из `egress`; остальные адреса дают `egress_denied` до вызова `options.fetch`. По умолчанию `fetch` не ходит в сеть и отвечает `501`. Тестовый контекст не принуждает правила на платформе: это обвязка разработчика, принуждение — спека 026.
-
 Правило про `.transform`: в схемах узла не используется `.transform` (и `.pipe`, которые его содержат). JSON Schema, в которую переводится схема, теряет преобразование, и манифест расходится с тем, что проверяет обработчик. Значения по умолчанию — через `.default()`, ограничения — через `.max()`, `.regex()` и т. п.
 
 ## Ограничения
 
 - Схемы Zod переводятся в JSON Schema 2020-12 (`z.toJSONSchema`). Схему, которую нельзя выразить в JSON Schema (`z.date()`, `z.custom()`), `toManifest` не выгружает и бросает ошибку.
-- Операции коннектора в `defineNode` объявлены как `OperationDefinition<S, any, any>` (спека 021, 4.3): тип входа и выхода конкретной операции проверкой типов не покрывается.
+- Тип входа и выхода конкретной операции коннектора проверкой типов не покрывается (`any` по 4.3, см. «Ключевые решения»).
 - Вид `llm-agent` и `human` — только описание: кода у них нет, исполняет платформа.
+- `createTestContext` не принуждает правила платформы: это обвязка разработчика, принуждение — спека 026.
 
 ## Связи
 
@@ -70,9 +74,13 @@ await runNode(echo, ctx, { text: 'hi' }); // { text: '> hi' }
 
 - Перегрузки `defineNode` по виду, а не одна функция с объединением: тип обработчиков выводится из вида без проверок во время выполнения (021, 4.3, REQ-021-7).
 - `any` в `NodeDefinition` и в `operations` — только в этих местах, с `eslint-disable` и причиной: союз видов и `Record` операций хранят определения с разными типами схем. Внешне типы определений строгие.
+- Операции коннектора — `OperationDefinition<S, any, any>` по букве 4.3; тип входа и выхода операции в обработчике — `any`. Вариант улучшения (обобщение по набору операций, помощник `defineOperation`) вынесен в D-158 (`docs/spec/questions.md`), решение — в спеке первого настоящего коннектора (019/020).
 - `toManifest` строит объект и отдаёт его через `NodeManifest.parse`: правила вида (4.1.2, 4.1.3) проверяются контрактом, а не дублируются в SDK (REQ-021-8).
 - Выход `z.toJSONSchema` для `outputs` и операций — `io: 'output'`, поэтому поля со значением по умолчанию попадают в `required`; вход и настройки — `io: 'input'`.
+- Тестовая обвязка, секреты: секрет доступен только если имя объявлено в `credentials` и значение передано в `secrets`. Оба случая дают один код `secret_not_declared`: имя не объявлено, либо объявлено, но значение не передано.
+- Тестовая обвязка, сеть: `http.fetch` пропускает только `https:` и адреса по `egress`; запись `egress` без порта подходит только к адресу с пустым `URL.port` (порт по умолчанию). Прочие адреса — `egress_denied` до вызова `options.fetch`. Без `options.fetch` ответ — `501` без сети.
+- Тестовая обвязка, `runPoll`: каждое событие из `poll` проверяется по схеме `outputs` определения, неверное событие — `invalid_output`.
 
 ## Спеки
 
-- 021 — контракт узла (4.1, 4.3); REQ-021-7, REQ-021-8, REQ-021-9; AC-021-10, AC-021-11…14, AC-021-23.
+- 021 — контракт узла (4.1, 4.3); REQ-021-7, REQ-021-8, REQ-021-9; AC-021-10, AC-021-11…14, AC-021-23; решения D-158.
