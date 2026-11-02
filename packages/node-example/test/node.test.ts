@@ -42,7 +42,9 @@ describe('example/echo', () => {
       .filter((name) => name.endsWith('.ts'))
       .flatMap((name) => {
         const source = readFileSync(join(srcDir, name), 'utf8');
-        return [...source.matchAll(/\bfrom\s+'([^']+)'/g)].map((match) => match[1]);
+        return [...source.matchAll(/\b(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g)].map(
+          (match) => match[1],
+        );
       });
     expect([...new Set(specifiers)].sort()).toEqual(['@swag/node-sdk', 'zod']);
   });
