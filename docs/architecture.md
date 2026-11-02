@@ -26,12 +26,13 @@ packages/adapter-<технология>/   адаптер инфраструкт
 packages/contracts/     общие схемы и типы, в т.ч. манифест узла `NodeManifest` (`node.ts`, спека 021)
 packages/api-integration/  общая чистая логика ядер, работающих с API платформы; правила ядра; реестр типов узлов `createNodeRegistry` (спека 021, 4.2)
 packages/node-sdk/      SDK авторов узлов `@swag/node-sdk`: `defineNode`, типы видов, `NodeContext`, тестовая обвязка на `./testing`; не ядро, `arch:check` его не проверяет (спека 021, 4.3)
+packages/node-packages/  загрузка пакетов типов узлов из `NODE_PACKAGES`: `bootNodePackages`, `packageOf`; общая для `api` и `orchestrator` (спека 026, 4.3)
 packages/node-<имя>/    пакет типа узла `@swag/node-<имя>`: определение в `src/node.ts`, выгруженный `swag-node.json` (спека 021, 4.4); сейчас `node-llm-agent`, `node-example`
 packages/config/        чтение env, только для оболочек
 packages/helpers/       универсальные хелперы без зависимостей (`@swag/helpers`), серверные — `@swag/helpers/server`; ядра не импортируют
 packages/adapter-openrouter/  источник цен OpenRouter на `fetch` (спека 004, 4.9)
 packages/adapter-gateway-http/  регистрация роёв в llm-gateway для оркестратора на `fetch` (спека 004, 4.6)
-packages/adapter-crypto/  argon2id-хэш паролей и непрозрачные токены на `node:crypto` и `@node-rs/argon2` (спека 012, 4.7)
+packages/adapter-crypto/  argon2id-хэш паролей и непрозрачные токены на `node:crypto` и `@node-rs/argon2` (спека 012, 4.7); шифр секретов AES-256-GCM `createAesGcmCipher` и HMAC-гранты прокси `createEgressGrants` (спека 026)
 packages/adapter-jose/  подпись и проверка JWT Ed25519 через `jose` (спека 012, 4.7)
 packages/adapter-smtp/  отправка писем по SMTP через `nodemailer` (спека 012, 4.7)
 packages/ui-angular/    общий Angular-пакет фронтендов: сессия, HTTP-адаптеры портов, guard'ы, компоненты; оболочка, не ядро (спека 014, 4.7)
@@ -43,9 +44,9 @@ packages/ui-angular/    общий Angular-пакет фронтендов: се
 
 | Ядро | Что внутри | Оболочки |
 |---|---|---|
-| `orchestrator-core` | Исполнение плана роя: песочницы, сети, ключи, accounts шины, уборка | `apps/orchestrator` (Fastify) |
+| `orchestrator-core` | Исполнение плана роя: песочницы, сети, ключи, accounts шины, уборка; исполнение вызова узла `invokeNode` (спека 026) | `apps/orchestrator` (Fastify) |
 | `llm-gateway-core` (спека 002) | Вызов модели через LLM Gateway: проверки запроса, каталог моделей, стоимость, событие `llm.call`, поток, сверка с апстримом | `apps/llm-gateway` (Fastify) |
-| `api-core` | Координатор, рои, планы, расходы, доступ к данным пользователя по `Actor`, каталог типов узлов (`listNodeTypes`, `getNodeType`, право `node.read`) | `apps/api` (Fastify) |
+| `api-core` | Координатор, рои, планы, расходы, доступ к данным пользователя по `Actor`, каталог типов узлов (`listNodeTypes`, `getNodeType`, право `node.read`), секреты организации (`listSecrets`, `putSecret`, `deleteSecret`, право `secret.manage`) | `apps/api` (Fastify) |
 | `identity-core` (спека 012) | Регистрация компании, вход, сессии и токены, роли, лимиты частоты, первый супервизор (блокировка и проверка доступа — спека 024) | `apps/identity` (Fastify) |
 | `egress-proxy-core` (спека 026) | Исходящий прокси узлов: проверка `CONNECT` по гранту, `egress` и публичности адресов (`authorize`, `isPublicAddress`) | `apps/egress-proxy` (`node:http`) |
 | `billing-core` (спека 013) | Баланс по предоплате: пополнение, резерв бюджета роя, закрытие резерва по ledger | в MVP подключается в `apps/api`, позже свой сервис |
@@ -79,7 +80,7 @@ packages/ui-angular/    общий Angular-пакет фронтендов: се
 3. **`Actor` собирает оболочка.** В `api` — `actorFromClaims` из `@swag/contracts`: `userId` из `sub`, `orgId` из `org`, `role` из токена, `permissions` из `ROLE_PERMISSIONS`. В identity внутренняя `authenticate` берёт роль и организацию из хранилища, а не из токена. Блокировка и смена роли ставят `revokeAt` (`tokens_valid_after`), поэтому старый токен перестаёт проходить проверку.
 4. **Решение о доступе — в ядре.** Операции `api-core` принимают `Actor` первым аргументом. Нет права (`can`) — `forbidden`, `403`. Рой вне области видимости (`visible`) — `not_found`, `404`, тот же ответ, что для несуществующего. `listSwarms` отдаёт только видимые рои, без права — пустой список. Область: `supervisor` — все рои, `admin` — рои своей организации (`orgId`), `user` — свои (`createdBy`). Рои без `orgId` и `createdBy` (созданные до 024) видит только `supervisor`. Не-супервизор получает `llm.call` с `providerCostMicroUsd = null`. В `identity-core` так же решают `listUsers`, `inviteUser`, `updateUser`, `listOrganizations`: `forbidden` и `not_found` по тем же правилам.
 5. **Системные пути без `Actor`.** События и сообщения роёв из NATS (`ingestEvent`, `ingestMessage`) и остановка роёв заблокированного (`stopSwarmsOfUser`) — не вызовы пользователя, проверки прав на них нет. Оркестратор принимает запросы только с `ORCHESTRATOR_TOKEN` (хук `onRequest`, кроме `/health`); `api` шлёт его через `@swag/adapter-orchestrator-http`. Сравнение внутренних токенов — `tokenMatches` и `bearerMatches` из `@swag/helpers/server` (`timingSafeEqual`), их используют identity, `llm-gateway` и оркестратор.
-6. **Песочница и агент** токен пользователя и ключи провайдеров моделей не получают: агенту доступны только LLM Gateway (заголовки `x-swag-swarm-id`, `x-swag-agent-id`; ключ агента — спека 004) и шина роя. LiteLLM только переводит форматы, виртуальные ключи и бюджеты LiteLLM не используются (D-21).
+6. **Песочница и агент** токен пользователя и ключи провайдеров моделей не получают: агенту доступны только LLM Gateway (заголовки `x-swag-swarm-id`, `x-swag-agent-id`; ключ агента — спека 004) и шина роя. LiteLLM только переводит форматы, виртуальные ключи и бюджеты LiteLLM не используются (D-21). Песочница узла тоже не получает токенов пользователя и ключей провайдеров; наружу она выходит только через `egress-proxy` (раздел «Исполнение узлов»).
 
 Тип `Actor` и список прав — в `@swag/contracts`, общие для всех ядер.
 
@@ -106,11 +107,22 @@ HTTP / CLI / UI →│ контроллер → фабрика ядра(deps) �
 Тип узла — npm-пакет `@swag/node-<имя>` (спека 021). Автор описывает его в `src/node.ts` через `defineNode` из `@swag/node-sdk`; схемы настроек, входа и выхода — на Zod. Путь типа до каталога:
 
 1. `npm run nodes:manifest` (`scripts/node-manifests.ts`) выгружает `swag-node.json` — `NodeManifest` с JSON Schema 2020-12 вместо Zod.
-2. Имя пакета пишется в `NODE_PACKAGES` у `api` (`packages/config`).
+2. Имя пакета пишется в `NODE_PACKAGES` у `api` и `orchestrator` (`packages/config`), а пакет — в зависимости `apps/node-host`, чтобы код попал в образ песочницы.
 3. `api` при старте (`bootNodeRegistry` из `@swag/node-packages`) читает только `swag-node.json` этих пакетов и не импортирует их код. `createNodeRegistry` (`@swag/api-integration`) проверяет манифест, повторы `type@version` и схемы. Ошибка — лог `node_manifest_invalid` и выход до подключения к Postgres и NATS.
 4. `api-core` получает реестр зависимостью `nodeTypes`; `GET /node-types` отдаёт каталог.
 
-Ядра, `@swag/contracts` и `apps/*/src` при подключении нового типа не меняются (REQ-021-15). Исполнение кода узла — спека 026, граф — спека 009.
+Ядра, `@swag/contracts` и `apps/*/src` при подключении нового типа не меняются (REQ-021-15, REQ-026-16). Граф процесса, который вызывает узлы, — спека 009.
+
+## Исполнение узлов
+
+Код узла — недоверенный. Всё, чему верит платформа, проверяет ядро оркестратора; песочница только исполняет (спека 026).
+
+1. **Вызов.** `POST /node-invocations` оркестратора (с `ORCHESTRATOR_TOKEN`) принимает `NodeInvocation` и синхронно отдаёт `NodeInvocationResult`. `invokeNode` в `orchestrator-core` проверяет тип и вид вызова по реестру, настройки, вход и `credentials`, читает объявленные секреты (порт `SecretReader`), выпускает грант на выход (`egressGrants.issue`), запускает песочницу и проверяет выход и кадры. Отказ на проверке — без запуска контейнера.
+2. **Песочница.** На каждый вызов — свой контейнер из образа `swag-node-host:dev` (`apps/node-host`, порт `NodeSandboxes`, адаптер `createDockerNodeSandboxes` в `adapter-docker`) в сети `swag-nodes` (`internal: true`). Обмен — строки JSON по stdin/stdout: кадр `invoke` с настройками, входом и секретами, обратно `SandboxFrame` (`log`, `state.*`, `result`). Длина строки ограничена `NODE_FRAME_MAX_BYTES`, вызов — `NODE_INVOKE_TIMEOUT_MS`. В env песочницы секретов нет. Контейнер удаляется при любом исходе; оставшиеся после сбоя убирает `cleanupOrphans` при старте.
+3. **Внутри песочницы** родительский процесс `node-host` отдаёт вызов дочернему (`fork`); тот загружает пакет узла и собирает `NodeContext`: `ctx.http.fetch` идёт только через прокси с грантом, `ctx.log` и `ctx.state` — кадрами оркестратору.
+4. **Исходящий прокси** `egress-proxy` (`apps/egress-proxy`, ядро `egress-proxy-core`) в сетях `default` и `nodes` пропускает только `CONNECT` с действующим грантом к хостам из `egress` манифеста (`egressMatches` из `@swag/contracts`) и не соединяется с внутренними и частными адресами. Грант — HMAC на `EGRESS_PROXY_KEY`, общий у оркестратора и прокси.
+5. **Секреты организации** хранятся в Postgres зашифрованными AES-256-GCM (`createPostgresSecretStore`, ключ `SECRETS_KEY`). Администратор задаёт их через `api`: `GET`, `PUT`, `DELETE /secrets`; значение наружу не отдаётся. Узел получает только секреты из своих `credentials`; в логах и сообщениях ошибок оркестратор вымарывает их значения.
+6. **Состояние узла** — в Postgres (`createPostgresNodeState`, порт `NodeStateStore`), по организации и ключу состояния `stateKey`.
 
 ## Наблюдаемость: traceId, логи, трейсы
 

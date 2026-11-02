@@ -3,17 +3,24 @@ flowchart TB
 
     subgraph CP["Control plane"]
         ID["Identity<br/>вход, токены, роли, права"]
-        API["API / Coordinator<br/>план роя, баланс, доступ"]
-        ORCH["Orchestrator<br/>песочницы, сети, уборка"]
+        API["API / Coordinator<br/>план роя, баланс, доступ,<br/>каталог узлов, секреты"]
+        ORCH["Orchestrator<br/>песочницы, сети, уборка,<br/>вызов узла"]
         REG["Skill Registry"]
         GW["LLM Gateway<br/>проверки, стоимость, событие llm.call"]
         LLM["LiteLLM<br/>только перевод форматов"]
         EV["Event Stream"]
-        PG[("Postgres<br/>ledger, баланс, история, события")]
+        PG[("Postgres<br/>ledger, баланс, история, события,<br/>секреты (AES-GCM), состояние узлов")]
         S3[("S3 / MinIO<br/>файлы, скиллы, артефакты")]
     end
 
     PROV["OpenRouter<br/>провайдеры моделей"]
+
+    subgraph NODES["Сеть swag-nodes (internal)"]
+        NH["node-host<br/>песочница на вызов узла"]
+    end
+
+    EGP["egress-proxy<br/>CONNECT по гранту<br/>и egress манифеста"]
+    EXT["Внешние API<br/>хосты из egress"]
 
     subgraph OBS["Наблюдаемость"]
         OTEL["OpenTelemetry Collector"]
@@ -31,7 +38,7 @@ flowchart TB
         BUSB{{"NATS account B"}}
     end
 
-    PLAN["Планируется: граф процесса, реестр узлов,<br/>каналы (Авито), чат-бот и диалоги"]
+    PLAN["Планируется: граф процесса,<br/>каналы (Авито), чат-бот и диалоги"]
 
     UI <-->|WebSocket| EV
     UI -->|вход| ID
@@ -59,6 +66,10 @@ flowchart TB
     BUSB -->|события роя| EV
     EV --> PG
     ORCH -->|снимки /work| S3
+    ORCH -->|stdin/stdout кадры| NH
+    ORCH --> PG
+    NH -->|HTTPS через прокси| EGP
+    EGP --> EXT
 
     CP -.->|OTLP: трейсы, логи| OTEL
     OTEL --> LGTM
