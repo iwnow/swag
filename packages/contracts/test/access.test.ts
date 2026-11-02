@@ -26,7 +26,7 @@ const claims = (role: Role): AccessTokenClaims => ({
 });
 
 const EXPECTED: Record<Role, Permission[]> = {
-  user: ['swarm.create', 'swarm.read', 'swarm.stop', 'balance.read'],
+  user: ['swarm.create', 'swarm.read', 'swarm.stop', 'balance.read', 'node.read'],
   admin: [
     'swarm.create',
     'swarm.read',
@@ -34,6 +34,7 @@ const EXPECTED: Record<Role, Permission[]> = {
     'user.manage',
     'balance.read',
     'balance.topup',
+    'node.read',
   ],
   supervisor: [
     'swarm.read',
@@ -42,6 +43,7 @@ const EXPECTED: Record<Role, Permission[]> = {
     'organization.read',
     'balance.read',
     'balance.topup',
+    'node.read',
   ],
 };
 
@@ -72,6 +74,12 @@ describe('права и вызывающий', () => {
 
   it('AC-024-1: у supervisor нет swarm.create', () => {
     expect(can(actorFromClaims(claims('supervisor')), 'swarm.create')).toBe(false);
+  });
+
+  it('AC-021-21: у каждой роли есть node.read', () => {
+    for (const role of ['user', 'admin', 'supervisor'] as const) {
+      expect(can(actorFromClaims(claims(role)), 'node.read'), role).toBe(true);
+    }
   });
 
   it('AC-013-22: user видит баланс без пополнения; admin и supervisor — оба права', () => {
