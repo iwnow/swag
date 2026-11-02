@@ -186,4 +186,14 @@ describe('политики репозитория', () => {
     const example = parseEnv(readFileSync(new URL('.env.example', root), 'utf8'));
     expect(example.TELEMETRY_RETENTION).toBe('24h');
   });
+
+  it('AC-026-24: check вызывает typecheck:ui, а typecheck:ui проверяет все четыре приложения', () => {
+    const { scripts } = JSON.parse(readFileSync(new URL('package.json', root), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    expect(scripts.check).toContain('npm run typecheck:ui');
+    for (const app of ['shell', 'cabinet', 'admin', 'supervisor']) {
+      expect(scripts['typecheck:ui'], app).toContain(`apps/ui/${app}/tsconfig.app.json`);
+    }
+  });
 });
