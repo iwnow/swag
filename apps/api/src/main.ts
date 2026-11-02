@@ -3,8 +3,9 @@ import { createRequire } from 'node:module';
 import { ALL_EVENTS, ALL_INBOXES } from '@swag/contracts';
 import { ApiConfig, BaseConfig, loadConfig } from '@swag/config';
 import { createBillingCore, type BillingCore } from '@swag/billing-core';
+import { createAesGcmCipher } from '@swag/adapter-crypto';
 import { createJoseVerifier } from '@swag/adapter-jose';
-import { createPostgresBalanceStore } from '@swag/adapter-postgres';
+import { createPostgresBalanceStore, createPostgresSecretStore } from '@swag/adapter-postgres';
 import { createOrchestratorHttpClient } from '@swag/adapter-orchestrator-http';
 import { connectNatsBus } from '@swag/adapter-nats';
 import { startTelemetry, tracedHttpServer } from '@swag/adapter-telemetry';
@@ -86,6 +87,8 @@ const { core, pool } = await startApiCore(
         log,
         limits: { maxTopupMicroUsd: config.BALANCE_MAX_TOPUP_MICRO_USD },
       })),
+    // Спека 026, 4.6: секреты организации — шифротекст AES-256-GCM на ключе SECRETS_KEY.
+    secrets: (pool) => createPostgresSecretStore(pool, createAesGcmCipher(config.SECRETS_KEY)),
   },
   {
     version,

@@ -3,7 +3,9 @@ import {
   NodeManifest,
   NodeTypeList,
   PlatformEventInput,
-  type SecretName,
+  SecretList,
+  SecretName,
+  SecretPutRequest,
   type SecretSummary,
   SwarmCreateRequest,
   can,
@@ -82,6 +84,7 @@ export interface ApiCoreDeps {
   store: SwarmStore;
   orchestrator: OrchestratorClient;
   billing: Billing;
+  secrets: SecretStore; // спека 026, 4.6: адаптер — createPostgresSecretStore
   clock: Clock;
   ids: IdGenerator;
   log: Logger;
@@ -118,6 +121,9 @@ export interface ApiCore {
   settlePending(): Promise<number>; // 013, REQ-013-8; число закрытых резервов
   listNodeTypes(actor: Actor): Result<NodeTypeList>; // 021, 4.6; реестр в памяти — синхронно
   getNodeType(actor: Actor, ref: string): Result<NodeManifest>;
+  listSecrets(actor: Actor): Promise<Result<SecretList>>; // 026, 4.6
+  putSecret(actor: Actor, name: string, body: unknown): Promise<Result<SecretSummary>>;
+  deleteSecret(actor: Actor, name: string): Promise<Result<null>>;
 }
 
 // Подписчик роя: пока читается история, события копятся в buffer; потом уходят напрямую.
@@ -167,7 +173,7 @@ async function finalSpent(event: PlatformEvent, store: SwarmStore, log: Logger):
 }
 
 export function createApiCore(deps: ApiCoreDeps): ApiCore {
-  const { store, orchestrator, billing, clock, ids, log, trace } = deps;
+  const { store, orchestrator, billing, secrets, clock, ids, log, trace } = deps;
   const subscribers = new Map<string, Set<Subscriber>>();
   // Очередь записи (REQ-003-3): записи одного роя идут цепочкой, разных роёв — параллельно.
   const queues = new Map<string, Promise<unknown>>();
@@ -429,6 +435,44 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
       if (!can(actor, 'node.read')) return fail('forbidden', 'Нет права на чтение каталога узлов');
       const manifest = deps.nodeTypes.get(ref);
       return manifest ? ok(manifest) : fail('not_found', 'Тип узла не найден');
+    },
+
+    // Спека 026, 4.6: право secret.manage — первая проверка; организация — только actor.orgId.
+    async listSecrets(actor) {
+      if (!can(actor, 'secret.manage') || actor.orgId === null) {
+        return fail('forbidden', 'Нет права на управление секретами');
+      }
+      return ok({ items: await secrets.list(actor.orgId) });
+    },
+
+    async putSecret(actor, name, body) {
+      if (!can(actor, 'secret.manage') || actor.orgId === null) {
+        return fail('forbidden', 'Нет права на управление секретами');
+      }
+      const parsedName = SecretName.safeParse(name);
+      const parsedBody = SecretPutRequest.safeParse(body);
+      if (!parsedName.success || !parsedBody.success) {
+        return fail('invalid_request', 'Имя или тело секрета не прошли проверку');
+      }
+      return ok(
+        await secrets.put(
+          actor.orgId,
+          parsedName.data,
+          parsedBody.data.value,
+          actor.userId,
+          new Date(clock.now()),
+        ),
+      );
+    },
+
+    // Спека 026, 4.6: у DELETE в таблице нет 400, поэтому имя не по SecretName даёт not_found (трактовка, журнал).
+    async deleteSecret(actor, name) {
+      if (!can(actor, 'secret.manage') || actor.orgId === null) {
+        return fail('forbidden', 'Нет права на управление секретами');
+      }
+      const parsedName = SecretName.safeParse(name);
+      const removed = parsedName.success && (await secrets.delete(actor.orgId, parsedName.data));
+      return removed ? ok(null) : fail('not_found', 'Секрет не найден');
     },
 
     async ingestEvent(raw) {

@@ -21,7 +21,7 @@ import {
 } from '@swag/orchestrator-core';
 import { unreadMessageIds } from '@swag/ui-core';
 import { actorOf, emptyNodeTypes, WHO } from './support.ts';
-import { createMemorySwarmStore } from '@swag/adapter-memory';
+import { createMemorySecretStore, createMemorySwarmStore } from '@swag/adapter-memory';
 import { createMemoryExporters, startTelemetry, type Telemetry } from '@swag/adapter-telemetry';
 import { AgentConfig, loadConfig } from '@swag/config';
 import {
@@ -255,6 +255,7 @@ function world(log: Logger, trace: TraceContext, script: Script = team) {
     nodeTypes: emptyNodeTypes(),
     limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
     billing: unlimitedBilling,
+    secrets: createMemorySecretStore(),
   });
   hub.subscribe(ALL_EVENTS, (raw) => api.ingestEvent(raw));
   hub.subscribe(ALL_INBOXES, (raw) => api.ingestMessage(raw));

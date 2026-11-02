@@ -136,6 +136,24 @@ export async function buildApp(
         return send(reply, core.getNodeType(request.actor, `${namespace}/${name}@${version}`), 200);
       },
     );
+
+    // Спека 026, 4.6: секреты организации. Значение в ответах не возвращается; право secret.manage проверяет api-core.
+    rest.get('/secrets', async (request, reply) =>
+      send(reply, await core.listSecrets(request.actor), 200),
+    );
+
+    rest.put<{ Params: { name: string } }>('/secrets/:name', async (request, reply) =>
+      send(reply, await core.putSecret(request.actor, request.params.name, request.body), 200),
+    );
+
+    rest.delete<{ Params: { name: string } }>('/secrets/:name', async (request, reply) =>
+      send(
+        reply,
+        await core.deleteSecret(request.actor, request.params.name),
+        204,
+        () => undefined,
+      ),
+    );
   });
 
   app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
@@ -197,6 +215,7 @@ function handleProtocols(protocols: Set<string>): string | false {
 
 const STATUS = {
   validation_error: 400,
+  invalid_request: 400,
   unauthorized: 401,
   forbidden: 403,
   not_found: 404,

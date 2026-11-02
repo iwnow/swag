@@ -7,7 +7,11 @@ import {
   type SwarmStore,
 } from '@swag/api-core';
 import { createNodeRegistry, type NodeRegistry } from '@swag/api-integration';
-import { createMemoryBalanceStore, createMemorySwarmStore } from '@swag/adapter-memory';
+import {
+  createMemoryBalanceStore,
+  createMemorySecretStore,
+  createMemorySwarmStore,
+} from '@swag/adapter-memory';
 import { createBillingCore, type BillingCore, type OrgDirectory } from '@swag/billing-core';
 import { createJoseSigner, createJoseVerifier } from '@swag/adapter-jose';
 import { actorFromClaims, type Actor, type Role, type TokenRevocationList } from '@swag/contracts';
@@ -75,6 +79,7 @@ export async function makeApi(
     nodeTypes: options.nodeTypes ?? emptyNodeTypes(),
     limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
     billing,
+    secrets: createMemorySecretStore(),
   });
   return { core, billing };
 }
@@ -117,6 +122,7 @@ export const WHO = {
   u2: { sub: '00000000-0000-4000-8000-000000000102', org: ORG_A, role: 'user' },
   b: { sub: '00000000-0000-4000-8000-000000000201', org: ORG_B, role: 'user' },
   adminA: { sub: '00000000-0000-4000-8000-000000000301', org: ORG_A, role: 'admin' },
+  adminB: { sub: '00000000-0000-4000-8000-000000000302', org: ORG_B, role: 'admin' },
   sup: { sub: '00000000-0000-4000-8000-000000000401', org: null, role: 'supervisor' },
 } satisfies Record<string, Who>;
 
@@ -149,6 +155,7 @@ export const T = {
   u2: await tokenOf(WHO.u2),
   b: await tokenOf(WHO.b),
   adminA: await tokenOf(WHO.adminA),
+  adminB: await tokenOf(WHO.adminB),
   sup: await tokenOf(WHO.sup),
 };
 

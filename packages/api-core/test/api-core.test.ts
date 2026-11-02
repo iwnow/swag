@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createMemorySwarmStore } from '@swag/adapter-memory';
+import { createMemorySecretStore, createMemorySwarmStore } from '@swag/adapter-memory';
 import { createNodeRegistry, type NodeRegistry } from '@swag/api-integration';
 import {
   NodeManifest,
@@ -157,6 +157,7 @@ function setup(
     store: options.store ?? createMemorySwarmStore(),
     orchestrator,
     billing,
+    secrets: createMemorySecretStore(),
     clock: { now: () => '2026-10-22T10:00:00.000Z' },
     ids: { uuid: () => uuid(++counter) },
     log,
