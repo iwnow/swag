@@ -7,14 +7,14 @@
 - `applyEvent(view, event)` — применить одно событие роя к `SwarmView`: статусы роя и агентов, счётчики сообщений, число шагов, рёбра по фактическим сообщениям, результат и причина ошибки. Событие с `seq` не больше `lastSeq` игнорируется.
 - `projectSwarm(events)` — состояние роя из всей последовательности событий.
 - Деньги роя и агентов (004, 4.7): бюджеты из `swarm.created`, расход — сумма `charge.microUsd` событий `llm.call` (без `charge` — `costMicroUsd ?? 0`).
-- `createNodeRegistry(manifests)` — реестр типов узлов в памяти (021, 4.2): проверка повторов `type@version` и поддержки схем, `list()` — последняя версия каждого типа со списком версий, `get(ref)`, `validateSettings(ref, settings)` — проверка настроек узла по схеме `settings` манифеста.
+- `createNodeRegistry(manifests)` — реестр типов узлов в памяти (021, 4.2): проверка повторов `type@version` и поддержки схем, `list()` — последняя версия каждого типа со списком версий, `get(ref)`, `validateSettings(ref, settings)` — проверка настроек узла по схеме `settings` манифеста, `validate(ref, target, value)` — проверка входа, выхода или операции коннектора по схеме манифеста (026, 4.2).
 
 ## Что внутри сейчас
 
 - `src/swarm-view.ts` — тип `SwarmView` (агенты с `model` и `steps`, деньги: `budgetMicroUsd`, `spentMicroUsd`), `applyEvent`, `projectSwarm`, `FINAL_SWARM_STATUSES` (итоговые статусы роя `completed`, `stopped`, `failed`; используются ядром `api-core`), поля владельца `orgId` и `createdBy` (024, 4.3). Правила — спека 022, 4.6 (с 022 заменяют таблицу 4.4 спеки 001 в части `bus.message`, `agent.step`, `agent.idle`).
-- `src/node-registry.ts` — `createNodeRegistry`, `NodeRegistry`, `SettingsResult`, `SettingsIssue`, `NodeRegistryError`. Схема `settings` компилируется `z.fromJSONSchema` при создании реестра; схемы `inputs`, `outputs` и операций проверяются на поддержку и не хранятся.
+- `src/node-registry.ts` — `createNodeRegistry`, `NodeRegistry`, `SettingsResult`, `SettingsIssue`, `NodeRegistryError`. `NodeSchemaTarget`, `ValueResult`. Все схемы манифеста (`settings`, `inputs`, `outputs`, входы и выходы операций) компилируются `z.fromJSONSchema` при создании реестра и хранятся в нём.
 - `test/swarm-view.test.ts` — AC-001-2 (таблица 4.4 с правками 4.6, рёбра при создании пустые), AC-022-2 (`steps`, рёбра по сообщениям, `bus.message` не меняет статус, `agent.idle` и `done`) и AC-003-7 (итоговый статус роя окончателен).
-- `test/node-registry.test.ts` — AC-021-5 (повтор `type@version`), AC-021-6 (схемы, которые `fromJSONSchema` не принимает: внешний `$ref`, `not`, `if/then`), AC-021-7 (`validateSettings`, `get`, `node_type_not_found`), AC-021-8 (`list`, порядок версий). Манифесты — литералы, проходящие `NodeManifest.parse`.
+- `test/node-registry.test.ts` — AC-021-5 (повтор `type@version`), AC-021-6 (схемы, которые `fromJSONSchema` не принимает: внешний `$ref`, `not`, `if/then`), AC-021-7 (`validateSettings`, `get`, `node_type_not_found`), AC-021-8 (`list`, порядок версий), AC-026-2 (`validate`: `invalid_value` с `issues`, `schema_not_found`, `node_type_not_found`, значение после parse). Манифесты — литералы, проходящие `NodeManifest.parse`.
 
 ## Правила проекции (022, 4.6)
 
@@ -31,6 +31,7 @@
 
 - При создании: сначала проверяются повторы `type@version` по всему набору, затем схемы по порядку `settings`, `inputs`, `outputs`, операции (`input`, `output`). Первая схема, на которой `z.fromJSONSchema` бросает, — `node_schema_unsupported` с `schema` (`settings`, `inputs`, `outputs`, `operations.<name>.input|output`) и текстом исключения.
 - `validateSettings` не бросает: ссылка, которую не принимает `NodeTypeRef`, и неизвестный тип — `node_type_not_found`; ошибки Zod — `invalid_settings` с `issues` (`path` — ключи через точку, корень — `""`). Верные настройки возвращаются после схемы: значения по умолчанию подставлены.
+- `validate(ref, target, value)` (026, 4.2) — проверка входа (`inputs`), выхода (`outputs`) или входа/выхода операции коннектора (`place: 'operation'`, `name`, `io`). Неизвестный `ref` — `node_type_not_found`; у вида нет такой схемы (`null` в манифесте или нет операции с таким именем) — `schema_not_found`; значение не по схеме — `invalid_value` с `issues` тем же форматом, что у настроек. Верное значение возвращается после parse (`ok: true, value`).
 - `list()` — по одной записи на `type`, версия — последняя по semver (числа `major`, `minor`, `patch`), `versions` — по убыванию, типы — по возрастанию. Итог считается один раз при создании реестра.
 - Все операции синхронные: реестр в памяти, источник — манифесты, уже прошедшие `NodeManifest.parse`.
 
@@ -59,7 +60,8 @@
 - Владелец (024, 4.3): `orgId` и `createdBy` проецируются только из `swarm.created`; проекция не знает о правах, видимость роя решает `api-core` (024, 4.4). Проекции, сохранённые до 024, читаются с `null` в обоих полях (как поля 004 — D-101).
 - Деньги (004, 4.7): поля `budgetMicroUsd` добавляются условно, а не как `undefined` (`exactOptionalPropertyTypes`). Проекция, сохранённая до 004 без `spentMicroUsd`, читается как 0 (D-101), иначе `llm.call` дал бы `NaN`.
 - Проверка настроек через `z.fromJSONSchema` без Ajv (021, Q-1): новых зависимостей ядра нет. Схемы, которые он не принимает (внешний `$ref`, `not`, `if/then`, `dependentSchemas`), отсекаются при создании реестра, а не при проверке настроек (REQ-021-4).
-- Реестр хранит только проверку `settings`. Схемы `inputs`, `outputs` и операций компилируются ради ошибки `node_schema_unsupported`, но в реестре не остаются: их проверку введут 009 и 027, когда они появятся (YAGNI).
+- Схемы значений строятся один раз при создании реестра (026, 4.2): `settings`, `inputs`, `outputs`, входы и выходы операций хранятся в записи `type@version`. `validate` и `validateSettings` только вызывают `safeParse` — ни компиляции, ни разбора JSON Schema на каждый вызов нет.
+- Один путь проверки для настроек и значений (`checkValue`): ошибки Zod приводятся к `SettingsIssue` одной функцией.
 - Повтор `type@version` проверяется по всему набору до компиляции схем, поэтому ошибка дубля не зависит от содержимого схем (REQ-021-4: «повтор — до схем», 4.2).
 
 ## Спеки
@@ -68,5 +70,6 @@
 - 003 — окончательный итоговый статус роя (4.3, REQ-003-7, AC-003-7).
 - 004 — деньги в проекции (4.7, REQ-004-2, AC-004-3, AC-004-26).
 - 021 — реестр типов узлов (4.2, REQ-021-4…6, AC-021-5…8).
+- 026 — `validate` и схемы значений (4.2, AC-026-2).
 - 022 — правила проекции (4.6).
 - 024 — владелец роя в проекции (4.3, REQ-024-4): `orgId`, `createdBy`.
