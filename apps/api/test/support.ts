@@ -56,6 +56,7 @@ export async function makeApi(
     log?: Logger | undefined;
     store?: SwarmStore | undefined;
     billing?: BillingCore | undefined;
+    nodeTypes?: NodeRegistry | undefined;
   } = {},
 ): Promise<{ core: ApiCore; billing: BillingCore }> {
   const billing = options.billing ?? (await makeBilling());
@@ -71,7 +72,7 @@ export async function makeApi(
     ids: { uuid: () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}` },
     log: options.log ?? silentLog,
     trace: { currentTraceId: () => null },
-    nodeTypes: emptyNodeTypes(),
+    nodeTypes: options.nodeTypes ?? emptyNodeTypes(),
     limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
     billing,
   });
