@@ -3,7 +3,7 @@ import pg from 'pg';
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createApiCore, type Billing } from '@swag/api-core';
-import { createMemorySwarmStore } from '@swag/adapter-memory';
+import { createMemorySecretStore, createMemorySwarmStore } from '@swag/adapter-memory';
 import { createPostgresBalanceStore, runMigrations } from '@swag/adapter-postgres';
 import { createBillingCore, type BillingCore } from '@swag/billing-core';
 import { buildApp } from '../src/app.ts';
@@ -157,6 +157,7 @@ async function swarmApp(
     store: createMemorySwarmStore(),
     orchestrator: { launch: async () => undefined, stop: async () => undefined },
     billing,
+    secrets: createMemorySecretStore(),
     clock: { now: () => new Date().toISOString() },
     ids: { uuid: () => randomUUID() },
     log: silentLog,

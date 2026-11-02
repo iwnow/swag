@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { SpanKind } from '@opentelemetry/api';
 import { createApiCore } from '@swag/api-core';
 import { createOrchestratorCore, type SandboxProvider } from '@swag/orchestrator-core';
-import { createMemorySwarmStore } from '@swag/adapter-memory';
+import { createMemorySecretStore, createMemorySwarmStore } from '@swag/adapter-memory';
 import { createOrchestratorHttpClient } from '@swag/adapter-orchestrator-http';
 import {
   createMemoryExporters,
@@ -117,6 +117,7 @@ async function stack() {
     nodeTypes: emptyNodeTypes(),
     limits: { maxActiveSwarms: 5, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
     billing,
+    secrets: createMemorySecretStore(),
   });
   const apiApp = await buildApp(
     api,

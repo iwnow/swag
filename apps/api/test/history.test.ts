@@ -3,6 +3,7 @@ import pg from 'pg';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ApiCore, Billing, OrchestratorClient } from '@swag/api-core';
+import { createMemorySecretStore } from '@swag/adapter-memory';
 import { buildApp } from '../src/app.ts';
 import { startApiCore } from '../src/start.ts';
 import {
@@ -38,7 +39,7 @@ describe.skipIf(!url)('история роёв на Postgres', () => {
     billing: (pool: pg.Pool) => Billing = () => funded,
   ): Promise<Run> {
     const { core, pool } = await startApiCore(
-      { databaseUrl: url ?? '', schema, billing },
+      { databaseUrl: url ?? '', schema, billing, secrets: () => createMemorySecretStore() },
       {
         version: 'test',
         orchestrator,

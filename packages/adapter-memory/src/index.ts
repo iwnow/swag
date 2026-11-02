@@ -1,7 +1,7 @@
-import type { SwarmStore } from '@swag/api-core';
+import type { SecretStore, SwarmStore } from '@swag/api-core';
 import { applyEvent, type SwarmView } from '@swag/api-integration';
 import type { BalanceStore } from '@swag/billing-core';
-import type { BalanceEntry, PlatformEvent } from '@swag/contracts';
+import type { BalanceEntry, PlatformEvent, SecretSummary } from '@swag/contracts';
 import type {
   IdentityStore,
   MailMessage,
@@ -394,6 +394,41 @@ export function createMemoryBalanceStore(): BalanceStore {
 
     async holds() {
       return [...holds.values()].map((hold) => ({ ...hold }));
+    },
+  };
+}
+
+// Спека 026, 4.6 и T-8: секреты организации в памяти. Значение не хранится: остаются имя, подсказка и время.
+// Подсказка — та же, что у Postgres (последние 4 символа при длине от 16).
+export function createMemorySecretStore(): SecretStore {
+  const secrets = new Map<string, Map<string, SecretSummary>>();
+  const ofOrg = (orgId: string): Map<string, SecretSummary> => {
+    const current = secrets.get(orgId);
+    if (current) return current;
+    const created = new Map<string, SecretSummary>();
+    secrets.set(orgId, created);
+    return created;
+  };
+
+  return {
+    async list(orgId) {
+      return [...ofOrg(orgId).values()]
+        .map((summary) => ({ ...summary }))
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    },
+
+    async put(orgId, name, value, _by, now) {
+      const summary: SecretSummary = {
+        name,
+        hint: value.length >= 16 ? value.slice(-4) : null,
+        updatedAt: now.toISOString(),
+      };
+      ofOrg(orgId).set(name, summary);
+      return { ...summary };
+    },
+
+    async delete(orgId, name) {
+      return ofOrg(orgId).delete(name);
     },
   };
 }

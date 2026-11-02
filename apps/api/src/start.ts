@@ -1,4 +1,10 @@
-import { createApiCore, type ApiCore, type ApiCoreDeps, type Billing } from '@swag/api-core';
+import {
+  createApiCore,
+  type ApiCore,
+  type ApiCoreDeps,
+  type Billing,
+  type SecretStore,
+} from '@swag/api-core';
 import type { FastifyInstance } from 'fastify';
 import { createPostgresSwarmStore, runMigrations } from '@swag/adapter-postgres';
 import pg from 'pg';
@@ -6,12 +12,17 @@ import type { RevocationSync } from './revocations.ts';
 
 // Спека 003, 4.5 и спека 013, 4.9: миграции → пул → хранилище и billing → ядро → закрытие прерванных роёв → добор резервов. Один порядок для main.ts и тестов.
 // `schema` задаёт схему для тестов (search_path); в работе не передаётся — схема public.
-// `billing` получает пул, чтобы фабрика собрала хранилище баланса на том же пуле.
+// `billing` получает пул, чтобы фабрика собрала хранилище баланса на том же пуле; так же `secrets` (спека 026, 4.6).
 export async function startApiCore(
-  options: { databaseUrl: string; schema?: string; billing: (pool: pg.Pool) => Billing },
-  deps: Omit<ApiCoreDeps, 'store' | 'billing'>,
+  options: {
+    databaseUrl: string;
+    schema?: string;
+    billing: (pool: pg.Pool) => Billing;
+    secrets: (pool: pg.Pool) => SecretStore;
+  },
+  deps: Omit<ApiCoreDeps, 'store' | 'billing' | 'secrets'>,
 ): Promise<{ core: ApiCore; pool: pg.Pool }> {
-  const { databaseUrl, schema, billing } = options;
+  const { databaseUrl, schema, billing, secrets } = options;
   try {
     await runMigrations(databaseUrl, { schema: schema ?? 'public' });
   } catch (error) {
@@ -27,6 +38,7 @@ export async function startApiCore(
       ...deps,
       store: createPostgresSwarmStore(pool),
       billing: billing(pool),
+      secrets: secrets(pool),
     });
     await core.closeInterrupted();
     await core.settlePending();
