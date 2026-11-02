@@ -43,6 +43,19 @@ export const ApiConfig = BaseConfig.extend({
   ORCHESTRATOR_TOKEN: ServiceToken,
   API_REVOCATION_POLL_MS: z.coerce.number().int().min(1000).default(5000),
   API_REVOCATION_MAX_STALE_MS: z.coerce.number().int().min(1000).default(30000),
+  // Спека 021, 4.9 (Q-6): пакеты узлов, чьи типы попадают в реестр; пустое значение — реестр без типов.
+  NODE_PACKAGES: z
+    .string()
+    .default('')
+    .transform((value) => (value.trim() === '' ? [] : value.split(',').map((name) => name.trim())))
+    .pipe(
+      z
+        .array(z.string().min(1, 'NODE_PACKAGES: empty package name'))
+        .refine(
+          (names) => new Set(names).size === names.length,
+          'NODE_PACKAGES: duplicate package name',
+        ),
+    ),
 });
 export type ApiConfig = z.infer<typeof ApiConfig>;
 

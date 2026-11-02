@@ -465,3 +465,38 @@ describe('AC-024-2: конфиг доступа', () => {
     expect(() => loadConfig(ApiConfig, example)).toThrow('  IDENTITY_JWT_PUBLIC_KEY: ');
   });
 });
+
+describe('AC-021-24: NODE_PACKAGES', () => {
+  const parse = (value: string | undefined) =>
+    loadConfig(ApiConfig, value === undefined ? apiEnv : { ...apiEnv, NODE_PACKAGES: value })
+      .NODE_PACKAGES;
+
+  it('AC-021-24: пустое значение — пустой список, без переменной — тоже', () => {
+    expect(parse('')).toEqual([]);
+    expect(parse(undefined)).toEqual([]);
+  });
+
+  it('AC-021-24: имена через запятую, пробелы вокруг срезаются', () => {
+    expect(parse(' @swag/node-example , @swag/node-llm-agent ')).toEqual([
+      '@swag/node-example',
+      '@swag/node-llm-agent',
+    ]);
+  });
+
+  it('AC-021-24: пустой элемент — ошибка NODE_PACKAGES: empty package name', () => {
+    expect(() => parse('a,,b')).toThrow('NODE_PACKAGES: empty package name');
+  });
+
+  it('AC-021-24: повтор имени — ошибка NODE_PACKAGES: duplicate package name', () => {
+    expect(() => parse('a,a')).toThrow('NODE_PACKAGES: duplicate package name');
+  });
+
+  it('AC-021-24: .env.example задаёт пакеты из 4.9', () => {
+    const example = parseEnv(
+      readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8'),
+    );
+    expect(
+      loadConfig(ApiConfig, { ...example, IDENTITY_JWT_PUBLIC_KEY: 'fake-key' }).NODE_PACKAGES,
+    ).toEqual(['@swag/node-llm-agent', '@swag/node-example']);
+  });
+});
