@@ -1,4 +1,4 @@
-import type { EgressHost } from '@swag/contracts';
+import { egressMatches, type EgressHost } from '@swag/contracts';
 import { z } from 'zod';
 import {
   NodeError,
@@ -6,12 +6,12 @@ import {
   type ConnectorDefinition,
   type NodeContext,
   type NodeDefinition,
-  type NodeErrorCode,
   type PollResult,
   type ProgramDefinition,
   type SettingsOf,
   type TriggerDefinition,
 } from './index.ts';
+import { invokeNode, parseSettings } from './runtime.ts';
 
 // Спека 021, 4.3, REQ-021-9. Обвязка разработчика узла: принуждение на платформе — спека 026.
 type Settings = z.ZodObject;
@@ -28,36 +28,11 @@ export interface TestContext<S> extends NodeContext<S> {
   stateSnapshot(): Record<string, string>;
 }
 
-function describeIssues(error: z.ZodError): string {
-  return error.issues
-    .map((issue) => `${issue.path.join('.') || '<корень>'}: ${issue.message}`)
-    .join('; ');
-}
-
-function check<T>(code: NodeErrorCode, schema: z.ZodType<T>, value: unknown): T {
-  const parsed = schema.safeParse(value);
-  if (!parsed.success) throw new NodeError(code, describeIssues(parsed.error));
-  return parsed.data;
-}
-
-// Правило 4.3: протокол https, хост и порт сверяются с записями egress.
-function egressAllows(url: URL, rules: readonly EgressHost[]): boolean {
-  if (url.protocol !== 'https:') return false;
-  return rules.some((rule) => {
-    const colon = rule.indexOf(':');
-    const host = colon < 0 ? rule : rule.slice(0, colon);
-    const port = colon < 0 ? '' : rule.slice(colon + 1);
-    if (url.port !== port) return false;
-    if (host.startsWith('*.')) return url.hostname.endsWith(host.slice(1));
-    return url.hostname === host;
-  });
-}
-
 export function createTestContext<D extends NodeDefinition>(
   definition: D,
   options: TestContextOptions,
 ): TestContext<SettingsOf<D>> {
-  const settings = check<SettingsOf<D>>('invalid_settings', definition.settings, options.settings);
+  const settings = parseSettings(definition, options.settings) as SettingsOf<D>;
   const declared = new Set<string>((definition.credentials ?? []).map((c) => c.name));
   const secrets = options.secrets ?? {};
   const egress: readonly EgressHost[] = definition.egress ?? [];
@@ -89,7 +64,9 @@ export function createTestContext<D extends NodeDefinition>(
         } catch {
           throw new NodeError('egress_denied', `адрес не разбирается: ${url}`);
         }
-        if (!egressAllows(target, egress)) {
+        // Спека 021, 4.3 и 026, 4.1: только https к хостам egress; пустой порт — 443.
+        const port = target.port === '' ? 443 : Number(target.port);
+        if (target.protocol !== 'https:' || !egressMatches(egress, target.hostname, port)) {
           throw new NodeError('egress_denied', `адрес вне egress: ${url}`);
         }
         return options.fetch ? options.fetch(url, init) : new Response(null, { status: 501 });
@@ -121,9 +98,7 @@ export async function runNode<S extends Settings, I, O>(
   ctx: TestContext<z.output<S>>,
   input: unknown,
 ): Promise<O> {
-  const parsed = check('invalid_input', definition.inputs, input);
-  const output = await definition.execute(parsed, ctx);
-  return check('invalid_output', definition.outputs, output);
+  return (await invokeNode(definition, { kind: 'execute', input }, ctx)) as O;
 }
 
 export async function runOperation<S extends Settings>(
@@ -132,13 +107,7 @@ export async function runOperation<S extends Settings>(
   ctx: TestContext<z.output<S>>,
   input: unknown,
 ): Promise<unknown> {
-  const operation = Object.hasOwn(definition.operations, name)
-    ? definition.operations[name]
-    : undefined;
-  if (!operation) throw new NodeError('unknown_operation', `операция ${name} не объявлена`);
-  const parsed = check('invalid_input', operation.input, input);
-  const output = await operation.execute(parsed, ctx);
-  return check('invalid_output', operation.output, output);
+  return invokeNode(definition, { kind: 'operation', operation: name, input }, ctx);
 }
 
 export async function runPoll<S extends Settings, E>(
@@ -147,9 +116,7 @@ export async function runPoll<S extends Settings, E>(
   ctx: TestContext<z.output<S>>,
   cursor: string | null,
 ): Promise<PollResult<E>> {
-  const result = await definition.poll(cursor, ctx);
-  const events = result.events.map((event) => check('invalid_output', definition.outputs, event));
-  return { events, cursor: result.cursor };
+  return (await invokeNode(definition, { kind: 'poll', cursor }, ctx)) as PollResult<E>;
 }
 
 export async function runSend<S extends Settings, In, Out>(
@@ -157,6 +124,5 @@ export async function runSend<S extends Settings, In, Out>(
   ctx: TestContext<z.output<S>>,
   message: unknown,
 ): Promise<void> {
-  const parsed = check('invalid_input', definition.inputs, message);
-  await definition.send(parsed, ctx);
+  await invokeNode(definition, { kind: 'send', message }, ctx);
 }

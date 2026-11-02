@@ -6,7 +6,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./testing": "./src/testing.ts"
+    "./testing": "./src/testing.ts",
+    "./runtime": "./src/runtime.ts"
   },
   "dependencies": {
     "@swag/contracts": "0.0.0",
