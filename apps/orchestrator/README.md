@@ -5,6 +5,7 @@
 ## Задачи
 
 - HTTP (спека 001, 4.6.1): `POST /swarms` → `202` (строгая схема, лишнее поле → `400`), `POST /swarms/:id/stop` → `202` / `404`, `GET /health`.
+- Вызов узла (спека 026, 4.10): `POST /node-invocations` → `200 NodeInvocationResult` (тело — `NodeInvocation` из `@swag/contracts`, иначе `400 { error: { code: 'invalid_request', message } }`); защищён тем же хуком, что `POST /swarms`, без токена — `401`. Тело в лог не пишется.
 - Авторизация (спека 024, 4.13): на всех маршрутах, кроме `GET /health`, `Authorization: Bearer <ORCHESTRATOR_TOKEN>` в `onRequest`; без токена или с неверным — `401 { error: { code: 'unauthorized', message } }`, рой не запускается и не останавливается.
 - Подписка `swarm.*.events` → `core.handleEvent` (agent.started, agent.result; остальные события, включая `llm.call`, ядро игнорирует).
 - `cleanupOrphans` при старте (REQ-001-10).
@@ -13,12 +14,13 @@
 
 - `src/app.ts` — маршруты и хук `onRequest` с проверкой `ORCHESTRATOR_TOKEN` (`buildApp(core, options, { token })`).
 - `src/main.ts` — телеметрия (`adapter-telemetry`), `OrchestratorConfig`, адаптер Docker (`@swag/adapter-docker`, с адресом Collector для песочниц и адресом llm-gateway), адаптер регистрации роёв в gateway (`@swag/adapter-gateway-http`, `LLM_GATEWAY_URL`, `LLM_GATEWAY_TOKEN`, таймаут 10 с — константа `GATEWAY_TIMEOUT_MS`, D-99; `close` отдаёт траты роя, см. 013 T-6), шина NATS, часы и таймеры, `deps.agent` ядра (лимиты агента, токен gateway, таймаут flush из конфигурации), запуск, остановка со сбросом телеметрии.
-- Исполнение узлов (спека 026, 4.10): `main.ts` собирает `bootNodePackages` (реестр до Docker), `createPostgresSecretStore` и `createPostgresNodeState` по `DATABASE_URL`, `createEgressGrants`, `createDockerNodeSandboxes` с `maxLineBytes: NODE_FRAME_MAX_BYTES` (D-172). Сбой простоя клиента `pg.Pool` пишется в лог `postgres pool error`, процесс не падает. Маршрут `POST /node-invocations` — T-15.
-- Тесты: `test/health.test.ts` (AC-000-5, AC-001-12; фейк `llmSwarms`), `test/auth.test.ts` (AC-024-22: без токена и с неверным — `401`, ядро не вызвано; с верным — как раньше; `/health` без токена — `200`), общая фабрика ядра и токен — `test/support.ts`.
+- Исполнение узлов (спека 026, 4.10): `main.ts` собирает `bootNodePackages` (реестр до Docker), `createPostgresSecretStore` и `createPostgresNodeState` по `DATABASE_URL`, `createEgressGrants`, `createDockerNodeSandboxes` с `maxLineBytes: NODE_FRAME_MAX_BYTES` (D-172). Сбой простоя клиента `pg.Pool` пишется в лог `postgres pool error`, процесс не падает. Сборка всех зависимостей 4.10 уже в `main.ts` (сделана в T-14, D-170); маршрут `POST /node-invocations` — в `src/app.ts`, вызывает `core.invokeNode`.
+- Тесты: `test/health.test.ts` (AC-000-5, AC-001-12; фейк `llmSwarms`), `test/node-invocations.test.ts` (AC-026-21: без токена — `401`, неверное тело — `400 invalid_request`, верное — `200` с результатом фейкового ядра, тело не попадает в лог Fastify), `test/auth.test.ts` (AC-024-22: без токена и с неверным — `401`, ядро не вызвано; с верным — как раньше; `/health` без токена — `200`), общая фабрика ядра и токен — `test/support.ts`.
 
 ## Ограничения
 
 - Порт наружу не публикуется: доступ только из сети compose.
+- `depends_on: egress-proxy` (`service_healthy`, спека 026, 4.11) — прокси нужен узлам, которые оркестратор запускает; оркестратор сам в сеть `nodes` не входит.
 - Docker socket монтируется только в этот сервис. Усиление — спека 005.
 
 ## Связи

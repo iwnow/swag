@@ -190,6 +190,8 @@ services:
         condition: service_healthy
       llm-gateway:
         condition: service_healthy
+      egress-proxy:
+        condition: service_healthy
       otel-collector:
         condition: service_started
     healthcheck:

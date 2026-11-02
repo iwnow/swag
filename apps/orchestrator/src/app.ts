@@ -1,3 +1,4 @@
+import { NodeInvocation } from '@swag/contracts';
 import { bearerMatches } from '@swag/helpers/server';
 import type { OrchestratorCore } from '@swag/orchestrator-core';
 import Fastify, {
@@ -52,6 +53,17 @@ export function buildApp(
     const result = await core.stop(request.params.id);
     if (result.ok) return reply.code(202).send({});
     return reply.code(404).send({ error: result.error });
+  });
+
+  // Спека 026, 4.10: тело не логируется — в нём настройки и вход организации.
+  app.post('/node-invocations', async (request, reply) => {
+    const invocation = NodeInvocation.safeParse(request.body);
+    if (!invocation.success) {
+      return reply
+        .code(400)
+        .send({ error: { code: 'invalid_request', message: 'Body is not a NodeInvocation' } });
+    }
+    return reply.code(200).send(await core.invokeNode(invocation.data));
   });
 
   return app;
