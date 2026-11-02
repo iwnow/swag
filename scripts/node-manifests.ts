@@ -1,5 +1,5 @@
 // Выгрузка swag-node.json пакетов узлов: спека 021, 4.5. Запуск: `npm run nodes:manifest`.
-import { readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { NodeDefinition } from '@swag/node-sdk';
@@ -9,7 +9,10 @@ const packagesDir = fileURLToPath(new URL('../packages/', import.meta.url));
 
 const nodeDirs = readdirSync(packagesDir, { withFileTypes: true })
   .filter(
-    (entry) => entry.isDirectory() && entry.name.startsWith('node-') && entry.name !== 'node-sdk',
+    (entry) =>
+      entry.isDirectory() &&
+      entry.name.startsWith('node-') &&
+      existsSync(join(packagesDir, entry.name, 'src', 'node.ts')),
   )
   .map((entry) => entry.name)
   .sort();
