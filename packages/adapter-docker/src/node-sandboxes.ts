@@ -103,6 +103,7 @@ async function attachStdio(modem: Modem, containerId: string): Promise<Duplex> {
           }),
         );
       });
+      res.on('error', reject);
     });
     req.on('error', reject);
     req.end();

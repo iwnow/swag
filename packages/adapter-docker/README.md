@@ -19,6 +19,7 @@
 ## Ограничения
 
 - Без монтирований, публикации портов и `Privileged` (4.6.3). Ограничения ресурсов, read-only rootfs и сеть на рой для песочниц агентов — спека 005. Песочница узла (`node-sandboxes.ts`) уже запускается с `User: node`, `ReadonlyRootfs`, `CapDrop: ALL`, `Memory` 256 МиБ, `PidsLimit` 64 и сетью `DOCKER_NODE_NETWORK`.
+- Песочница узла подключается к Docker только через unix-сокет, named pipe или `http` по tcp. `https`/TLS и `ssh` (`DOCKER_HOST`) не поддерживаются: `run` отклоняет такой демон с ошибкой.
 - Доступ к Docker только у оболочки `orchestrator` (Q-1). Socket монтируется только туда.
 - Пользователь — из образа (`node`).
 - Агент шлёт телеметрию в Collector по общей сети compose; закрытая сеть песочницы — спека 005 (D-14).

@@ -39,7 +39,11 @@ interface Daemon {
   socket?: Duplex; // серверная сторона attach-соединения
 }
 
-async function startDaemon(calls: string[], attachError: boolean): Promise<Daemon> {
+async function startDaemon(
+  calls: string[],
+  attachError: boolean,
+  attachTruncate: boolean,
+): Promise<Daemon> {
   const socketPath =
     process.platform === 'win32'
       ? `\\\\.\\pipe\\swag-attach-${randomUUID()}`
@@ -61,6 +65,13 @@ async function startDaemon(calls: string[], attachError: boolean): Promise<Daemo
     });
     socket.on('error', () => undefined);
     socket.resume();
+    if (attachTruncate) {
+      // ответ не 101 с обещанным телом, которое сервер рвёт посреди
+      socket.end(
+        'HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: 100\r\nConnection: close\r\n\r\n{"message":"tru',
+      );
+      return;
+    }
     if (attachError) {
       const body = '{"message":"No such container: nc-1"}';
       socket.end(
@@ -96,12 +107,21 @@ interface Fake {
 }
 
 async function fakeDocker(
-  options: { failStart?: boolean; attachError?: boolean; socketPathFn?: boolean } = {},
+  options: {
+    failStart?: boolean;
+    attachError?: boolean;
+    attachTruncate?: boolean;
+    socketPathFn?: boolean;
+  } = {},
 ): Promise<Fake> {
   const calls: string[] = [];
   const createOptions: Record<string, unknown>[] = [];
   const removeOptions: Record<string, unknown>[] = [];
-  const daemon = await startDaemon(calls, options.attachError ?? false);
+  const daemon = await startDaemon(
+    calls,
+    options.attachError ?? false,
+    options.attachTruncate ?? false,
+  );
   const container = {
     id: 'nc-1',
     start: async () => {
@@ -385,6 +405,17 @@ describe('createDockerNodeSandboxes', () => {
     await expect(sandboxes.run(SPEC)).rejects.toThrow(
       'attach: 404 {"message":"No such container: nc-1"}',
     );
+    expect(fake.removeOptions).toEqual([{ force: true }]);
+  });
+
+  it('attach с ответом не 101, рванным посреди тела, — промис отклоняется, контейнер удалён', async () => {
+    const fake = await fakeDocker({ attachTruncate: true });
+    const sandboxes = createDockerNodeSandboxes({
+      network: 'swag-nodes',
+      docker: fake.docker,
+      maxLineBytes: MAX_LINE,
+    });
+    await expect(sandboxes.run(SPEC)).rejects.toThrow();
     expect(fake.removeOptions).toEqual([{ force: true }]);
   });
 });
