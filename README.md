@@ -157,7 +157,7 @@ npm run infra:check
 
 - Порядок запуска: `EGRESS_PROXY_KEY` (base64 ровно 32 байта, `openssl rand -base64 32`) уже есть в `.env.example`; значение сгенерировать в `.env` до `npm run up`. Прокси и оркестратор читают один ключ — подпись грантов.
 - Проверка: `docker compose ps egress-proxy` — `healthy`. Прокси принимает только `CONNECT` с грантом (`Proxy-Authorization: Basic base64("swag:" + token)`) и только к хостам из `egress`; остальное — `405`, `407`, `403`, `502`.
-- `orchestrator` получает `EGRESS_PROXY_KEY` (выпускает гранты), адрес прокси для песочниц — `NODE_EGRESS_PROXY_URL` (`http://egress-proxy:3128`). Порт и здоровье прокси оркестратору не нужны. Зависимость `orchestrator` от `egress-proxy` добавит спека 026, T-15.
+- `orchestrator` получает `EGRESS_PROXY_KEY` (выпускает гранты), адрес прокси для песочниц — `NODE_EGRESS_PROXY_URL` (`http://egress-proxy:3128`). Порт и здоровье прокси оркестратору не нужны. `orchestrator` стартует после того, как `egress-proxy` здоров (`depends_on`, `service_healthy`).
 
 ## Ядро и оболочка
 

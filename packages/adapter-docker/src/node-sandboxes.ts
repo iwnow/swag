@@ -1,3 +1,4 @@
+import http from 'node:http';
 import { PassThrough, type Duplex } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import Docker from 'dockerode';
@@ -60,6 +61,55 @@ async function* splitLines(
   if (overflow || line !== '') yield flush();
 }
 
+interface Modem {
+  socketPath?: string | (() => string | Promise<string>); // в Linux docker-modem по умолчанию ставит функцию (промис)
+  host?: string;
+  port?: number;
+  protocol?: string;
+  version?: string;
+}
+
+async function daemonTarget(modem: Modem): Promise<http.RequestOptions> {
+  const socketPath =
+    typeof modem.socketPath === 'function' ? await modem.socketPath() : modem.socketPath;
+  if (socketPath) return { socketPath };
+  if (modem.host && modem.protocol === 'http') return { host: modem.host, port: modem.port };
+  throw new Error(`attach песочницы узла: протокол ${modem.protocol ?? 'не задан'} не поддержан`);
+}
+
+// dockerode.attach кладёт опции в тело upgrade-запроса, Docker отдаёт его в stdin контейнера (protocol_error),
+// поэтому attach — сырым запросом без тела (спека 026, T-17).
+async function attachStdio(modem: Modem, containerId: string): Promise<Duplex> {
+  const prefix = modem.version ? `/${modem.version}` : '';
+  const req = http.request({
+    ...(await daemonTarget(modem)),
+    method: 'POST',
+    path: `${prefix}/containers/${containerId}/attach?stream=1&stdin=1&stdout=1&stderr=1`,
+    headers: { Connection: 'Upgrade', Upgrade: 'tcp' },
+  });
+  return new Promise<Duplex>((resolve, reject) => {
+    req.on('upgrade', (_res, socket, head) => {
+      if (head.length > 0) socket.unshift(head);
+      resolve(socket);
+    });
+    req.on('response', (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        reject(
+          Object.assign(new Error(`attach: ${res.statusCode} ${body}`), {
+            statusCode: res.statusCode,
+          }),
+        );
+      });
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 export function createDockerNodeSandboxes(options: DockerNodeSandboxOptions): NodeSandboxes {
   const docker = options.docker ?? new Docker();
 
@@ -100,13 +150,7 @@ export function createDockerNodeSandboxes(options: DockerNodeSandboxOptions): No
       let attached: Duplex | undefined;
       try {
         // Подключение до старта: вывод процесса с первой строки не теряется.
-        const stream = (await container.attach({
-          stream: true,
-          stdin: true,
-          stdout: true,
-          stderr: true,
-          hijack: true,
-        })) as Duplex;
+        const stream = await attachStdio(docker.modem as Modem, container.id);
         attached = stream;
         const stdout = new PassThrough();
         const stderr = new PassThrough();

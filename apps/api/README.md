@@ -37,7 +37,7 @@
 
 ## Связи
 
-- Ядра: `@swag/api-core` и `@swag/billing-core` (баланс, спека 013). Реестр типов узлов — `@swag/api-integration` (021). Адаптеры: `@swag/adapter-postgres`, `@swag/adapter-orchestrator-http`, `@swag/adapter-nats`, `@swag/adapter-telemetry`.
+- Ядра: `@swag/api-core` и `@swag/billing-core` (баланс, спека 013). Реестр типов узлов — `@swag/api-integration` (021); загрузка пакетов узлов — `@swag/node-packages` (`bootNodeRegistry`). Адаптеры: `@swag/adapter-postgres`, `@swag/adapter-orchestrator-http`, `@swag/adapter-nats`, `@swag/adapter-telemetry`.
 - Конфигурация: `@swag/config`. Зависимости: `fastify`, `@fastify/websocket`, `pg`.
 - Только для тестов (`devDependencies`): `@swag/adapter-memory`, `@swag/agent-core`, `@swag/orchestrator-core`, `@swag/ui-core`, `@swag/node-example`, `@swag/node-llm-agent` — см. ключевые решения.
 
