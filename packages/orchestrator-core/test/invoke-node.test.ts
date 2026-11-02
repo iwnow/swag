@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { HostFrame, NodeInvocation, NodeInvocationErrorCode } from '@swag/contracts';
 import { createOrchestratorCore } from '../src/index.ts';
-import { FAKE_SECRET, NOW, ORG, nodeHarness, type Respond } from './node-fakes.ts';
+import { createInvokeNode } from '../src/node-invoke.ts';
+import { FAKE_SECRET, NODE_TEMPLATE, NOW, ORG, nodeHarness, type Respond } from './node-fakes.ts';
 
 const ECHO = 'example/echo@1.0.0';
 const API = 'example/api@1.0.0';
 const TICK = 'example/tick@1.0.0';
+const CHANNEL = 'example/channel@1.0.0';
 const AGENT = 'swag/llm-agent@1.0.0';
 
 function invocation(overrides: Partial<NodeInvocation> = {}): NodeInvocation {
@@ -35,6 +37,13 @@ const okOutput =
   (frame, emit) => {
     if (frame.t === 'invoke') emit.frame({ t: 'result', ok: true, output });
   };
+
+const channelInvocation = (): NodeInvocation =>
+  invocation({ type: CHANNEL, call: { kind: 'send', message: { text: 'hi' } }, settings: {} });
+
+// Байты UTF-8 без Buffer и TextEncoder: каждый %XX — один байт, ASCII — один символ.
+const bytesOf = (text: string): number =>
+  encodeURIComponent(text).replace(/%[0-9A-F]{2}/g, 'x').length;
 
 type InvokeFrame = Extract<HostFrame, { t: 'invoke' }>;
 const framesOf = (sandboxes: { hostFrames: Map<string, HostFrame[]> }): HostFrame[] =>
@@ -342,5 +351,203 @@ describe('invokeNode (orchestrator-core)', () => {
     });
     expect(await core.cleanupOrphans()).toBe(2);
     expect([...h.sandboxes.removed].sort()).toEqual(['node-old-1', 'node-old-2']);
+  });
+
+  it('AC-026-12: secret_missing называет имя секрета и не содержит значений', async () => {
+    const h = nodeHarness();
+    const result = await h.invoke(apiInvocation({ credentials: { apiKey: 'missing_secret' } }));
+    expect(result).toMatchObject({ ok: false, error: { code: 'secret_missing' } });
+    expect(JSON.stringify(result)).toContain('missing_secret');
+    expect(JSON.stringify(result)).not.toContain(FAKE_SECRET);
+  });
+
+  it('AC-026-12: сбой хранилища секретов пробрасывается; лог error и info node invoke с ok:false; песочницы нет', async () => {
+    const h = nodeHarness();
+    const invoke = createInvokeNode({
+      ...h.deps,
+      secrets: {
+        read: async () => {
+          throw new Error('db down');
+        },
+      },
+    });
+    await expect(invoke(apiInvocation())).rejects.toThrow('db down');
+    expect(h.log.entries).toContainEqual(
+      expect.objectContaining({ level: 'error', msg: 'node secrets read failed' }),
+    );
+    expect(h.log.entries).toContainEqual({
+      level: 'info',
+      msg: 'node invoke',
+      ctx: expect.objectContaining({ ok: false, code: null }),
+    });
+    expect(h.sandboxes.runs).toEqual([]);
+  });
+
+  it('AC-026-13: песочница создана с шаблоном узла и метками swag.kind, swag.invocation, swag.org', async () => {
+    const h = nodeHarness({ respond: okOutput({ text: '> hi' }) });
+    await h.invoke(invocation());
+    const frame = invokeFrameOf(h.sandboxes);
+    expect(h.sandboxes.runs).toEqual([
+      {
+        template: NODE_TEMPLATE,
+        metadata: {
+          'swag.kind': 'node',
+          'swag.invocation': frame.invocationId,
+          'swag.org': ORG,
+        },
+      },
+    ]);
+  });
+
+  it('AC-026-14: длина кадра в байтах UTF-8: в символах влезает, в байтах нет — protocol_error', async () => {
+    const line = JSON.stringify({ t: 'result', ok: true, output: { text: 'я'.repeat(150) } });
+    expect(line.length).toBeLessThanOrEqual(300);
+    expect(bytesOf(line)).toBeGreaterThan(300);
+
+    const tooLong = nodeHarness({
+      frameMaxBytes: 300,
+      respond: (frame, emit) => {
+        if (frame.t === 'invoke') emit.raw(line);
+      },
+    });
+    expect(await tooLong.invoke(invocation())).toMatchObject({
+      ok: false,
+      error: { code: 'protocol_error' },
+    });
+
+    const exact = nodeHarness({
+      frameMaxBytes: bytesOf(line),
+      respond: (frame, emit) => {
+        if (frame.t === 'invoke') emit.raw(line);
+      },
+    });
+    expect(await exact.invoke(invocation())).toMatchObject({ ok: true });
+  });
+
+  it('AC-026-14: сбой run песочницы — sandbox_failed', async () => {
+    const h = nodeHarness();
+    const invoke = createInvokeNode({
+      ...h.deps,
+      nodeSandboxes: {
+        run: async () => {
+          throw new Error('docker down');
+        },
+        remove: async () => undefined,
+        list: async () => [],
+      },
+    });
+    expect(await invoke(invocation())).toMatchObject({
+      ok: false,
+      error: { code: 'sandbox_failed' },
+    });
+  });
+
+  it('AC-026-14: сбой remove — warn sandbox remove failed, результат не меняется', async () => {
+    const h = nodeHarness({ respond: okOutput({ text: '> hi' }) });
+    const invoke = createInvokeNode({
+      ...h.deps,
+      nodeSandboxes: {
+        ...h.sandboxes.sandboxes,
+        remove: async () => {
+          throw new Error('remove failed');
+        },
+      },
+    });
+    expect(await invoke(invocation())).toMatchObject({ ok: true, output: { text: '> hi' } });
+    expect(h.log.entries).toContainEqual(
+      expect.objectContaining({ level: 'warn', msg: 'sandbox remove failed' }),
+    );
+  });
+
+  it('AC-026-14: кадр state от песочницы — protocol_error', async () => {
+    const h = nodeHarness({
+      respond: (frame, emit) => {
+        if (frame.t === 'invoke') emit.frame({ t: 'state', id: 1, value: null });
+      },
+    });
+    expect(await h.invoke(invocation())).toMatchObject({
+      ok: false,
+      error: { code: 'protocol_error' },
+    });
+  });
+
+  it.each<[string, NodeInvocation, Respond, NodeInvocationErrorCode | 'ok']>([
+    ['operation с неверным выходом', apiInvocation(), okOutput({ ok: 'да' }), 'invalid_output'],
+    ['send с выходом не null', channelInvocation(), okOutput({ id: '1' }), 'invalid_output'],
+    [
+      'poll с cursor длиннее 4096',
+      invocation({ type: TICK, call: { kind: 'poll', cursor: null }, settings: {} }),
+      okOutput({ events: [], cursor: 'c'.repeat(4097) }),
+      'invalid_output',
+    ],
+    ['send с выходом null', channelInvocation(), okOutput(null), 'ok'],
+    ['operation с верным выходом', apiInvocation(), okOutput({ ok: true }), 'ok'],
+  ])('AC-026-14: выход — %s', async (_name, input, respond, expected) => {
+    const result = await nodeHarness({ respond, frameMaxBytes: 20000 }).invoke(input);
+    if (expected === 'ok') expect(result).toMatchObject({ ok: true });
+    else expect(result).toMatchObject({ ok: false, error: { code: expected } });
+  });
+
+  it('AC-026-15: abort уходит в deadline по часам ядра, даже если run продвинул часы', async () => {
+    const h = nodeHarness({ abortGraceMs: 1000, onRun: () => h.advance(3000) });
+    const pending = h.invoke(invocation({ timeoutMs: 5000 }));
+    await until(() => h.timers.has(2000));
+    expect(h.timers.has(5000)).toBe(false);
+    h.timers.fire(2000);
+    expect(framesOf(h.sandboxes).map((frame) => frame.t)).toEqual(['invoke', 'abort']);
+    await until(() => h.timers.has(1000));
+    h.timers.fire(1000);
+    expect(await pending).toMatchObject({ ok: false, error: { code: 'timeout' } });
+  });
+
+  it('AC-026-15: сбой отправки abort не мешает грейс-таймеру — timeout', async () => {
+    const h = nodeHarness({
+      abortGraceMs: 1000,
+      respond: (frame) => {
+        if (frame.t === 'abort') throw new Error('pipe closed');
+      },
+    });
+    const pending = h.invoke(invocation({ timeoutMs: 5000 }));
+    await until(() => h.timers.has(5000));
+    h.timers.fire(5000);
+    await until(() => h.timers.has(1000));
+    h.timers.fire(1000);
+    expect(await pending).toMatchObject({ ok: false, error: { code: 'timeout' } });
+    expect(h.log.entries).toContainEqual(
+      expect.objectContaining({ level: 'warn', msg: 'node abort send failed' }),
+    );
+  });
+
+  it('AC-026-16: вымарывание до обрезки — секрет на границе 1000 символов не оставляет частей', async () => {
+    const h = nodeHarness({
+      frameMaxBytes: 20000,
+      respond: (frame, emit) => {
+        if (frame.t !== 'invoke') return;
+        emit.frame({ t: 'log', level: 'info', msg: `${'a'.repeat(990)}${FAKE_SECRET}bbbb` });
+        emit.frame({ t: 'result', ok: true, output: { ok: true } });
+      },
+    });
+    await h.invoke(apiInvocation());
+    const entry = h.log.entries.find((item) => item.msg === 'node log');
+    const msg = String(entry?.ctx?.['msg']);
+    expect(msg.length).toBeLessThanOrEqual(1000);
+    expect(msg).not.toContain('fake');
+  });
+
+  it('AC-026-16: секрет в ключе data заменяется на [secret]', async () => {
+    const h = nodeHarness({
+      respond: (frame, emit) => {
+        if (frame.t !== 'invoke') return;
+        emit.frame({ t: 'log', level: 'info', msg: 'x', data: { [FAKE_SECRET]: 'v' } });
+        emit.frame({ t: 'result', ok: true, output: { ok: true } });
+      },
+    });
+    await h.invoke(apiInvocation());
+    expect(h.log.entries).toContainEqual({
+      level: 'info',
+      msg: 'node log',
+      ctx: expect.objectContaining({ data: { '[secret]': 'v' } }),
+    });
+    expect(JSON.stringify(h.log.entries)).not.toContain(FAKE_SECRET);
   });
 });

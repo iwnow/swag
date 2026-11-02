@@ -133,7 +133,10 @@ function redactData(value: unknown, values: readonly string[]): unknown {
   if (Array.isArray(value)) return value.map((item) => redactData(item, values));
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, redactData(item, values)]),
+      Object.entries(value).map(([key, item]) => [
+        redactText(key, values),
+        redactData(item, values),
+      ]),
     );
   }
   return value;
@@ -249,8 +252,18 @@ export function createInvokeNode(
 
     // Шаг 1: секреты читаются до песочницы; в кадр уходят только объявленные credentials.
     const names = [...new Set(Object.values(invocation.credentials))];
-    const found: Record<string, string> =
-      names.length === 0 ? {} : await deps.secrets.read(invocation.orgId, names);
+    let found: Record<string, string> = {};
+    try {
+      found = names.length === 0 ? {} : await deps.secrets.read(invocation.orgId, names);
+    } catch (error) {
+      log.error('node secrets read failed', {
+        invocationId,
+        nodeType: invocation.type,
+        orgId: invocation.orgId,
+        err: error,
+      });
+      throw error;
+    }
     const missing = names.filter((name) => !Object.hasOwn(found, name));
     if (missing.length > 0) {
       return fail('secret_missing', `Нет секретов организации: ${missing.join(', ')}`);
@@ -262,6 +275,33 @@ export function createInvokeNode(
     const redactions = Object.values(secrets)
       .filter((value) => value.length >= MIN_SECRET_LENGTH)
       .sort((a, b) => b.length - a.length);
+
+    // Шаг 9: сообщения ошибок вымарываются до обрезки, включая собранные хостом (invalid_output).
+    const outcome = await runSandbox(invocation, invocationId, {
+      manifest,
+      pkg,
+      settings,
+      secrets,
+      redactions,
+    });
+    return outcome.ok
+      ? outcome
+      : fail(outcome.error.code, redactText(outcome.error.message, redactions));
+  }
+
+  // Шаги 2–8: дедлайн, песочница, кадры, результат.
+  async function runSandbox(
+    invocation: NodeInvocation,
+    invocationId: string,
+    run: {
+      manifest: NodeManifest;
+      pkg: string;
+      settings: Record<string, unknown>;
+      secrets: Record<string, string>;
+      redactions: readonly string[];
+    },
+  ): Promise<Stage<unknown>> {
+    const { manifest, pkg, settings, secrets, redactions } = run;
 
     // Шаг 2: дедлайн и грант выхода; грант живёт до конца грейса.
     const timeoutMs = invocation.timeoutMs ?? node.timeoutMs;
@@ -305,7 +345,7 @@ export function createInvokeNode(
       orgId: invocation.orgId,
       stateKey: invocation.stateKey,
       redactions,
-      timeoutMs,
+      deadline,
     };
     let exchange: Exchange;
     try {
@@ -324,13 +364,11 @@ export function createInvokeNode(
       return fail('protocol_error', 'Песочница узла нарушила протокол');
     }
     const { frame } = exchange;
-    if (!frame.ok) {
-      return fail(frame.code, redactText(frame.message, redactions));
-    }
+    if (!frame.ok) return fail(frame.code, frame.message);
     return checkOutput(nodes, invocation, frame.output);
   }
 
-  // Шаги 4–6: кадр invoke, чтение кадров; по дедлайну — abort, затем грейс, затем timeout.
+  // Шаги 4–6: кадр invoke, чтение кадров; в deadline — abort, затем грейс, затем timeout.
   async function converse(
     session: NodeSandboxSession,
     invoke: HostFrame,
@@ -340,7 +378,7 @@ export function createInvokeNode(
       orgId: string;
       stateKey: string;
       redactions: readonly string[];
-      timeoutMs: number;
+      deadline: number;
     },
   ): Promise<Exchange> {
     const send = (frame: HostFrame): void => session.write(JSON.stringify(frame));
@@ -434,10 +472,17 @@ export function createInvokeNode(
         settle({ kind: 'protocol_error' });
         return;
       }
-      deadlineTimer = timers.setTimeout(() => {
-        send({ t: 'abort' });
-        graceTimer = timers.setTimeout(() => settle({ kind: 'timeout' }), node.abortGraceMs);
-      }, ctx.timeoutMs);
+      deadlineTimer = timers.setTimeout(
+        () => {
+          try {
+            send({ t: 'abort' });
+          } catch (err) {
+            log.warn('node abort send failed', { ...context, err });
+          }
+          graceTimer = timers.setTimeout(() => settle({ kind: 'timeout' }), node.abortGraceMs);
+        },
+        Math.max(0, ctx.deadline - Date.parse(clock.now())),
+      );
       pump().catch(() => settle({ kind: 'protocol_error' }));
     });
   }
@@ -445,27 +490,32 @@ export function createInvokeNode(
   return async function invokeNode(invocation) {
     const invocationId = ids.uuid();
     const startedAt = Date.parse(clock.now());
-    const outcome = await execute(invocation, invocationId);
-    const durationMs = Math.max(0, Date.parse(clock.now()) - startedAt);
-    const result: NodeInvocationResult = outcome.ok
-      ? { ok: true, output: outcome.value, durationMs }
-      : {
-          ok: false,
-          error: {
-            code: outcome.error.code,
-            message: truncate(outcome.error.message, MAX_ERROR_MESSAGE),
-          },
-          durationMs,
-        };
-    log.info('node invoke', {
-      invocationId,
-      nodeType: invocation.type,
-      orgId: invocation.orgId,
-      callKind: invocation.call.kind,
-      ok: result.ok,
-      code: result.ok ? null : result.error.code,
-      durationMs,
-    });
-    return result;
+    const elapsed = (): number => Math.max(0, Date.parse(clock.now()) - startedAt);
+    let result: NodeInvocationResult | null = null;
+    try {
+      const outcome = await execute(invocation, invocationId);
+      result = outcome.ok
+        ? { ok: true, output: outcome.value, durationMs: elapsed() }
+        : {
+            ok: false,
+            error: {
+              code: outcome.error.code,
+              message: truncate(outcome.error.message, MAX_ERROR_MESSAGE),
+            },
+            durationMs: elapsed(),
+          };
+      return result;
+    } finally {
+      // Лог пишется и при исключении (сбой секретов, D-168): ok:false, code null.
+      log.info('node invoke', {
+        invocationId,
+        nodeType: invocation.type,
+        orgId: invocation.orgId,
+        callKind: invocation.call.kind,
+        ok: result?.ok ?? false,
+        code: result && !result.ok ? result.error.code : null,
+        durationMs: result?.durationMs ?? elapsed(),
+      });
+    }
   };
 }

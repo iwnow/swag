@@ -54,6 +54,7 @@ const nodePackages = await bootNodePackages(config.NODE_PACKAGES, {
   fail: () => fail('node packages invalid', undefined),
 });
 const pool = new pg.Pool({ connectionString: config.DATABASE_URL });
+pool.on('error', (error: unknown) => log.error('postgres pool error', { err: error }));
 
 const bus = await connectNatsBus({
   url: config.NATS_URL,
@@ -92,7 +93,11 @@ const core = createOrchestratorCore({
   log,
   trace: telemetry.trace,
   nodes: nodePackages,
-  nodeSandboxes: createDockerNodeSandboxes({ network: config.DOCKER_NODE_NETWORK, log }),
+  nodeSandboxes: createDockerNodeSandboxes({
+    network: config.DOCKER_NODE_NETWORK,
+    maxLineBytes: config.NODE_FRAME_MAX_BYTES,
+    log,
+  }),
   secrets: createPostgresSecretStore(pool, createAesGcmCipher(config.SECRETS_KEY)),
   nodeState: createPostgresNodeState(pool),
   egressGrants: createEgressGrants(config.EGRESS_PROXY_KEY),

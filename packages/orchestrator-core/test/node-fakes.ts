@@ -66,6 +66,19 @@ const MANIFESTS = [
     egress: [],
   },
   {
+    type: 'example/channel',
+    version: '1.0.0',
+    kind: 'channel',
+    title: 'Канал',
+    description: 'Отправка сообщений.',
+    settings: { type: 'object', properties: {} },
+    credentials: [],
+    inputs: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+    outputs: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    operations: [],
+    egress: [],
+  },
+  {
     type: 'swag/llm-agent',
     version: '1.0.0',
     kind: 'llm-agent',
@@ -125,7 +138,7 @@ export interface Emit {
 export type Respond = (frame: HostFrame, emit: Emit) => void;
 
 // Песочница узла: каждый кадр от ядра отдаётся сценарию respond, который отвечает через emit.
-export function fakeNodeSandboxes(respond: Respond) {
+export function fakeNodeSandboxes(respond: Respond, onRun: () => void = () => undefined) {
   const alive = new Map<string, { metadata: Record<string, string>; queue: LineQueue }>();
   const runs: NodeSandboxSpec[] = [];
   const removed: string[] = [];
@@ -136,6 +149,7 @@ export function fakeNodeSandboxes(respond: Respond) {
     async run(spec) {
       counter += 1;
       runs.push(spec);
+      onRun();
       const sandboxId = `node-${counter}`;
       const queue = new LineQueue();
       alive.set(sandboxId, { metadata: spec.metadata, queue });
@@ -233,13 +247,15 @@ function fakeLog() {
 
 export interface NodeHarnessOptions {
   respond?: Respond;
+  onRun?: () => void;
   frameMaxBytes?: number;
   timeoutMs?: number;
   abortGraceMs?: number;
 }
 
 export function nodeHarness(options: NodeHarnessOptions = {}) {
-  const sandboxes = fakeNodeSandboxes(options.respond ?? (() => undefined));
+  const sandboxes = fakeNodeSandboxes(options.respond ?? (() => undefined), options.onRun);
+  let nowMs = Date.parse(NOW);
   const timers = fakeTimers();
   const log = fakeLog();
   const grants: EgressGrant[] = [];
@@ -292,7 +308,7 @@ export function nodeHarness(options: NodeHarnessOptions = {}) {
   };
   const deps: NodeInvokeDeps = {
     ...nodeDeps,
-    clock: { now: () => NOW },
+    clock: { now: () => new Date(nowMs).toISOString() },
     ids: { uuid: () => `00000000-0000-4000-8000-${String(++uuid).padStart(12, '0')}` },
     timers: timers.timers,
     log: log.logger,
@@ -308,5 +324,8 @@ export function nodeHarness(options: NodeHarnessOptions = {}) {
     grants,
     stateSets,
     stateValues,
+    advance: (ms: number) => {
+      nowMs += ms;
+    },
   };
 }
