@@ -50,6 +50,33 @@ const LLM_AGENT = {
   egress: [],
 };
 
+// JSON Schema, которую fromJSONSchema не поддерживает (not).
+const UNSUPPORTED = { type: 'object', not: { type: 'string' } };
+
+const CONNECTOR = {
+  type: 'example/connector',
+  version: '1.0.0',
+  kind: 'connector',
+  title: 'Коннектор',
+  description: 'Пример коннектора с одной операцией.',
+  settings: { type: 'object', properties: {}, additionalProperties: false },
+  credentials: [],
+  inputs: null,
+  outputs: null,
+  operations: [],
+  egress: [],
+};
+
+const operation = (overrides: Record<string, unknown>) => ({
+  name: 'run',
+  title: 'Запуск',
+  description: 'Операция с одной схемой на проверку.',
+  access: 'read',
+  input: { type: 'object' },
+  output: { type: 'object' },
+  ...overrides,
+});
+
 const manifest = (overrides: Record<string, unknown>, base: Record<string, unknown> = ECHO) =>
   NodeManifest.parse({ ...base, ...overrides });
 
@@ -81,6 +108,45 @@ describe('реестр типов узлов', () => {
         schema: 'settings',
         message: expect.any(String),
       },
+    });
+  });
+
+  it.each([
+    ['inputs', 'program', { inputs: UNSUPPORTED }, 'inputs'],
+    ['outputs', 'program', { outputs: UNSUPPORTED }, 'outputs'],
+    [
+      'operations.<name>.input',
+      'connector',
+      { operations: [operation({ input: UNSUPPORTED })] },
+      'operations.run.input',
+    ],
+    [
+      'operations.<name>.output',
+      'connector',
+      { operations: [operation({ output: UNSUPPORTED })] },
+      'operations.run.output',
+    ],
+  ])('AC-021-6: схема с not в %s — node_schema_unsupported', (_, kind, overrides, schema) => {
+    const base = kind === 'program' ? ECHO : CONNECTOR;
+    const result = createNodeRegistry([manifest(overrides, base)]);
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: 'node_schema_unsupported',
+        ref: `${base.type}@${base.version}`,
+        schema,
+        message: expect.any(String),
+      },
+    });
+  });
+
+  it('AC-021-6: при неподдерживаемых inputs и outputs ошибка указывает на inputs', () => {
+    const result = createNodeRegistry([manifest({ inputs: UNSUPPORTED, outputs: UNSUPPORTED })]);
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'node_schema_unsupported', schema: 'inputs' },
     });
   });
 
