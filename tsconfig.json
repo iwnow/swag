@@ -8,6 +8,7 @@
     { "path": "packages/helpers" },
     { "path": "packages/node-sdk" },
     { "path": "packages/node-example" },
+    { "path": "packages/node-llm-agent" },
     { "path": "packages/api-integration" },
     { "path": "packages/api-core" },
     { "path": "packages/billing-core" },
