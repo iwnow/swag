@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { ALL_EVENTS, ALL_INBOXES } from '@swag/contracts';
 import { ApiConfig, BaseConfig, loadConfig } from '@swag/config';
-import { createNodeRegistry } from '@swag/api-integration';
 import { createBillingCore, type BillingCore } from '@swag/billing-core';
 import { createJoseVerifier } from '@swag/adapter-jose';
 import { createPostgresBalanceStore } from '@swag/adapter-postgres';
@@ -11,6 +10,7 @@ import { connectNatsBus } from '@swag/adapter-nats';
 import { startTelemetry, tracedHttpServer } from '@swag/adapter-telemetry';
 import { buildApp } from './app.ts';
 import { createAuthenticator } from './auth.ts';
+import { bootNodeRegistry } from './node-types.ts';
 import { createOrgDirectory } from './organizations.ts';
 import { createRevocationSync, fetchTokenRevocations } from './revocations.ts';
 import { createBlockHandler, createStreamRegistry } from './streams.ts';
@@ -44,10 +44,15 @@ const telemetry = startTelemetry({
 });
 const log = telemetry.logger;
 
-async function fail(msg: string, error: unknown): Promise<never> {
-  log.error(msg, { err: error });
+// Выход с кодом 1 без записи в лог: вызывающий уже записал причину.
+async function exit(): Promise<never> {
   await telemetry.shutdown();
   process.exit(1);
+}
+
+async function fail(msg: string, error: unknown): Promise<never> {
+  log.error(msg, { err: error });
+  return exit();
 }
 
 let config: ApiConfig;
@@ -57,16 +62,15 @@ try {
   config = await fail('config invalid', error);
 }
 
+// Спека 021, 4.7 (REQ-021-13): сразу после конфигурации, до подключения к Postgres и NATS.
+const nodeTypes = await bootNodeRegistry(config.NODE_PACKAGES, { log, fail: exit });
+
 const clock = { now: () => new Date().toISOString() };
 const orgs = createOrgDirectory({
   identityUrl: config.IDENTITY_URL,
   token: config.IDENTITY_INTERNAL_TOKEN,
   timeoutMs: IDENTITY_TIMEOUT_MS,
 });
-
-// Спека 021, T-8: реестр типов узлов пуст до T-11, когда загрузка пакетов из NODE_PACKAGES появится в старте.
-const nodeTypes = createNodeRegistry([]);
-if (!nodeTypes.ok) throw new Error(nodeTypes.error.code);
 
 // Миграции до приёма запросов, рои прерванного перезапуска закрыты до подписок (спека 003, 4.5).
 // Ядро баланса собирается фабрикой на пуле; маршрутам нужен тот же экземпляр (спека 013, 4.9).
@@ -94,7 +98,7 @@ const { core, pool } = await startApiCore(
     ids: { uuid: () => randomUUID() },
     log,
     trace: telemetry.trace,
-    nodeTypes: nodeTypes.registry,
+    nodeTypes,
     limits: {
       maxActiveSwarms: config.MAX_ACTIVE_SWARMS,
       maxBudgetMicroUsd: config.SWARM_MAX_BUDGET_MICRO_USD,

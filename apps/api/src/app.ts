@@ -123,6 +123,19 @@ export async function buildApp(
       async (request, reply) =>
         send(reply, await billing.topup(request.actor, request.params.orgId, request.body), 201),
     );
+
+    // Спека 021, 4.8 (REQ-021-14): каталог типов узлов. Право node.read проверяет api-core.
+    rest.get('/node-types', async (request, reply) =>
+      send(reply, core.listNodeTypes(request.actor), 200),
+    );
+
+    rest.get<{ Params: { namespace: string; name: string; version: string } }>(
+      '/node-types/:namespace/:name/:version',
+      async (request, reply) => {
+        const { namespace, name, version } = request.params;
+        return send(reply, core.getNodeType(request.actor, `${namespace}/${name}@${version}`), 200);
+      },
+    );
   });
 
   app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
