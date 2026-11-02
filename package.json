@@ -24,6 +24,7 @@
     "test": "vitest run",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run arch:check && npm run build && npm run test && npm run spec:check",
     "agent:image": "docker compose --profile agent build agent",
+    "node-host:image": "docker compose --profile node-host build node-host",
     "up": "npm run agent:image && docker compose up -d --build --wait && npm run images:prune",
     "images:prune": "docker image prune -f --filter label=com.docker.compose.project=swag",
     "dev": "docker compose -f compose.yaml -f compose.dev.yaml up --build --watch",
