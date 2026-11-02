@@ -1,7 +1,7 @@
 ---
 id: "021"
 title: Контракт и реестр узлов
-status: review
+status: done
 roadmap_stage: 8а
 depends_on: ["001", "024", "031"]
 superseded_by: null

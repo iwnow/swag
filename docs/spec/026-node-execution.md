@@ -1,7 +1,7 @@
 ---
 id: "026"
 title: Исполнение узлов
-status: draft
+status: ready
 roadmap_stage: 8а
 depends_on: ["021", "024"]
 superseded_by: null
@@ -387,20 +387,32 @@ export function createEgressGrants(keyBase64: string): { issue(grant: EgressGran
 | ← | `{ t: 'state.get', id, key }`, `{ t: 'state.set', id, key, value }` | `ctx.state.*`; `id` — целое, уникальное в вызове |
 | ← | `{ t: 'result', ok: true, output }` / `{ t: 'result', ok: false, code: NodeErrorCode \| 'node_failed', message }` | последний кадр, после него процесс выходит с кодом 0 |
 
-Работа `node-host`:
+Процессы в песочнице: `node-host` — процесс 1 и единственный, кто пишет в stdout контейнера. Код узла исполняется в дочернем процессе `node-host` (`child_process.fork('apps/node-host/src/child.ts', { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })`). Поэтому вывод кода узла (`console.*`, `process.stdout`, `process.stderr`, его собственные дочерние процессы) не попадает в канал кадров. Сообщения IPC между `node-host` и дочерним процессом — те же объекты, что кадры таблицы выше, без поля `invocationId` и с `deadlineMs` вместо `deadline`; родитель пересылает их оркестратору как есть.
 
-1. Ничего не пишет в stdout до кадра `invoke`, потому что оркестратор подключается к stdio после запуска контейнера.
-2. Делает `await import(package)` и берёт `default`. Если `type` или `version` не совпадают с `definition`, отвечает `result` `node_failed` с текстом `definition mismatch`.
-3. Строит `NodeContext`:
+Работа `node-host` (родитель, `src/main.ts`):
+
+1. Ничего не пишет в stdout до кадра `invoke`. Адаптер подключается к stdio до старта контейнера (4.9), это вторая страховка.
+2. По `invoke` запускает дочерний процесс и передаёт ему по IPC пакет, `definition`, `call`, `settings`, `secrets`, `egressProxy`.
+3. Пересылает IPC-сообщения `log`, `state.get` и `state.set` от ребёнка оркестратору кадрами, а ответы `state` и `abort` — обратно ребёнку.
+4. Каждую строку stdout ребёнка превращает в кадр `log` с уровнем `info`, а stderr — в кадр `log` с уровнем `warn`; `msg` — сама строка. Лимиты 4.8 применяет оркестратор.
+5. Сообщение `result` от ребёнка пишет кадром `result`. Если ребёнок вышел без `result`, пишет `result` `node_failed` с текстом `child exited <code|signal>`.
+6. Каждый кадр пишется одним вызовом `process.stdout.write` целой строкой. После `result` процесс ставит `process.exitCode = 0` и завершается сам, когда stdout сброшен и ребёнок закрыт; `process.exit()` не вызывается, чтобы не потерять хвост.
+
+Работа дочернего процесса (`src/child.ts`):
+
+1. Делает `await import(package)` и берёт `default`. Если `type` или `version` не совпадают с `definition`, отвечает `result` `node_failed` с текстом `definition mismatch`.
+2. Строит `NodeContext`:
    - `settings` — `parseSettings`;
-   - `secrets.get` берёт значение из кадра. Имени нет — `NodeError('secret_not_declared')`;
+   - `secrets.get` берёт значение из сообщения запуска. Имени нет — `NodeError('secret_not_declared')`;
    - `http.fetch` сначала проверяет `https:` и `egressMatches` по `egress` определения, иначе `NodeError('egress_denied')`. Затем вызывает `fetch` с `dispatcher: new ProxyAgent({ uri: egressProxy.url, token: 'Basic ' + base64('swag:' + token) })`;
-   - `log` пишет кадры `log`;
-   - `state` работает через кадры `state.*` и ответы `state`;
-   - `signal` прерывается по кадру `abort` или по закрытию stdin.
-4. Вызывает `invokeNode`. `NodeError` превращается в `result` с его кодом, любое другое исключение — в `node_failed` с `message` исключения.
+   - `log` шлёт IPC `log`;
+   - `state` работает через IPC `state.*` и ответы `state`;
+   - `signal` прерывается по `abort` или по разрыву IPC.
+3. Вызывает `invokeNode`. `NodeError` превращается в `result` с его кодом, любое другое исключение — в `node_failed` с `message` исключения.
 
-Код узла в том же процессе недоверенный, поэтому все лимиты и проверки результата — на стороне оркестратора (4.10):
+Разделение процессов защищает протокол от случайного вывода кода узла, но не от намеренного обхода. Ребёнок работает под тем же пользователем и в том же контейнере. Граница доверия — контейнер.
+
+Код узла и всё в его контейнере — недоверенные, поэтому все лимиты и проверки результата — на стороне оркестратора (4.10):
 
 | Лимит | Значение | Нарушение |
 |---|---|---|
@@ -425,7 +437,7 @@ export interface NodeSandboxSession {
   lines: AsyncIterable<string>;              // stdout построчно; заканчивается с выходом процесса
 }
 export interface NodeSandboxes {
-  run(spec: NodeSandboxSpec): Promise<NodeSandboxSession>; // создаёт, запускает, подключает stdio
+  run(spec: NodeSandboxSpec): Promise<NodeSandboxSession>; // создаёт, подключает stdio, запускает
   remove(sandboxId: string): Promise<void>;                // нет такой — не ошибка
   list(match: Record<string, string | true>): Promise<string[]>;
 }
@@ -434,7 +446,10 @@ export interface NodeSandboxes {
 `createDockerNodeSandboxes({ network, docker? })` в `adapter-docker`:
 
 - `Env` — только `TRACEPARENT`: без `NATS_URL`, `LLM_GATEWAY_URL`, `OTEL_*` и секретов;
-- `OpenStdin: true`, `StdinOnce: false`, `AttachStdin`, `AttachStdout`; stderr не читается как кадры, адаптер пишет его в лог `debug`;
+- `OpenStdin: true`, `StdinOnce: false`, `AttachStdin`, `AttachStdout`, `AttachStderr`, `Tty: false`;
+- порядок `run`: `createContainer` → `container.attach({ stream: true, stdin: true, stdout: true, stderr: true, hijack: true })` → `container.start()`. Подключение до старта, поэтому вывод процесса не теряется;
+- поток attach разделяется `docker.modem.demuxStream` на stdout и stderr; `lines` — stdout, разбитый по `
+`, неполная последняя строка отдаётся при конце потока. stderr не читается как кадры, адаптер пишет его в лог `debug`;
 - `HostConfig`:
   - `NetworkMode: network`, `ReadonlyRootfs: true`, `Tmpfs: { '/tmp': 'rw,size=64m' }`;
   - `CapDrop: ['ALL']`, `SecurityOpt: ['no-new-privileges']`;
@@ -599,11 +614,18 @@ networks:
   - сеть из опций, `ReadonlyRootfs`, `Tmpfs`, `CapDrop: ['ALL']`, `no-new-privileges`, `Memory`, `NanoCpus`, `PidsLimit`, `User: 'node'`, `OpenStdin`;
   - `Env` без `NATS_URL`, `LLM_GATEWAY_URL`, `OTEL_*` и значений секретов;
   - без `Binds` и `PortBindings`;
-  - метки из `metadata`.
-- **AC-026-20** — *Given* `apps/node-host` запущен как дочерний процесс с пакетом `@swag/node-example`. *When* в stdin приходит `invoke` `execute` echo, затем — `invoke` фикстурного узла, который пишет `log`, делает `state.get` и `secrets.get('missing')`. *Then*:
+  - метки из `metadata`;
+  - `attach` вызван до `start`, а поток разделён `demuxStream`: строка в stderr фейкового потока не попадает в `lines`, строка stdout из двух кусков приходит одной строкой.
+- **AC-026-20** — *Given* `apps/node-host` запущен как дочерний процесс с пакетом `@swag/node-example`. *When*:
+  1. в stdin приходит `invoke` `execute` echo;
+  2. отдельным процессом — `invoke` фикстурного узла, который пишет `ctx.log`, делает `console.log('dbg')`, `process.stdout.write('raw\n')`, `state.get` и `secrets.get('missing')`;
+  3. отдельным процессом — `invoke` фикстурного узла, который вызывает `process.exit(3)`.
+
+  *Then*:
   - до `invoke` stdout пуст;
   - первый процесс пишет `result ok: true` с эхо и выходит с кодом 0;
-  - второй пишет кадры `log`, `state.get` и после ответа `state` — `result ok: false` с кодом `secret_not_declared`.
+  - второй пишет кадры `log` (из `ctx.log` и `log` `info` с `msg` `dbg` и `raw`), `state.get` и после ответа `state` — `result ok: false` с кодом `secret_not_declared`; каждая строка его stdout проходит `SandboxFrame`;
+  - третий пишет `result ok: false` `node_failed` с `child exited 3`.
 - **AC-026-21** — *Given* `POST /node-invocations` оркестратора с фейковым ядром. *When* без токена, с неверным телом, с верным. *Then* `401`, `400 invalid_request`, `200` с результатом ядра; тело запроса не попадает в лог.
 - **AC-026-22** — *Given* `OrchestratorConfig`, `ApiConfig`, `EgressProxyConfig`. *When* `SECRETS_KEY` или `EGRESS_PROXY_KEY` — 16 байт, пусто или не base64; `NODE_INVOKE_TIMEOUT_MS` = 500. *Then* `loadConfig` бросает, а значения из `.env.example` (с подставленными ключами) проходят.
 - **AC-026-23** — *Given* `cleanupOrphans` с фейковыми `NodeSandboxes`, где есть две песочницы `swag.kind=node`. *When* оркестратор стартует. *Then* обе удалены.
@@ -660,7 +682,7 @@ networks:
 - [ ] **T-9.** `apps/api`: маршруты `/secrets` по 4.6, `createAesGcmCipher(config.SECRETS_KEY)` в `main.ts`; тест `apps/api/test/secrets-http.test.ts` с проверкой логов. Закрывает: REQ-026-7, REQ-026-8, AC-026-7. Готово, когда: тесты зелёные, README `apps/api` дополнен.
 - [ ] **T-10.** Ядро `packages/egress-proxy-core` по 4.7 (`authorize`, `isPublicAddress`) с README по схеме CLAUDE.md, строки в корневом `tsconfig.json` и в `arch:check`, если он перечисляет ядра. Тесты AC-026-8, AC-026-9 и бенч NFR-026-2. Закрывает: REQ-026-6 (логика). Готово, когда: тесты и `arch:check` зелёные.
 - [ ] **T-11.** Оболочка `apps/egress-proxy` по 4.7: `main.ts`, `Dockerfile`, сервис `egress-proxy` в `compose.yaml` в сетях `default` и `nodes` с healthcheck; тест AC-026-11. Закрывает: REQ-026-6, AC-026-11. Готово, когда: тест зелёный, `npm run up` поднимает `egress-proxy` здоровым, README пакета, корневой README дополнен.
-- [ ] **T-12.** `apps/node-host` по 4.8: `src/main.ts`, `package.json` (`undici` — точная версия в журнал), `Dockerfile`, сервис `node-host` с `profiles` в compose, скрипт `node-host:image`. Фикстурный узел для теста — в `apps/node-host/test/fixtures/`. Тест AC-026-20 запускает процесс через `child_process.spawn`. Закрывает: AC-026-20. Готово, когда: тест зелёный, образ собирается, README пакета.
+- [ ] **T-12.** `apps/node-host` по 4.8: `src/main.ts`, `package.json` (`undici` — точная версия в журнал), `Dockerfile`, сервис `node-host` с `profiles` в compose, скрипт `node-host:image`. Фикстурный узел для теста — в `apps/node-host/test/fixtures/`. `src/main.ts` — родитель, `src/child.ts` — код узла (4.8). Тест AC-026-20 запускает `main.ts` через `child_process.spawn`. Закрывает: AC-026-20. Готово, когда: тест зелёный, образ собирается, README пакета.
 - [ ] **T-13.** `adapter-docker`: `createDockerNodeSandboxes` по 4.9, порт `NodeSandboxes` объявлен в `orchestrator-core`; тест с фейковым dockerode. Закрывает: REQ-026-4 (адаптер), AC-026-19. Готово, когда: тест зелёный, README дополнен.
 - [ ] **T-14.** `orchestrator-core`: `invokeNode` по 4.10, зависимости ядра, `cleanupOrphans` для узлов; тесты на фейках. Закрывает: REQ-026-1…5, REQ-026-9…12, AC-026-12…17, AC-026-23. Готово, когда: тесты зелёные, README `orchestrator-core` дополнен.
 - [ ] **T-15.** `apps/orchestrator`: сборка зависимостей 4.10 в `main.ts`, маршрут `POST /node-invocations`; тест AC-026-21; `compose.yaml` — переменные и `depends_on`. Закрывает: AC-026-21. Готово, когда: тесты зелёные, `npm run up` поднимает оркестратор, README `apps/orchestrator` дополнен.
@@ -715,7 +737,7 @@ networks:
   - **(б)** шина NATS, как у агентов: песочнице нужен NATS, а это лишний сетевой путь и account на вызов (007);
   - **(в)** HTTP-сервер в песочнице.
 
-  Рекомендация — **«а»**: меньше всего поверхности, без новых сетевых путей. **Ответ (человек, 2026-11-02):** (а) — по рекомендации.
+  Рекомендация — **«а»**: меньше всего поверхности, без новых сетевых путей. **Ответ (человек, 2026-11-02):** (а) — по рекомендации. **Уточнение (человек, 2026-11-02):** код узла — в дочернем процессе `node-host` (`fork`), в stdout контейнера пишет только `node-host`; адаптер подключается к stdio до старта и разделяет потоки `demuxStream` (4.8, 4.9). NATS отклонён: из песочницы адрес и токен шины доступны коду узла (`/proc`, DNS Docker-сети), а без учёток на вызов (007) он увидел бы всю шину; пересмотреть можно в 005 или 007 для долгоживущих песочниц узлов.
 
 - [x] **Q-8.** Исходящий прокси: отдельный сервис или часть оркестратора *(Claude, 2026-11-02)*. Варианты:
   - **(а)** отдельный сервис `egress-proxy` с ядром и правом выхода по подписанному гранту, без состояния и управляющего API;
