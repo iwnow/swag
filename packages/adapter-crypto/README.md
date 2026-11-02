@@ -15,7 +15,7 @@
 - `createArgon2Hasher()` — `hash` возвращает PHC-строку `$argon2id$v=19$m=19456,t=2,p=1$…`; `verify` возвращает `false` и на неверный пароль, и на битую строку хэша, без исключения.
 - `createNodeOpaqueTokens()` — `create()` даёт `randomBytes(32)` в base64url (43 символа) и SHA-256 hex; `hash(token)` — тот же SHA-256 hex.
 - `createAesGcmCipher(keyBase64)` — `SecretCipher`. Ключ — ровно 32 байта в base64, иначе исключение. `encrypt(plaintext, aad)` даёт blob `iv(12) || tag(16) || шифротекст`; `decrypt(blob, aad)` бросает при неверном ключе, AAD или подмене байта.
-- `createEgressGrants(keyBase64)` — `issue(grant)` выдаёт токен, `verify(token)` возвращает `EgressGrant` или `null`. Тип `GrantVerifier` объявлен здесь структурно; порт `GrantVerifier` объявит `egress-proxy-core` (T-10), и тип совпадёт структурно.
+- `createEgressGrants(keyBase64)` — `issue(grant)` выдаёт токен, `verify(token)` возвращает `EgressGrant` или `null`. Тип `GrantVerifier` объявлен здесь структурно и совпадает с портом `GrantVerifier` из `egress-proxy-core`.
 - `test/crypto.test.ts` — AC-012-23, AC-012-24.
 - `test/cipher.test.ts` — AC-026-5.
 - `test/grants.test.ts` — AC-026-10.
@@ -30,7 +30,7 @@
 ## Связи
 
 - Порты: `PasswordHasher`, `OpaqueTokens` из `@swag/identity-core`. Только типы.
-- Типы: `SecretCipher` — интерфейс этого пакета, `@swag/adapter-postgres` импортирует его как тип; `GrantVerifier` объявит `egress-proxy-core` (T-10), здесь — структурный тип.
+- Типы: `SecretCipher` — интерфейс этого пакета, `@swag/adapter-postgres` импортирует его как тип; `GrantVerifier` объявлен в `egress-proxy-core`, здесь — структурно совпадающий тип.
 - Использует: `@node-rs/argon2`, `@swag/identity-core`, `@swag/contracts` (`EgressGrant`), `node:crypto`.
 - Потребители: оболочка `apps/identity` (T-16), `apps/api` (шифр секретов, T-9), `egress-proxy` и оркестратор (гранты, T-10, T-14).
 

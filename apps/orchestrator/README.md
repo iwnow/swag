@@ -25,7 +25,7 @@
 
 ## Связи
 
-- Ядро: `@swag/orchestrator-core`. Адаптеры: `@swag/adapter-docker`, `@swag/adapter-gateway-http`, `@swag/adapter-nats`, `@swag/adapter-telemetry`. Хелпер: `bearerMatches` из `@swag/helpers/server`.
+- Ядро: `@swag/orchestrator-core`. Адаптеры: `@swag/adapter-crypto`, `@swag/adapter-docker`, `@swag/adapter-gateway-http`, `@swag/adapter-nats`, `@swag/adapter-postgres`, `@swag/adapter-telemetry`. Пакеты узлов: `@swag/node-packages`. Хелпер: `bearerMatches` из `@swag/helpers/server`.
 - HTTP-цепочка `api` → `orchestrator` с трассировкой проверяется в `apps/api/test/trace.test.ts` (AC-016-9).
 - Конфигурация: `@swag/config`.
 
