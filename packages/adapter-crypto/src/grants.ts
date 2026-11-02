@@ -24,8 +24,10 @@ export function createEgressGrants(
         const dot = token.indexOf('.');
         if (dot <= 0 || token.indexOf('.', dot + 1) !== -1) return null;
         const payload = token.slice(0, dot);
+        const sig = token.slice(dot + 1);
         const expected = sign(payload);
-        const given = Buffer.from(token.slice(dot + 1), 'base64url');
+        const given = Buffer.from(sig, 'base64url');
+        if (given.toString('base64url') !== sig) return null;
         if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
         const parsed = EgressGrant.safeParse(
           JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')),

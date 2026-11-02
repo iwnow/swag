@@ -12,9 +12,9 @@ interface SecretRow {
 }
 
 // Последние 4 символа — только если в значении не меньше 16 символов (SecretSummary, 4.1).
+// Счёт в единицах UTF-16, как z.string().length(4) в SecretSummary.
 function secretHint(value: string): string | null {
-  const chars = [...value];
-  return chars.length >= 16 ? chars.slice(-4).join('') : null;
+  return value.length >= 16 ? value.slice(-4) : null;
 }
 
 function toSummary(row: SecretRow): SecretSummary {

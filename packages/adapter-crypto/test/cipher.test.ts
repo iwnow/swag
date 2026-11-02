@@ -33,4 +33,17 @@ describe('createAesGcmCipher', () => {
     expect(() => createAesGcmCipher(Buffer.alloc(16, 1).toString('base64'))).toThrow();
     expect(() => createAesGcmCipher('не base64 !!! мусор')).toThrow();
   });
+
+  it('AC-026-5: ключ из 43 символов без `=` (не каноническая запись 32 байт) — createAesGcmCipher бросает', () => {
+    expect(() => createAesGcmCipher(KEY.replace(/=+$/, ''))).toThrow();
+  });
+
+  it('короткий blob (меньше iv + tag) — decrypt бросает', () => {
+    expect(() => createAesGcmCipher(KEY).decrypt(new Uint8Array(27), 'a')).toThrow();
+  });
+
+  it('round-trip пустой строки: encrypt → decrypt возвращает пустую строку', () => {
+    const cipher = createAesGcmCipher(KEY);
+    expect(cipher.decrypt(cipher.encrypt('', 'org1:key'), 'org1:key')).toBe('');
+  });
 });

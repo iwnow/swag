@@ -60,12 +60,11 @@ describe.skipIf(!url)('adapter-postgres секреты организации и
     expect(await store.list(orgId)).toEqual([put]);
     expect(await store.read(orgId, [name])).toEqual({ [name]: TOKEN });
 
-    const leak = await pool.query<{ p: number }>(
-      `select strpos(convert_from(ciphertext, 'latin1'), $1::text) as p
-         from org_secrets where org_id = $2 and name = $3`,
-      [TOKEN, orgId, name],
+    const stored = await pool.query<{ ciphertext: Buffer }>(
+      'select ciphertext from org_secrets where org_id = $1 and name = $2',
+      [orgId, name],
     );
-    expect(leak.rows[0]?.p).toBe(0);
+    expect(stored.rows[0]?.ciphertext.includes(Buffer.from(TOKEN, 'utf8'))).toBe(false);
 
     const replaced = await store.put(orgId, name, 'fake-avito-token-new-9999', userId, LATER);
     expect(replaced.hint).toBe('9999');
@@ -96,6 +95,24 @@ describe.skipIf(!url)('adapter-postgres секреты организации и
     );
 
     await expect(store.read(orgId, ['other_name'])).rejects.toThrow();
+  });
+
+  it('AC-026-6: list отдаёт секреты по name по возрастанию; секрет с тем же именем другой организации не виден', async () => {
+    const store = createPostgresSecretStore(pool, cipher);
+    const first = await seedOrg();
+    const other = await seedOrg();
+
+    await store.put(first.orgId, 'zeta', 'fake-zeta-value-0000', first.userId, NOW);
+    const alpha = await store.put(first.orgId, 'alpha', 'fake-alpha-value-1111', first.userId, NOW);
+    await store.put(other.orgId, 'alpha', 'fake-other-value-2222', other.userId, NOW);
+
+    const listed = await store.list(first.orgId);
+    expect(listed.map((s) => s.name)).toEqual(['alpha', 'zeta']);
+    expect(listed[0]).toEqual(alpha);
+    expect(await store.read(first.orgId, ['alpha'])).toEqual({ alpha: 'fake-alpha-value-1111' });
+
+    expect((await store.list(other.orgId)).map((s) => s.name)).toEqual(['alpha']);
+    expect(await store.read(other.orgId, ['alpha'])).toEqual({ alpha: 'fake-other-value-2222' });
   });
 
   it('AC-026-18: одинаковый key под двумя orgId и двумя stateKey — четыре значения независимы; set(null) удаляет только свою строку', async () => {

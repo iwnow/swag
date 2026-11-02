@@ -10,11 +10,12 @@ const ALGORITHM = 'aes-256-gcm';
 const KEY_BYTES = 32;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
-const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
 export function parseKeyBase64(keyBase64: string, name: string): Buffer {
-  const key = BASE64.test(keyBase64) ? Buffer.from(keyBase64, 'base64') : Buffer.alloc(0);
-  if (key.length !== KEY_BYTES) throw new Error(`${name}: ключ должен быть 32 байта в base64`);
+  const key = Buffer.from(keyBase64, 'base64');
+  if (key.length !== KEY_BYTES || key.toString('base64') !== keyBase64) {
+    throw new Error(`${name}: ключ должен быть 32 байта в каноническом base64`);
+  }
   return key;
 }
 

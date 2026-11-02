@@ -30,6 +30,19 @@ describe('createEgressGrants', () => {
     expect(grants.verify(flipped)).toBeNull();
   });
 
+  it('AC-026-10: подпись с хвостовым `=` или с изменённым последним символом (неканоническая base64url) — null', () => {
+    const grants = createEgressGrants(KEY);
+    const token = grants.issue(grant());
+    const dot = token.indexOf('.');
+    const payload = token.slice(0, dot);
+    const sig = token.slice(dot + 1);
+    const last = sig.at(-1) === 'A' ? 'B' : 'A';
+
+    expect(grants.verify(token)).not.toBeNull();
+    expect(grants.verify(`${payload}.${sig}=`)).toBeNull();
+    expect(grants.verify(`${payload}.${sig.slice(0, -1)}${last}`)).toBeNull();
+  });
+
   it('AC-026-10: полезная часть подписана верно, но не проходит EgressGrant (нет invocationId) — null', () => {
     const grants = createEgressGrants(KEY);
     const payload = Buffer.from(JSON.stringify({ egress: [], expiresAt: 1 }), 'utf8').toString(
