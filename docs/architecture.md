@@ -23,8 +23,10 @@
 apps/<имя>/             оболочка
 packages/<имя>-core/    ядро
 packages/adapter-<технология>/   адаптер инфраструктуры
-packages/contracts/     общие схемы и типы
-packages/api-integration/  общая чистая логика ядер, работающих с API платформы; правила ядра
+packages/contracts/     общие схемы и типы, в т.ч. манифест узла `NodeManifest` (`node.ts`, спека 021)
+packages/api-integration/  общая чистая логика ядер, работающих с API платформы; правила ядра; реестр типов узлов `createNodeRegistry` (спека 021, 4.2)
+packages/node-sdk/      SDK авторов узлов `@swag/node-sdk`: `defineNode`, типы видов, `NodeContext`, тестовая обвязка на `./testing`; не ядро, `arch:check` его не проверяет (спека 021, 4.3)
+packages/node-<имя>/    пакет типа узла `@swag/node-<имя>`: определение в `src/node.ts`, выгруженный `swag-node.json` (спека 021, 4.4); сейчас `node-llm-agent`, `node-example`
 packages/config/        чтение env, только для оболочек
 packages/helpers/       универсальные хелперы без зависимостей (`@swag/helpers`), серверные — `@swag/helpers/server`; ядра не импортируют
 packages/adapter-openrouter/  источник цен OpenRouter на `fetch` (спека 004, 4.9)
@@ -43,7 +45,7 @@ packages/ui-angular/    общий Angular-пакет фронтендов: се
 |---|---|---|
 | `orchestrator-core` | Исполнение плана роя: песочницы, сети, ключи, accounts шины, уборка | `apps/orchestrator` (Fastify) |
 | `llm-gateway-core` (спека 002) | Вызов модели через LLM Gateway: проверки запроса, каталог моделей, стоимость, событие `llm.call`, поток, сверка с апстримом | `apps/llm-gateway` (Fastify) |
-| `api-core` | Координатор, рои, планы, расходы, доступ к данным пользователя по `Actor` | `apps/api` (Fastify) |
+| `api-core` | Координатор, рои, планы, расходы, доступ к данным пользователя по `Actor`, каталог типов узлов (`listNodeTypes`, `getNodeType`, право `node.read`) | `apps/api` (Fastify) |
 | `identity-core` (спека 012) | Регистрация компании, вход, сессии и токены, роли, лимиты частоты, первый супервизор (блокировка и проверка доступа — спека 024) | `apps/identity` (Fastify) |
 | `billing-core` (спека 013) | Баланс по предоплате: пополнение, резерв бюджета роя, закрытие резерва по ledger | в MVP подключается в `apps/api`, позже свой сервис |
 | `agent-core` | Агентный цикл, журнал инструментов, скиллы | `apps/agent` (процесс в песочнице) |
@@ -97,6 +99,17 @@ HTTP / CLI / UI →│ контроллер → фабрика ядра(deps) �
                         │     адаптер     │ Docker, Postgres, NATS, S3, LiteLLM
                         └─────────────────┘
 ```
+
+## Типы узлов
+
+Тип узла — npm-пакет `@swag/node-<имя>` (спека 021). Автор описывает его в `src/node.ts` через `defineNode` из `@swag/node-sdk`; схемы настроек, входа и выхода — на Zod. Путь типа до каталога:
+
+1. `npm run nodes:manifest` (`scripts/node-manifests.ts`) выгружает `swag-node.json` — `NodeManifest` с JSON Schema 2020-12 вместо Zod.
+2. Имя пакета пишется в `NODE_PACKAGES` у `api` (`packages/config`).
+3. `api` при старте (`apps/api/src/node-types.ts`, `bootNodeRegistry`) читает только `swag-node.json` этих пакетов и не импортирует их код. `createNodeRegistry` (`@swag/api-integration`) проверяет манифест, повторы `type@version` и схемы. Ошибка — лог `node_manifest_invalid` и выход до подключения к Postgres и NATS.
+4. `api-core` получает реестр зависимостью `nodeTypes`; `GET /node-types` отдаёт каталог.
+
+Ядра, `@swag/contracts` и `apps/*/src` при подключении нового типа не меняются (REQ-021-15). Исполнение кода узла — спека 026, граф — спека 009.
 
 ## Наблюдаемость: traceId, логи, трейсы
 

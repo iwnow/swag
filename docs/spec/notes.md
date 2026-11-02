@@ -76,3 +76,6 @@
   - TLS до smarthost, аутентификация, ограничение сетей-отправителей (релей не должен быть открытым), порт только во внутренней сети compose;
   - очередь и повторы при недоступности получателя, логи доставки;
   - сравнить с вариантом без своего релея: identity ходит напрямую в SMTP провайдера.
+
+- [ ] **N-29. `npm run check` не проверяет типы под строгими флагами UI.** *(из реализации 021, T-12; где — корневой `package.json` (`typecheck`, `build`), `apps/ui/*/tsconfig.json`; когда — следующая спека, которая трогает UI или `@swag/contracts`; Claude, 2026-11-02)*
+  UI собирается с `noPropertyAccessFromIndexSignature`, а `tsc -b` корня — без него. Код `@swag/contracts` из 021 (`s.type` у `Record<string, unknown>`) прошёл `npm run check` и CI, но сломал `ng serve` в контейнерах UI при `npm run up`. Сделать: добавить в `check` проход `tsc --noEmit -p apps/ui/<app>/tsconfig.app.json` для каждого приложения (сейчас мешает `rootDir`: нужен `--rootDir .` или отдельный tsconfig для проверки) — либо включить флаг в `tsconfig.base`.

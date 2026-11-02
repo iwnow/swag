@@ -1,7 +1,7 @@
 ---
 id: "021"
 title: Контракт и реестр узлов
-status: in-progress
+status: review
 roadmap_stage: 8а
 depends_on: ["001", "024", "031"]
 superseded_by: null
@@ -596,7 +596,7 @@ NODE_PACKAGES: z
 - [x] **T-9.** `NODE_PACKAGES` в `ApiConfig` (`packages/config`) по 4.9, тест в `packages/config/test/`; `.env.example`, локальный `.env`, `compose.yaml`. Закрывает: REQ-021-17, AC-021-24. Готово, когда: тесты зелёные, README `config` дополнен.
 - [x] **T-10.** `apps/api/src/node-types.ts` — `NodeTypesLoadError`, `loadNodeRegistry`, `bootNodeRegistry` по 4.7; фикстуры `apps/api/test/fixtures/packages/*` из таблицы 4.7; тест `apps/api/test/node-types.test.ts`. Закрывает: REQ-021-3 (загрузчик), AC-021-4, AC-021-17, AC-021-18. Готово, когда: тесты зелёные.
 - [x] **T-11.** `apps/api`: вызов `bootNodeRegistry` в `main.ts` сразу после `loadConfig` и передача реестра в ядро по 4.7; `devDependencies` `@swag/node-llm-agent`, `@swag/node-example`; маршруты 4.8 в `src/app.ts`; тест `apps/api/test/node-types-http.test.ts`. Закрывает: REQ-021-13, REQ-021-14, AC-021-19, AC-021-20 (HTTP). Готово, когда: тесты зелёные, `npm run up` поднимает `api`, README `apps/api` дополнен.
-- [ ] **T-12.** Документация: `docs/architecture.md` (пакеты `node-sdk`, `node-*`, реестр в `api-integration`), корневой README (`nodes:manifest`, `NODE_PACKAGES`); глоссарий сверен; замер NFR-021-1 и ручная проверка AC-021-25 в журнал. Закрывает: REQ-021-15, NFR-021-1, AC-021-25. Готово, когда: `npm run check` зелёный, README сверены с кодом.
+- [x] **T-12.** Документация: `docs/architecture.md` (пакеты `node-sdk`, `node-*`, реестр в `api-integration`), корневой README (`nodes:manifest`, `NODE_PACKAGES`); глоссарий сверен; замер NFR-021-1 и ручная проверка AC-021-25 в журнал. Закрывает: REQ-021-15, NFR-021-1, AC-021-25. Готово, когда: `npm run check` зелёный, README сверены с кодом.
 
 ## 9. Открытые вопросы
 
@@ -626,3 +626,4 @@ NODE_PACKAGES: z
 | 2026-11-02 | spec/021-t9 | T-9: `NODE_PACKAGES` в `ApiConfig`, `.env.example`, `compose.yaml` | — |
 | 2026-11-02 | spec/021-t9 | T-10: `loadNodeRegistry`, `bootNodeRegistry`, фикстуры | Тест подменяет `resolve`: `@swag/node-example` берётся из `packages/node-example/swag-node.json` — devDependency в `apps/api` появляется в T-11, разрешение через `exports` проверяет AC-021-19. `log.error` получает `err` объектом ошибки, `package: null` — для ошибки реестра |
 | 2026-11-02 | spec/021-t11 | T-11: `bootNodeRegistry` в `main.ts` до Postgres и NATS, маршруты `GET /node-types`, devDependencies пакетов узлов; разрешение через `exports` проверяет AC-021-19 без подмены `resolve` | `fail` в `main.ts` — выход процесса без своего лога, а не `fail("node_manifest_invalid", null)` из 4.7: `bootNodeRegistry` уже пишет `node_manifest_invalid` с `package` и `err`, второй лог с `err: null` был бы дублем. REQ-021-13 (старт до Postgres и NATS) проверен по коду; `npm run up` — в T-12 |
+| 2026-11-02 | spec/021-t12 | T-12: документация (`architecture.md`, README, глоссарий). NFR-021-1: 10 000 вызовов `validateSettings('swag/llm-agent@1.0.0')` — 8 мс, 7,3 мс, 7,3 мс (порог 1000 мс). AC-021-25: `packages/node-demo` (копия `node-example`, `example/demo`) добавлен в `tsconfig.json`, `npm install`, `npm run nodes:manifest`, имя в `NODE_PACKAGES` (`.env.example` и `.env`). `git diff --stat`: `.env.example` 2 +-, `package-lock.json` 13 +, `tsconfig.json` 1 +, плюс untracked `packages/node-demo/**`. `npm run up`: `api` healthy, в логе нет `node_manifest_invalid`; `GET /node-types` без токена — 401; с токеном супервизора (логин `identity`) — 200, в `items` есть `example/demo`. Откат: стек остановлен (`npm run down`), `packages/node-demo` удалён, `tsconfig.json`, `.env.example`, `package-lock.json` возвращены `git checkout`, строка `.env` восстановлена, `git status` чистый | `npm run up` вернул 1: контейнер `ui-supervisor` не собрался — `ng serve` падает на `packages/contracts/src/node.ts:47` и `:176` (TS4111, доступ к полю через index signature; код из T-1, в main). Исправлено коммитом `a69b844`: доступ по индексу `['type']`, `['properties']`; `tsc --noEmit` всех четырёх приложений UI с их tsconfig — без ошибок. `npm run check` такой код не ловит — N-29. Копия `node-demo` сохранила `title: 'Эхо'` (только тип и имя заменены) |
