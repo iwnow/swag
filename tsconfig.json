@@ -7,6 +7,7 @@
     { "path": "packages/config" },
     { "path": "packages/helpers" },
     { "path": "packages/node-sdk" },
+    { "path": "packages/node-example" },
     { "path": "packages/api-integration" },
     { "path": "packages/api-core" },
     { "path": "packages/billing-core" },

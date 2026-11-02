@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 package-lock.json
+swag-node.json
 .claude/
 docs/
 AI_PLATFORM_ROADMAP.md
