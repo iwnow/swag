@@ -77,7 +77,7 @@ describe('каталог типов узлов по HTTP', () => {
     expect(one.json()).toMatchObject({ error: { code: 'unauthorized' } });
   });
 
-  it('AC-021-21: каталог отдаётся по HTTP всем трём ролям, у которых есть node.read', async () => {
+  it('каталог отдаётся по HTTP всем трём ролям, у которых есть node.read', async () => {
     const app = await setup();
     for (const token of [T.u1, T.adminA, T.sup]) {
       const response = await getNodeTypes(app, token);
