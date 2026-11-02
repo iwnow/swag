@@ -28,6 +28,7 @@ describe('loadNodeRegistry', () => {
   it('AC-021-17: пакет с main, который нельзя импортировать, — реестр создан, код пакета не выполнен', async () => {
     const registry = await loadNodeRegistry(['throwing-node'], { resolve });
     expect(registry.list().map((item) => item.type)).toEqual(['acme/throwing']);
+    await expect(import(join(fixtures, 'throwing-node', 'index.js'))).rejects.toThrow();
   });
 
   it('REQ-021-3: пакет из @swag/ с типом swag/* — загружается', async () => {
