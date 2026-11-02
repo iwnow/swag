@@ -33,7 +33,8 @@
     "db:migrate": "node --env-file-if-exists=.env scripts/db-migrate.ts",
     "llm:ping": "node --env-file-if-exists=.env scripts/llm-ping.ts",
     "money:report": "node --env-file-if-exists=.env scripts/money-report.ts",
-    "identity:keys": "node scripts/identity-keys.ts"
+    "identity:keys": "node scripts/identity-keys.ts",
+    "nodes:manifest": "node scripts/node-manifests.ts"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
