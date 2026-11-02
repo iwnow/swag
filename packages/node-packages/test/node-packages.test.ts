@@ -1,11 +1,17 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { bootNodeRegistry, loadNodeRegistry, NodeTypesLoadError } from '../src/node-types.ts';
+import {
+  bootNodePackages,
+  bootNodeRegistry,
+  loadNodePackages,
+  loadNodeRegistry,
+  NodeTypesLoadError,
+} from '../src/index.ts';
 
 // Спека 021, 4.7: фикстуры вместо node_modules; @swag/node-example берётся из репозитория.
 const fixtures = fileURLToPath(new URL('./fixtures/packages/', import.meta.url));
-const repoPackages = fileURLToPath(new URL('../../../packages/', import.meta.url));
+const repoPackages = fileURLToPath(new URL('../../', import.meta.url));
 const fixtureNames = ['acme-nodes', 'throwing-node', 'broken-node', 'echo-copy'];
 
 function resolve(specifier: string): string {
@@ -103,6 +109,24 @@ describe('bootNodeRegistry', () => {
     const registry = await bootNodeRegistry(['@swag/node-example'], { log, fail, resolve });
     expect(registry.list()).toHaveLength(1);
     expect(log.error).not.toHaveBeenCalled();
+    expect(fail).not.toHaveBeenCalled();
+  });
+});
+
+describe('loadNodePackages', () => {
+  // Спека 026, 4.4: карта ref → пакет строится при загрузке из тех же манифестов.
+  it('AC-026-4: packageOf отдаёт пакет загруженного типа и null для неизвестного', async () => {
+    const { packageOf } = await loadNodePackages(['@swag/node-example'], { resolve });
+    expect(packageOf('example/echo@1.0.0')).toBe('@swag/node-example');
+    expect(packageOf('example/missing@1.0.0')).toBeNull();
+  });
+
+  it('AC-026-4: bootNodePackages с верным набором отдаёт packageOf так же', async () => {
+    const log = { error: vi.fn() };
+    const fail = vi.fn(() => Promise.reject(new Error('fail called')));
+    const { packageOf } = await bootNodePackages(['@swag/node-example'], { log, fail, resolve });
+    expect(packageOf('example/echo@1.0.0')).toBe('@swag/node-example');
+    expect(packageOf('example/missing@1.0.0')).toBeNull();
     expect(fail).not.toHaveBeenCalled();
   });
 });

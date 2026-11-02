@@ -18,6 +18,12 @@ export interface LoadNodeTypesOptions {
   resolve?: (specifier: string) => string;
 }
 
+// Спека 026, 4.4: реестр и карта ref → имя пакета, из которого загружен тип.
+export interface NodePackages {
+  registry: NodeRegistry;
+  packageOf(ref: string): string | null;
+}
+
 const requireFromHere = createRequire(import.meta.url);
 const defaultResolve = (specifier: string): string => requireFromHere.resolve(specifier);
 
@@ -26,12 +32,13 @@ function messageOf(error: unknown): string {
 }
 
 // Спека 021, 4.7 (REQ-021-13): читается только swag-node.json, код пакета не импортируется.
-export async function loadNodeRegistry(
+export async function loadNodePackages(
   packages: readonly string[],
   options: LoadNodeTypesOptions = {},
-): Promise<NodeRegistry> {
+): Promise<NodePackages> {
   const resolve = options.resolve ?? defaultResolve;
   const manifests: NodeManifest[] = [];
+  const packageByRef = new Map<string, string>();
   for (const packageName of packages) {
     let manifest: NodeManifest;
     try {
@@ -44,23 +51,34 @@ export async function loadNodeRegistry(
       throw new NodeTypesLoadError(packageName, 'reserved namespace swag');
     }
     manifests.push(manifest);
+    packageByRef.set(`${manifest.type}@${manifest.version}`, packageName);
   }
   const result = createNodeRegistry(manifests);
   if (!result.ok) throw new NodeTypesLoadError(null, `${result.error.code} ${result.error.ref}`);
-  return result.registry;
+  return {
+    registry: result.registry,
+    packageOf: (ref) => packageByRef.get(ref) ?? null,
+  };
+}
+
+export async function loadNodeRegistry(
+  packages: readonly string[],
+  options: LoadNodeTypesOptions = {},
+): Promise<NodeRegistry> {
+  return (await loadNodePackages(packages, options)).registry;
 }
 
 // Спека 021, 4.7: для main.ts. Ошибка — лог node_manifest_invalid и fail(), который завершает процесс.
-export async function bootNodeRegistry(
+export async function bootNodePackages(
   packages: readonly string[],
   deps: {
     log: { error(msg: string, data?: object): void };
     fail: () => Promise<never>;
     resolve?: (specifier: string) => string;
   },
-): Promise<NodeRegistry> {
+): Promise<NodePackages> {
   try {
-    return await loadNodeRegistry(
+    return await loadNodePackages(
       packages,
       deps.resolve === undefined ? {} : { resolve: deps.resolve },
     );
@@ -69,4 +87,15 @@ export async function bootNodeRegistry(
     deps.log.error('node_manifest_invalid', { package: packageName, err: error });
     return deps.fail();
   }
+}
+
+export async function bootNodeRegistry(
+  packages: readonly string[],
+  deps: {
+    log: { error(msg: string, data?: object): void };
+    fail: () => Promise<never>;
+    resolve?: (specifier: string) => string;
+  },
+): Promise<NodeRegistry> {
+  return (await bootNodePackages(packages, deps)).registry;
 }
