@@ -79,6 +79,7 @@ function startChild(invoke: InvokeFrame): ChildProcess {
       code: 'node_failed',
       message: `child failed: ${error.message}`,
     });
+    if (proc.exitCode === null && proc.signalCode === null) proc.kill();
   });
 
   proc.on('close', (code, signal) => {

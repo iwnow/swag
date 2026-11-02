@@ -13,7 +13,10 @@ const TIMEOUT_MS = 30_000;
 
 interface Host {
   proc: ChildProcessWithoutNullStreams;
-  stdout(): string;
+  // Сырой stdout, как его получает оркестратор.
+  raw(): string;
+  // Остаток stdout без перевода строки: кадр ещё не собран.
+  pending(): string;
   send(frame: object): void;
   waitFor(match: (frame: SandboxFrame) => boolean): Promise<SandboxFrame>;
   exit: Promise<number | null>;
@@ -21,11 +24,13 @@ interface Host {
 
 function startHost(): Host {
   const proc = spawn(process.execPath, [MAIN], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let raw = '';
   let buffer = '';
   const frames: SandboxFrame[] = [];
   const listeners = new Set<() => void>();
   proc.stdout.setEncoding('utf8');
   proc.stdout.on('data', (chunk: string) => {
+    raw += chunk;
     buffer += chunk;
     let newline = buffer.indexOf('\n');
     while (newline !== -1) {
@@ -38,7 +43,8 @@ function startHost(): Host {
   const exit = new Promise<number | null>((resolve) => proc.on('close', (code) => resolve(code)));
   return {
     proc,
-    stdout: () => frames.map((frame) => JSON.stringify(frame)).join('\n'),
+    raw: () => raw,
+    pending: () => buffer,
     send: (frame) => proc.stdin.write(`${JSON.stringify(frame)}\n`),
     waitFor: (match) =>
       new Promise((resolve) => {
@@ -80,7 +86,7 @@ describe('apps/node-host', () => {
     async () => {
       const host = startHost();
       await new Promise((resolve) => setTimeout(resolve, 300));
-      expect(host.stdout()).toBe('');
+      expect(host.raw()).toBe('');
 
       host.send(
         invoke(
@@ -93,6 +99,7 @@ describe('apps/node-host', () => {
       const result = await host.waitFor((frame) => frame.t === 'result');
       expect(result).toEqual({ t: 'result', ok: true, output: { text: '> hi' } });
       expect(await host.exit).toBe(0);
+      expect(host.pending()).toBe('');
     },
     TIMEOUT_MS,
   );
@@ -136,6 +143,7 @@ describe('apps/node-host', () => {
         message: 'секрет missing не объявлен',
       });
       expect(await host.exit).toBe(0);
+      expect(host.pending()).toBe('');
     },
     TIMEOUT_MS,
   );
@@ -160,6 +168,129 @@ describe('apps/node-host', () => {
         message: 'child exited 3',
       });
       expect(await host.exit).toBe(0);
+    },
+    TIMEOUT_MS,
+  );
+});
+
+describe('apps/node-host, 4.8', () => {
+  it(
+    '4.8: первый кадр не invoke — выход 1 и пустой stdout',
+    async () => {
+      const host = startHost();
+      host.send({ t: 'abort' });
+      expect(await host.exit).toBe(1);
+      expect(host.raw()).toBe('');
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    '4.8: definition mismatch — result node_failed',
+    async () => {
+      const host = startHost();
+      host.send(
+        invoke(
+          '@swag/node-example',
+          { type: 'example/echo', version: '9.9.9' },
+          { kind: 'execute', input: { text: 'hi' } },
+          { prefix: '> ' },
+        ),
+      );
+      expect(await host.waitFor((frame) => frame.t === 'result')).toEqual({
+        t: 'result',
+        ok: false,
+        code: 'node_failed',
+        message: 'definition mismatch',
+      });
+      expect(await host.exit).toBe(0);
+      expect(host.pending()).toBe('');
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    '4.8: хост вне egress — egress_denied до сетевого запроса',
+    async () => {
+      const host = startHost();
+      host.send(
+        invoke(
+          FIXTURE('egress'),
+          { type: 'test/egress', version: '1.0.0' },
+          { kind: 'execute', input: {} },
+          {},
+        ),
+      );
+      expect(await host.waitFor((frame) => frame.t === 'result')).toEqual({
+        t: 'result',
+        ok: false,
+        code: 'egress_denied',
+        message: 'хост example.com вне egress',
+      });
+      expect(await host.exit).toBe(0);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    '4.8: ответ state с error доходит до узла исключением',
+    async () => {
+      const host = startHost();
+      host.send(
+        invoke(
+          FIXTURE('state-error'),
+          { type: 'test/state-error', version: '1.0.0' },
+          { kind: 'execute', input: {} },
+          {},
+        ),
+      );
+      const get = await host.waitFor((frame) => frame.t === 'state.get');
+      if (get.t !== 'state.get') throw new Error('unreachable');
+      host.send({ t: 'state', id: get.id, error: 'boom' });
+
+      expect(await host.waitFor((frame) => frame.t === 'log' && frame.msg === 'boom')).toEqual({
+        t: 'log',
+        level: 'warn',
+        msg: 'boom',
+      });
+      expect(await host.waitFor((frame) => frame.t === 'result')).toEqual({
+        t: 'result',
+        ok: true,
+        output: {},
+      });
+      expect(await host.exit).toBe(0);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    '4.8: строки stdout ребёнка, в том числе без перевода строки, приходят раньше result',
+    async () => {
+      const host = startHost();
+      host.send(
+        invoke(
+          FIXTURE('stdout'),
+          { type: 'test/stdout', version: '1.0.0' },
+          { kind: 'execute', input: {} },
+          {},
+        ),
+      );
+      await host.waitFor((frame) => frame.t === 'result');
+      expect(await host.exit).toBe(0);
+
+      const frames = host
+        .raw()
+        .split('\n')
+        .filter((line) => line !== '')
+        .map((line) => SandboxFrame.parse(JSON.parse(line)));
+      const resultAt = frames.findIndex((frame) => frame.t === 'result');
+      const firstAt = frames.findIndex((frame) => frame.t === 'log' && frame.msg === 'first');
+      const tailAt = frames.findIndex((frame) => frame.t === 'log' && frame.msg === 'no-newline');
+      expect(firstAt).toBeGreaterThanOrEqual(0);
+      expect(tailAt).toBeGreaterThanOrEqual(0);
+      expect(firstAt).toBeLessThan(tailAt);
+      expect(tailAt).toBeLessThan(resultAt);
+      expect(host.pending()).toBe('');
     },
     TIMEOUT_MS,
   );
