@@ -198,6 +198,29 @@ services:
       timeout: 3s
       retries: 30
 
+  # Спека 026, 4.7 и 4.11: исходящий прокси узлов. В сети `default` есть выход наружу, в `nodes` (internal) — узлы. Порт наружу не публикуется.
+  egress-proxy:
+    build:
+      context: .
+      dockerfile: apps/egress-proxy/Dockerfile
+    # Только переменные, которые читает конфиг прокси (`EgressProxyConfig`, `BaseConfig`).
+    environment:
+      EGRESS_PROXY_KEY: ${EGRESS_PROXY_KEY}
+      EGRESS_PROXY_PORT: ${EGRESS_PROXY_PORT:-3128}
+      EGRESS_PROXY_HEALTH_PORT: ${EGRESS_PROXY_HEALTH_PORT:-3129}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TELEMETRY_FLUSH_TIMEOUT_MS: ${TELEMETRY_FLUSH_TIMEOUT_MS:-2000}
+    networks:
+      - default
+      - nodes
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'wget -qO- "http://127.0.0.1:$$EGRESS_PROXY_HEALTH_PORT/health" > /dev/null']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
   # Спека 014, 4.9: каркас фронтенда — `ng serve` с прокси /api, /auth, /grafana и /mf/* (Q-4). Только для разработки.
   ui:
     build:

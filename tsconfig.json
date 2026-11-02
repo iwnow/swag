@@ -20,6 +20,7 @@
     { "path": "packages/ui-angular" },
     { "path": "packages/llm-gateway-core" },
     { "path": "packages/adapter-crypto" },
+    { "path": "packages/egress-proxy-core" },
     { "path": "packages/adapter-jose" },
     { "path": "packages/adapter-smtp" },
     { "path": "packages/adapter-memory" },
@@ -36,6 +37,7 @@
     { "path": "apps/llm-gateway" },
     { "path": "apps/orchestrator" },
     { "path": "apps/agent" },
-    { "path": "apps/identity" }
+    { "path": "apps/identity" },
+    { "path": "apps/egress-proxy" }
   ]
 }
