@@ -3,6 +3,8 @@ import {
   NodeManifest,
   NodeTypeList,
   PlatformEventInput,
+  type SecretName,
+  type SecretSummary,
   SwarmCreateRequest,
   can,
   type Actor,
@@ -60,6 +62,19 @@ export interface Billing {
   reserve(orgId: string, swarmId: string, amountMicroUsd: number): Promise<'ok' | 'insufficient'>;
   settle(swarmId: string, spentMicroUsd: number): Promise<void>;
   holds(): Promise<{ swarmId: string; orgId: string; amountMicroUsd: number }[]>;
+}
+
+// Спека 026, 4.6. Секреты организации: значение наружу не отдаётся. Адаптер — Postgres (adapter-postgres).
+export interface SecretStore {
+  list(orgId: string): Promise<SecretSummary[]>;
+  put(
+    orgId: string,
+    name: SecretName,
+    value: string,
+    by: string,
+    now: Date,
+  ): Promise<SecretSummary>;
+  delete(orgId: string, name: SecretName): Promise<boolean>; // false — не было
 }
 
 export interface ApiCoreDeps {

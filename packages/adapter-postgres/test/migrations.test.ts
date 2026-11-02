@@ -47,7 +47,7 @@ describe.skipIf(!url)('adapter-postgres миграции', () => {
     const rowsAfterFirst = await migrationRows();
 
     expect(afterFirst).toEqual(expect.arrayContaining(['swarm_events', 'swarms']));
-    expect(rowsAfterFirst).toBe(5); // 0001_swarms, 0002_money, 0003_identity, 0004_identity_access и 0005_billing
+    expect(rowsAfterFirst).toBe(6); // 0001_swarms, 0002_money, 0003_identity, 0004_identity_access, 0005_billing и 0006_nodes
 
     await expect(runMigrations(url ?? '', { schema })).resolves.toBeUndefined();
 
@@ -77,6 +77,8 @@ describe.skipIf(!url)('adapter-postgres миграции', () => {
         budget_holds: ['call_id', 'swarm_id', 'agent_id', 'amount_micro_usd', 'created_at'],
         email_confirmations: ['token_hash', 'email', 'expires_at', 'used_at', 'created_at'],
         organizations: ['id', 'name', 'created_at'],
+        node_state: ['org_id', 'state_key', 'key', 'value', 'updated_at'],
+        org_secrets: ['org_id', 'name', 'ciphertext', 'hint', 'updated_at', 'updated_by'],
         ledger_entries: [
           'call_id',
           'ts',

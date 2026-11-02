@@ -8,12 +8,14 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@swag/adapter-crypto": "0.0.0",
     "@swag/api-core": "0.0.0",
     "@swag/api-integration": "0.0.0",
     "@swag/billing-core": "0.0.0",
     "@swag/contracts": "0.0.0",
     "@swag/identity-core": "0.0.0",
     "@swag/llm-gateway-core": "0.0.0",
+    "@swag/orchestrator-core": "0.0.0",
     "node-pg-migrate": "9.0.0",
     "pg": "8.23.1"
   }

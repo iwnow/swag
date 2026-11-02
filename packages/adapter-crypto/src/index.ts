@@ -32,3 +32,6 @@ export function createNodeOpaqueTokens(): OpaqueTokens {
     hash: sha256Hex,
   };
 }
+
+export * from './cipher.ts';
+export * from './grants.ts';
