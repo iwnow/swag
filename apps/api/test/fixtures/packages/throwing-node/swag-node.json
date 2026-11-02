@@ -1,0 +1,49 @@
+{
+  "type": "acme/throwing",
+  "version": "1.0.0",
+  "kind": "program",
+  "title": "Эхо",
+  "description": "Пример программы: возвращает входной текст с префиксом из настроек.",
+  "settings": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "prefix": {
+        "default": "",
+        "type": "string",
+        "maxLength": 40
+      }
+    },
+    "additionalProperties": false
+  },
+  "credentials": [],
+  "inputs": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string",
+        "maxLength": 4000
+      }
+    },
+    "required": [
+      "text"
+    ],
+    "additionalProperties": false
+  },
+  "outputs": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ],
+    "additionalProperties": false
+  },
+  "operations": [],
+  "egress": []
+}
