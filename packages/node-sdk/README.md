@@ -8,12 +8,16 @@ SDK для авторов узлов: определение узла на TypeS
 - `toManifest(definition)` — `NodeManifest` из определения: схемы переводятся в JSON Schema 2020-12, пустые `credentials` и `egress` заполняются `[]`, результат проверяется `NodeManifest.parse`.
 - `NodeContext` — то, что видит код узла: `settings`, `secrets.get`, `http.fetch` в пределах `egress`, `log`, `state`, `signal`. Реализацию на платформе даёт спека 026.
 - `NodeError` — ошибка узла с кодом из `NodeErrorCode`.
+- `@swag/node-sdk/testing` — тестовая обвязка без платформы: `createTestContext` (контекст с проверкой настроек, секретов и `egress`), `runNode`, `runOperation`, `runPoll`, `runSend` (вход и выход проверяются схемами определения, ошибки — `NodeError`).
 
 ## Что внутри сейчас
 
 - `src/index.ts` — типы определений (`TriggerDefinition`, `ChannelDefinition`, `ConnectorDefinition`, `OperationDefinition`, `ProgramDefinition`, `BuiltinDefinition`, `NodeDefinition`), `SettingsOf`, `PollResult`, `NodeContext`, `NodeError`, `defineNode`, `toManifest`.
 - `test/manifest.test.ts` — AC-021-10: манифест коннектора с двумя операциями (порядок, `access`, `$schema`, `required` у `default`), `credentials` и `egress` по умолчанию, `ZodError` у коннектора без операций.
 - `test/types.test.ts` — AC-021-23: тип `ctx.settings.prefix` — `string`, присвоение числа и обращение к несуществующему полю входа — ошибки типов (`@ts-expect-error`).
+- `src/testing.ts` — `createTestContext`, `TestContext`, `TestContextOptions`, `runNode`, `runOperation`, `runPoll`, `runSend`.
+- `test/fixtures.ts` — фикстуры: копия `example/echo`, программа с неверным выходом, коннектор с секретом и `egress`, канал и канал с неверным событием.
+- `test/testing.test.ts` — AC-021-11 (echo, вход и настройки), AC-021-12 (выход), AC-021-13 (секреты и `egress`, без сети при отказе), AC-021-14 (канал: `poll`, `send`, состояние).
 
 ## Как написать узел
 
@@ -36,6 +40,20 @@ export default defineNode({
 
 Выгрузка манифеста: `toManifest(definition)` (команда `nodes:manifest` появится с T-6).
 
+Проверка без платформы:
+
+```ts
+import { createTestContext, runNode } from '@swag/node-sdk/testing';
+import { echo } from './node.ts';
+
+const ctx = createTestContext(echo, { settings: { prefix: '> ' } });
+await runNode(echo, ctx, { text: 'hi' }); // { text: '> hi' }
+```
+
+`createTestContext` проверяет настройки по схеме `settings` (ошибка `invalid_settings`). Секрет доступен только из `credentials` определения и только если передан в `secrets` (иначе `secret_not_declared`). `http.fetch` пропускает только `https:` и адреса из `egress`; остальные адреса дают `egress_denied` до вызова `options.fetch`. По умолчанию `fetch` не ходит в сеть и отвечает `501`. Тестовый контекст не принуждает правила на платформе: это обвязка разработчика, принуждение — спека 026.
+
+Правило про `.transform`: в схемах узла не используется `.transform` (и `.pipe`, которые его содержат). JSON Schema, в которую переводится схема, теряет преобразование, и манифест расходится с тем, что проверяет обработчик. Значения по умолчанию — через `.default()`, ограничения — через `.max()`, `.regex()` и т. п.
+
 ## Ограничения
 
 - Схемы Zod переводятся в JSON Schema 2020-12 (`z.toJSONSchema`). Схему, которую нельзя выразить в JSON Schema (`z.date()`, `z.custom()`), `toManifest` не выгружает и бросает ошибку.
@@ -57,4 +75,4 @@ export default defineNode({
 
 ## Спеки
 
-- 021 — контракт узла (4.1, 4.3); REQ-021-7, REQ-021-8; AC-021-10, AC-021-23.
+- 021 — контракт узла (4.1, 4.3); REQ-021-7, REQ-021-8, REQ-021-9; AC-021-10, AC-021-11…14, AC-021-23.
