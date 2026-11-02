@@ -1,17 +1,20 @@
 # @swag/adapter-docker
 
-Адаптер порта `SandboxProvider` из `orchestrator-core` на Docker (dockerode). Шаблон → образ, метаданные → метки контейнера, env + `NATS_URL`, `LLM_GATEWAY_URL`, `TRACEPARENT` и `OTEL_EXPORTER_OTLP_ENDPOINT` из конфигурации адаптера и текущего контекста трассировки.
+Адаптеры песочниц на Docker (dockerode) для портов `orchestrator-core`. `SandboxProvider` — песочница агента: шаблон → образ, метаданные → метки контейнера, env + `NATS_URL`, `LLM_GATEWAY_URL`, `TRACEPARENT` и `OTEL_EXPORTER_OTLP_ENDPOINT` из конфигурации адаптера и текущего контекста трассировки. `NodeSandboxes` — песочница одного вызова узла (026, 4.9): обмен кадрами через stdio, без секретов в env.
 
 ## Задачи
 
 - `create(spec)` — создать и запустить контейнер агента в спане `sandbox.create`.
 - `remove(id)` — остановить и удалить в спане `sandbox.remove`; нет такого контейнера — не ошибка.
 - `list(match)` — id контейнеров по меткам; `true` — ключ есть с любым значением.
+- Песочница узла: `run(spec)` — создать контейнер, подключить stdio (`attach`), запустить; `write(line)` пишет кадр в stdin; `lines` — stdout построчно до выхода процесса; `remove(id)` — принудительно, нет такого — не ошибка.
 
 ## Что внутри сейчас
 
 - `createDockerSandboxProvider({ network, natsUrl, llmGatewayUrl, otlpEndpoint?, docker? })`.
+- `createDockerNodeSandboxes({ network, docker?, log? })` — `src/node-sandboxes.ts`, 026, 4.9.
 - `test/docker.test.ts` — AC-001-22, AC-016-10 и AC-022-17. Без доступного Docker пропускаются с предупреждением; в CI обязательны.
+- `test/node-sandboxes.test.ts` — AC-026-19 на фейковом dockerode (Docker не нужен).
 
 ## Ограничения
 
@@ -34,6 +37,7 @@
 - `NATS_URL`, `LLM_GATEWAY_URL`, `TRACEPARENT` и `OTEL_EXPORTER_OTLP_ENDPOINT` добавляет адаптер, а не ядро (022, 4.8, REQ-022-10; `TRACEPARENT` — D-83): `SandboxSpec` от ядра не меняется (4.6.3 спеки 001, 4.7 спеки 016). Других переменных телеметрии песочница не получает — ни адресов Grafana, Tempo и Loki, ни учётных данных (REQ-016-14).
 - `TRACEPARENT` берётся внутри спана `sandbox.create`: родитель спана `agent.start` в агенте — создание его песочницы. Нет контекста — пустая строка; нет `otlpEndpoint` — пустой `OTEL_EXPORTER_OTLP_ENDPOINT` (агент тогда пишет логи только в stdout, D-18).
 - `LLM_GATEWAY_URL` — из `llmGatewayUrl` (`DOCKER_AGENT_LLM_GATEWAY_URL`), по образцу `NATS_URL`. Адрес gateway в сети `default` compose: агенты (`DOCKER_AGENT_NETWORK=swag_default`) достают `llm-gateway` без смены сети. Токен `LLM_GATEWAY_TOKEN` приходит от ядра в `spec.env` и в этом адаптере не трогается; ключей провайдеров адаптер не знает (REQ-022-10).
+- Песочница узла (026, 4.9, D-166): `HostConfig` по 4.9 без `Binds` и `PortBindings`; порядок `createContainer` → `attach(hijack)` → `start`, чтобы первая строка вывода не терялась. `demuxStream` не закрывает свои выходы при конце потока, поэтому адаптер закрывает stdout по `end` attach-потока — иначе `lines` не заканчивается. Контейнер, который не удалось запустить, удаляется до ошибки. `TRACEPARENT` — как у песочниц агентов (`propagation.inject` активного контекста); других env нет. Stderr песочницы не разбирается кадрами: он уходит в лог `debug` (D-166).
 - Спаны `sandbox.create` и `sandbox.remove` — `kind: client`, атрибуты `swarm.id`, `agent.id` (из метаданных `swag.swarm`, `swag.agent`) и `sandbox.id` после создания. Для `remove` id роя и агента адаптер помнит с `create`; у сирот прошлого запуска их нет.
 - Удаление: сначала `stop` с грейсом 5 с (SIGTERM — агент закрывает NATS и сбрасывает телеметрию, REQ-016-8), затем `remove` с `force: true`. Без остановки force-удаление шлёт SIGKILL, и последние спаны и логи агента терялись (найдено ревью 016). `404` — не ошибка (порт требует идемпотентности), `304` при остановке — контейнер уже остановлен. Цена — уборка роя дольше на время остановки агентов.
 - Проверено на Docker Desktop 29.x: AC-001-22 и AC-016-10 проходят на `alpine:3.22`, сеть `bridge`.
@@ -44,3 +48,4 @@
 - 001 — 4.6.3, AC-001-22. Усиление — 005.
 - 016 — 4.7, REQ-016-14, AC-016-10.
 - 022 — 4.8, REQ-022-10, AC-022-17 (часть адаптера).
+- 026 — 4.9, REQ-026-4 (адаптер), AC-026-19.

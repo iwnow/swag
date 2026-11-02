@@ -78,6 +78,22 @@ export interface NodeStateStore {
   set(orgId: string, stateKey: string, key: string, value: string | null, now: Date): Promise<void>;
 }
 
+// Спека 026, 4.9. Песочница одного вызова узла: stdin/stdout строками JSON, без env с секретами.
+export interface NodeSandboxSpec {
+  template: string; // NODE_TEMPLATE
+  metadata: Record<string, string>; // swag.kind=node, swag.invocation, swag.org
+}
+export interface NodeSandboxSession {
+  sandboxId: string;
+  write(line: string): void; // добавляет "\n"
+  lines: AsyncIterable<string>; // stdout построчно; заканчивается с выходом процесса
+}
+export interface NodeSandboxes {
+  run(spec: NodeSandboxSpec): Promise<NodeSandboxSession>; // создаёт, подключает stdio, запускает
+  remove(sandboxId: string): Promise<void>; // нет такой — не ошибка
+  list(match: Record<string, string | true>): Promise<string[]>;
+}
+
 export interface OrchestratorCoreDeps {
   version: string; // передаёт оболочка: ядро не читает package.json
   sandboxes: SandboxProvider;
