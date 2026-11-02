@@ -28,6 +28,15 @@ describe('egressMatches', () => {
   it('AC-026-1: суффикс с "*." не совпадает с хостом, который лишь заканчивается на то же слово', () => {
     expect(egressMatches(['*.example.com'], 'evilexample.com', 443)).toBe(false);
   });
+
+  it('egressMatches: краевые случаи', () => {
+    expect(egressMatches(['*.a.com:8443'], 'x.a.com', 8443)).toBe(true);
+    expect(egressMatches(['*.a.com:8443'], 'x.a.com', 443)).toBe(false);
+    expect(egressMatches(['*.a.com'], 'a.com', 443)).toBe(false);
+    expect(egressMatches(['api.example.com'], 'api.example.com.', 443)).toBe(false);
+    expect(egressMatches(['api.example.com'], '::1', 443)).toBe(false);
+    expect(egressMatches(['api.example.com'], 'api.example.com', 0)).toBe(false);
+  });
 });
 
 const SCHEMA_CALL = { kind: 'execute', input: { q: 1 } };

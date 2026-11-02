@@ -83,6 +83,7 @@ export type EgressHost = z.infer<typeof EgressHost>;
 
 // Спека 026, 4.1 (REQ-026-13): единое правило сверки хоста с egress для SDK и прокси.
 // Запись без порта — порт 443; "*.example.com" — любой хост, оканчивающийся на ".example.com".
+// Допущение: hostname в нижнем регистре, без скобок IPv6 — вызывающий нормализует (4.1).
 export function egressMatches(
   egress: readonly EgressHost[],
   hostname: string,
