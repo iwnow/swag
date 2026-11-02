@@ -671,7 +671,7 @@ networks:
 
 Выполняются по порядку. После каждой задачи — коммит; `npm run typecheck` и тесты зелёные на каждом коммите; README пакета — в том же коммите.
 
-- [ ] **T-1.** `packages/contracts/src/node.ts`: `egressMatches`. Новый `node-invocation.ts` по 4.1 и 4.8 (`HostFrame`, `SandboxFrame`), экспорт из `index.ts`. `access.ts`: `secret.manage` у `admin`. Тесты `packages/contracts/test/node-invocation.test.ts` и `access.test.ts`. Закрывает: REQ-026-13 (функция), AC-026-1. Готово, когда: тесты зелёные, README `contracts` и глоссарий дополнены.
+- [x] **T-1.** `packages/contracts/src/node.ts`: `egressMatches`. Новый `node-invocation.ts` по 4.1 и 4.8 (`HostFrame`, `SandboxFrame`), экспорт из `index.ts`. `access.ts`: `secret.manage` у `admin`. Тесты `packages/contracts/test/node-invocation.test.ts` и `access.test.ts`. Закрывает: REQ-026-13 (функция), AC-026-1. Готово, когда: тесты зелёные, README `contracts` и глоссарий дополнены.
 - [ ] **T-2.** `packages/node-sdk`: `src/runtime.ts` (`invokeNode`, `parseSettings`), `exports["./runtime"]`. `src/testing.ts` переходит на `invokeNode`, `parseSettings` и `egressMatches`. Тест `test/runtime.test.ts`. Закрывает: REQ-026-13, REQ-026-15, AC-026-3. Готово, когда: тесты 021 зелёные без правки, README SDK дополнен.
 - [ ] **T-3.** `packages/api-integration/src/node-registry.ts`: `validate` по 4.2; тесты в `test/node-registry.test.ts`. Закрывает: AC-026-2. Готово, когда: тесты зелёные, README дополнен.
 - [ ] **T-4.** Пакет `packages/node-packages` по 4.4: перенос `apps/api/src/node-types.ts`, фикстур и теста, `loadNodePackages`, `packageOf`, `bootNodePackages`. `apps/api` импортирует отсюда, старый файл удалён, строка в корневом `tsconfig.json`. Закрывает: REQ-026-14, AC-026-4. Готово, когда: тесты зелёные, README нового пакета, README `apps/api` обновлён.
@@ -761,3 +761,4 @@ networks:
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+| 2026-11-02 | `spec/026-t1` | T-1: `egressMatches`, `NodeErrorCode` в `node.ts`; `node-invocation.ts` (вызов, секреты, `EgressGrant`, `HostFrame`, `SandboxFrame`); `secret.manage` у `admin`; тесты `node-invocation.test.ts`, `access.test.ts` | `NodeErrorCode` объявлен в `@swag/contracts`, хотя в 4.1 его в contracts не было: спека импортирует его из `./node.ts`. SDK 021 держит свой тип до T-2 (D-160) |

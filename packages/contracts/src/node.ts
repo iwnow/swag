@@ -81,6 +81,33 @@ export const EgressHost = z
   .refine((h) => !h.includes(':') || Number(h.split(':')[1]) <= 65535, 'egress: port out of range');
 export type EgressHost = z.infer<typeof EgressHost>;
 
+// Спека 026, 4.1 (REQ-026-13): единое правило сверки хоста с egress для SDK и прокси.
+// Запись без порта — порт 443; "*.example.com" — любой хост, оканчивающийся на ".example.com".
+export function egressMatches(
+  egress: readonly EgressHost[],
+  hostname: string,
+  port: number,
+): boolean {
+  return egress.some((entry) => {
+    const colon = entry.indexOf(':');
+    const host = colon === -1 ? entry : entry.slice(0, colon);
+    const entryPort = colon === -1 ? 443 : Number(entry.slice(colon + 1));
+    if (entryPort !== port) return false;
+    return host.startsWith('*.') ? hostname.endsWith(host.slice(1)) : hostname === host;
+  });
+}
+
+// Спека 026, 4.1: коды ошибок узла. Совпадают с NodeErrorCode SDK (021, 4.3).
+export const NodeErrorCode = z.enum([
+  'secret_not_declared',
+  'egress_denied',
+  'invalid_settings',
+  'invalid_input',
+  'invalid_output',
+  'unknown_operation',
+]);
+export type NodeErrorCode = z.infer<typeof NodeErrorCode>;
+
 const NodeManifestShape = z.strictObject({
   type: NodeTypeName,
   version: NodeTypeVersion,
