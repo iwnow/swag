@@ -44,7 +44,7 @@ export type JsonSchema = z.infer<typeof JsonSchema>;
 
 // Схема настроек — объект: корень с type: 'object'.
 export const SettingsSchema = JsonSchema.refine(
-  (s) => s.type === 'object',
+  (s) => s['type'] === 'object',
   'settings: type must be object',
 );
 
@@ -173,7 +173,7 @@ function checkKindRules(manifest: NodeManifestShape, ctx: z.RefinementCtx): void
     issue('egress', `egress: duplicate host ${host}`);
   }
 
-  const properties: unknown = manifest.settings.properties;
+  const properties: unknown = manifest.settings['properties'];
   if (typeof properties === 'object' && properties !== null && !Array.isArray(properties)) {
     for (const { name } of manifest.credentials) {
       if (Object.hasOwn(properties, name)) {
