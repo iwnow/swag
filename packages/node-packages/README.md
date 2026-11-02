@@ -30,7 +30,7 @@
 
 ## Связи
 
-- Используют: `apps/api` (`main.ts`, тесты каталога `node-types-http.test.ts`); оркестратор — по мере подключения (T-17 и далее).
+- Используют: `apps/api` (`main.ts`, тесты каталога `node-types-http.test.ts`). Оркестратор пока не использует; подключит пакет в спеке 026 (T-15).
 - Использует: `@swag/api-integration` (`createNodeRegistry`, `NodeRegistry`), `@swag/contracts` (`NodeManifest`).
 
 ## Спеки

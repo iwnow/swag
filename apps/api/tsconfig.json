@@ -15,7 +15,7 @@
     { "path": "../../packages/adapter-postgres" },
     { "path": "../../packages/adapter-telemetry" },
     { "path": "../../packages/config" },
-    { "path": "../../packages/node-packages" },
-    { "path": "../../packages/contracts" }
+    { "path": "../../packages/contracts" },
+    { "path": "../../packages/node-packages" }
   ]
 }

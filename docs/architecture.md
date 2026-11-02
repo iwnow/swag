@@ -106,7 +106,7 @@ HTTP / CLI / UI →│ контроллер → фабрика ядра(deps) �
 
 1. `npm run nodes:manifest` (`scripts/node-manifests.ts`) выгружает `swag-node.json` — `NodeManifest` с JSON Schema 2020-12 вместо Zod.
 2. Имя пакета пишется в `NODE_PACKAGES` у `api` (`packages/config`).
-3. `api` при старте (`apps/api/src/node-types.ts`, `bootNodeRegistry`) читает только `swag-node.json` этих пакетов и не импортирует их код. `createNodeRegistry` (`@swag/api-integration`) проверяет манифест, повторы `type@version` и схемы. Ошибка — лог `node_manifest_invalid` и выход до подключения к Postgres и NATS.
+3. `api` при старте (`bootNodeRegistry` из `@swag/node-packages`) читает только `swag-node.json` этих пакетов и не импортирует их код. `createNodeRegistry` (`@swag/api-integration`) проверяет манифест, повторы `type@version` и схемы. Ошибка — лог `node_manifest_invalid` и выход до подключения к Postgres и NATS.
 4. `api-core` получает реестр зависимостью `nodeTypes`; `GET /node-types` отдаёт каталог.
 
 Ядра, `@swag/contracts` и `apps/*/src` при подключении нового типа не меняются (REQ-021-15). Исполнение кода узла — спека 026, граф — спека 009.
