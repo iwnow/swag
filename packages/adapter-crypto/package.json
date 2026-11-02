@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@node-rs/argon2": "2.2.2",
+    "@swag/contracts": "0.0.0",
     "@swag/identity-core": "0.0.0"
   }
 }
