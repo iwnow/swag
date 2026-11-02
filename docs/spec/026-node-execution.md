@@ -1,11 +1,11 @@
 ---
 id: "026"
 title: Исполнение узлов
-status: in-progress
+status: review
 roadmap_stage: 8а
 depends_on: ["021", "024"]
 superseded_by: null
-updated: 2026-11-02
+updated: 2026-11-03
 ---
 
 # 026. Исполнение узлов
