@@ -16,8 +16,11 @@ import {
   type Actor,
   type GraphCheckResult,
   type GraphIssue,
+  type JobSpec,
+  type JobState,
   type LaunchProgram,
   type PlatformEvent,
+  type ProcessRunView,
   type ServiceInfo,
   type SwarmLaunch,
   type SwarmSummary,
@@ -82,6 +85,20 @@ export interface ProcessStore {
   list(orgId: string | null): Promise<ProcessRecord[]>; // null — все организации
   count(orgId: string): Promise<number>;
   delete(id: string): Promise<boolean>;
+}
+
+// Спека 033, 4.6. Клиент внутреннего API планировщика (4.9). Сеть и не-2xx, кроме перечисленных результатов, — исключение.
+export interface SchedulerClient {
+  putJob(processId: string, spec: JobSpec): Promise<JobState>;
+  enable(processId: string): Promise<JobState | 'not_found' | 'process_no_trigger'>;
+  disable(processId: string, reason: 'user' | 'author_blocked'): Promise<JobState | 'not_found'>;
+  deleteJob(processId: string): Promise<void>; // 404 — не ошибка
+  states(processIds: readonly string[]): Promise<JobState[]>;
+  createRun(
+    processId: string,
+    event: unknown,
+  ): Promise<ProcessRunView | 'not_found' | 'queue_full'>;
+  runs(processId: string): Promise<ProcessRunView[]>;
 }
 
 export interface OrchestratorClient {
