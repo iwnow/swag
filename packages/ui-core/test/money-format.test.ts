@@ -13,6 +13,7 @@ const view = (over: Partial<SwarmView>): SwarmView => ({
   createdAt: '2026-10-30T11:00:00.000Z',
   orgId: null,
   createdBy: null,
+  processId: null,
   spentMicroUsd: 0,
   agents: [],
   edges: [],

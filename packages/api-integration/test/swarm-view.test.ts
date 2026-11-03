@@ -443,6 +443,34 @@ describe('projectSwarm — REQ-024-4: владелец роя', () => {
   });
 });
 
+describe('projectSwarm — AC-033-9: процесс роя (033, 4.2)', () => {
+  const PROCESS = '0b6f6d2e-6a4c-4c3e-9f5e-333333333333';
+
+  it('AC-033-9: swarm.created с processId — SwarmView.processId равен id процесса', () => {
+    n = 0;
+    const view = projectSwarm([
+      ev({
+        ...base(null, 'api'),
+        type: 'swarm.created',
+        data: { task: 'T', processId: PROCESS, agents: [] },
+      }),
+    ]);
+    expect(view.processId).toBe(PROCESS);
+  });
+
+  it('AC-033-9: swarm.created без processId — SwarmView.processId равен null', () => {
+    n = 0;
+    const view = projectSwarm([
+      ev({
+        ...base(null, 'api'),
+        type: 'swarm.created',
+        data: { task: 'T', agents: [] },
+      }),
+    ]);
+    expect(view.processId).toBeNull();
+  });
+});
+
 describe('projectSwarm — REQ-009-18: программы графа в проекции (009, 4.10)', () => {
   it('AC-009-24: nodes — программы графа со статусами и durationMs по node.*; агенты графа не входят', () => {
     n = 0;
