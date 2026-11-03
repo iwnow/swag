@@ -79,7 +79,7 @@
 | Поток, связь | `flow`, `link` | Рёбра графа: `flow` — выход шага идёт входом в следующий, циклы запрещены; `link` — агенты пишут друг другу через шину, неориентированное, циклы разрешены (009, 4.1). |
 | Команда, шаг, агент-вход команды, шаг-вход, шаг-выход | `TeamPlan`, `Step` | Команда — компонента агентов по `link`, рой как узел графа; шаг — программа или команда; агент-вход получает вход потока и вызывает `finish` (009, 4.1). |
 | Программа | узел вида `program` | Узел графа с кодом: вызывается `invokeNode` 026, когда к нему пришёл вход (009, 4.6). |
-| Проверка графа | `checkGraph`, `GraphCheckDeps`, `GraphCheckResult`, `GraphIssue`, `GraphIssueCode`, `invalid_graph`, `POST /graph-checks`, `checkGraphFor` | Все замечания графа по реестру, секретам и структуре; в `api` до резерва и запуска (009, 4.4, 4.9). |
+| Проверка графа | `checkGraph`, `GraphCheckDeps`, `GraphCheckResult`, `GraphIssue`, `GraphIssueCode`, `invalid_graph`, `entry_input_invalid`, `POST /graph-checks`, `checkGraphFor` | Все замечания графа по реестру, секретам и структуре; в `api` до резерва и запуска (009, 4.4, 4.9). `entry_input_invalid` — задача не проходит схему `inputs` программы-входа; только в `POST /swarms`, у `POST /graph-checks` текста задачи нет (009, 4.4, 4.9). |
 | Форма роя как граф | `formGraph`, `LLM_AGENT_TYPE` | Агенты формы → узлы `swag/llm-agent@1.0.0`, `link` все со всеми, вход и выход `agent-1` (009, 4.3). |
 | Запрос роя | `SwarmRequest`, `SwarmGraphRequest` | Тело `POST /swarms`: форма `SwarmCreateRequest` или граф (009, 4.2). |
 | Программа запуска | `LaunchProgram` | Программа графа в `SwarmLaunch` с проверенными настройками и credentials (009, 4.5). |

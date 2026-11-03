@@ -11,7 +11,7 @@ import {
   actorOf,
   bearer,
   body,
-  emptyNodeTypes,
+  formNodeTypes,
   makeApi,
   makeAuth,
   ORG_A,
@@ -162,7 +162,7 @@ async function swarmApp(
     ids: { uuid: () => randomUUID() },
     log: silentLog,
     trace: { currentTraceId: () => null },
-    nodeTypes: emptyNodeTypes(),
+    nodeTypes: formNodeTypes(),
     limits: { maxActiveSwarms: 10_000, maxBudgetMicroUsd: 5_000_000, maxTokens: 65536 },
   });
   return buildApp(core, routes, {}, auth);

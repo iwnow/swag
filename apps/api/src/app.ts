@@ -79,6 +79,11 @@ export async function buildApp(
       send(reply, await core.createSwarm(request.actor, request.body), 201),
     );
 
+    // Спека 009, 4.9: проверка графа без запуска; право swarm.create проверяет api-core.
+    rest.post('/graph-checks', async (request, reply) =>
+      send(reply, await core.checkGraphFor(request.actor, request.body), 200),
+    );
+
     rest.get('/swarms', async (request) => core.listSwarms(request.actor));
 
     rest.get<{ Params: { id: string } }>('/swarms/:id', async (request, reply) =>
@@ -216,6 +221,7 @@ function handleProtocols(protocols: Set<string>): string | false {
 const STATUS = {
   validation_error: 400,
   invalid_request: 400,
+  invalid_graph: 400,
   unauthorized: 401,
   forbidden: 403,
   not_found: 404,
