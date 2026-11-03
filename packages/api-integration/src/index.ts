@@ -14,6 +14,7 @@ export {
   type GraphCheckDeps,
   type GraphPlan,
   graphPlan,
+  launchGraph,
   LLM_AGENT_TYPE,
   SCHEDULE_TRIGGER_TYPE,
   type Step,

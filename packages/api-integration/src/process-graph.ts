@@ -6,6 +6,7 @@ import {
   type GraphEdge,
   type GraphIssue,
   type GraphIssueCode,
+  type JobTrigger,
   type NodeId,
   type NodeManifest,
   type ProcessGraph,
@@ -40,13 +41,19 @@ export function formGraph(agents: readonly AgentDraft[]): ProcessGraph {
 export interface GraphCheckDeps {
   registry: NodeRegistry; // 021, 4.2; 026, 4.2
   secretNames: ReadonlySet<string>; // имена секретов организации (026, 4.6)
+  triggers?: boolean; // true — граф процесса (033, 4.3); без опции узел trigger — node_kind_unsupported
 }
 
-type Kind = 'llm-agent' | 'program';
+type Kind = 'llm-agent' | 'program' | 'trigger';
 interface Participant {
   index: number;
   kind: Kind;
   manifest: NodeManifest;
+}
+
+function participantKind(kind: NodeManifest['kind'], triggers: boolean): Kind | null {
+  if (kind === 'llm-agent' || kind === 'program') return kind;
+  return triggers && kind === 'trigger' ? kind : null;
 }
 
 export function checkGraph(graph: ProcessGraph, deps: GraphCheckDeps): GraphCheckResult {
@@ -74,7 +81,8 @@ export function checkGraph(graph: ProcessGraph, deps: GraphCheckDeps): GraphChec
       );
       return;
     }
-    if (manifest.kind !== 'llm-agent' && manifest.kind !== 'program') {
+    const kind = participantKind(manifest.kind, deps.triggers === true);
+    if (kind === null) {
       report(
         'node_kind_unsupported',
         `nodes.${i}.type`,
@@ -82,7 +90,7 @@ export function checkGraph(graph: ProcessGraph, deps: GraphCheckDeps): GraphChec
       );
       return;
     }
-    participants.set(node.id, { index: i, kind: manifest.kind, manifest });
+    participants.set(node.id, { index: i, kind, manifest });
   });
 
   // Проход 2: настройки, credentials, секреты, число агентов.
@@ -178,8 +186,28 @@ export function checkGraph(graph: ProcessGraph, deps: GraphCheckDeps): GraphChec
       );
     }
   }
+  // Триггер (033, 4.3): шаг-источник без входа. Не вход — trigger_not_entry, вход — ровно одно исходящее flow.
+  for (const [id, participant] of participants) {
+    if (participant.kind !== 'trigger') continue;
+    if (id !== graph.entry) {
+      report('trigger_not_entry', `nodes.${participant.index}`, `trigger ${id} must be the entry`);
+      continue;
+    }
+    const outgoing = graph.edges.filter((edge) => edge.kind === 'flow' && edge.from === id).length;
+    if (outgoing !== 1) {
+      report(
+        'trigger_flow',
+        `nodes.${participant.index}`,
+        `entry trigger must have exactly one outgoing flow, has ${outgoing}`,
+      );
+    }
+  }
   const inboundCount = new Map<NodeId, number>();
   for (const { edge, j } of flows) {
+    if (kindOf(edge.to) === 'trigger') {
+      report('trigger_flow', `edges.${j}`, 'trigger has no input: flow must not end at a trigger');
+      continue;
+    }
     if (stepOf(edge.to) !== edge.to) continue;
     if (edge.to === graph.entry) {
       report('entry_has_input', `edges.${j}`, 'entry step must not have incoming flow');
@@ -213,13 +241,17 @@ export function checkGraph(graph: ProcessGraph, deps: GraphCheckDeps): GraphChec
     report('entry_unknown', 'entry', `entry ${graph.entry} is not a node`);
   if (!nodeIds.has(graph.exit)) {
     report('exit_unknown', 'exit', `exit ${graph.exit} is not a node`);
-  } else if (kindOf(graph.exit) === 'llm-agent' && stepOf(graph.exit) !== graph.exit) {
+  } else if (
+    kindOf(graph.exit) === 'trigger' ||
+    (kindOf(graph.exit) === 'llm-agent' && stepOf(graph.exit) !== graph.exit)
+  ) {
     report('exit_not_step', 'exit', 'exit must be a program or the entry agent of its team');
   }
   if (participants.has(graph.entry)) {
     const reached = reachableFrom(stepOf(graph.entry), stepLinks, true);
     for (const [id, participant] of participants) {
-      if (stepOf(id) !== id || reached.has(id)) continue;
+      // Триггер вне цепочки исполнения: его отсутствие в достижимости — trigger_not_entry.
+      if (stepOf(id) !== id || reached.has(id) || participant.kind === 'trigger') continue;
       report(
         'unreachable',
         `nodes.${participant.index}`,
@@ -229,6 +261,34 @@ export function checkGraph(graph: ProcessGraph, deps: GraphCheckDeps): GraphChec
   }
 
   return { ok: issues.length === 0, issues };
+}
+
+// Спека 033, 4.3. Граф исполнения: триггер и его flow убраны, entry — цель flow триггера. Вход — граф без замечаний checkGraph.
+export function launchGraph(
+  graph: ProcessGraph,
+  registry: NodeRegistry,
+): { graph: ProcessGraph; trigger: JobTrigger | null } {
+  const triggerNode = graph.nodes.find((node) => registry.get(node.type)?.kind === 'trigger');
+  if (!triggerNode) return { graph, trigger: null };
+  const flow = graph.edges.find((edge) => edge.kind === 'flow' && edge.from === triggerNode.id);
+  const settings = registry.validateSettings(triggerNode.type, triggerNode.settings);
+  if (!flow || !settings.ok) throw new Error('launchGraph: graph has checkGraph issues');
+  return {
+    graph: {
+      nodes: graph.nodes.filter((node) => node !== triggerNode),
+      edges: graph.edges.filter(
+        (edge) => edge.from !== triggerNode.id && edge.to !== triggerNode.id,
+      ),
+      entry: flow.to,
+      exit: graph.exit,
+    },
+    trigger: {
+      nodeId: triggerNode.id,
+      type: triggerNode.type,
+      settings: settings.settings,
+      credentials: triggerNode.credentials,
+    },
+  };
 }
 
 function adjacency(edges: readonly { from: NodeId; to: NodeId }[]): Map<NodeId, NodeId[]> {
