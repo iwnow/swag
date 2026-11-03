@@ -1,6 +1,6 @@
 # @swag/adapter-postgres
 
-Адаптер Postgres: миграции схемы, хранилище роёв `SwarmStore` (порт `api-core`), бюджеты роёв и цены OpenRouter для LLM Gateway (порты `BudgetStore` и `PriceStore` из `llm-gateway-core`), хранилище identity `IdentityStore` (спеки 012 и 024: пользователи, организации, приглашения, блокировка, отзывы токенов, уборка), хранилище баланса `BalanceStore` (спека 013: баланс организации, журнал, резерв роя), секреты организации `SecretStore` и `SecretReader` (спека 026, 4.5, 4.6) и состояние узла `NodeStateStore` (спека 026, 4.5, 4.10). Оболочка `apps/api` подключает хранилище роёв вместо адаптера в памяти.
+Адаптер Postgres: миграции схемы, хранилище роёв `SwarmStore` (порт `api-core`), бюджеты роёв и цены OpenRouter для LLM Gateway (порты `BudgetStore` и `PriceStore` из `llm-gateway-core`), хранилище identity `IdentityStore` (спеки 012 и 024: пользователи, организации, приглашения, блокировка, отзывы токенов, уборка), хранилище баланса `BalanceStore` (спека 013: баланс организации, журнал, резерв роя), секреты организации `SecretStore` и `SecretReader` (спека 026, 4.5, 4.6) и состояние узла `NodeStateStore` (спека 026, 4.5, 4.10). Хранилище процессов `ProcessStore` (спека 033, 4.6) и задания с запусками планировщика `JobStore` (спека 033, 4.7, 4.8). Оболочка `apps/api` подключает хранилище роёв вместо адаптера в памяти.
 
 ## Задачи
 
@@ -11,6 +11,8 @@
 - `createPostgresIdentityStore(pool)` — `IdentityStore` identity (спека 012, 4.3, 4.9; спека 024, 4.9): пользователи, организации, подтверждения регистрации, сессии, приглашения. `confirmRegistration`, `acceptInvitation`, `updateUser` и `rotateSession` — одна транзакция каждая (AC-012-9, AC-012-30, AC-024-4, AC-024-5).
 - `createPostgresBalanceStore(pool)` — `BalanceStore` (спека 013, 4.2): баланс и журнал организации, пополнение (`topup`), условный резерв роя (`reserve`, REQ-013-5), закрытие резерва (`settle`) и открытые резервы (`holds`). Каждая операция записи — одна транзакция.
 - `createPostgresSecretStore(pool, cipher)` — `SecretStore` (`api-core`) и `SecretReader` (`orchestrator-core`) в одном объекте (спека 026, 4.5, 4.6): `put` шифрует значение `SecretCipher` с AAD `${orgId}:${name}` и пишет `hint`, `list` отдаёт только имя, hint и дату, `delete` возвращает `true`, если строка была, `read(orgId, names)` расшифровывает только найденные имена.
+- `createPostgresProcessStore(pool)` — `ProcessStore` (спека 033, 4.6): определения процессов, `list` (`null` — все организации), `count`, `update` с проверкой строки.
+- `createPostgresJobStore(pool)` — `JobStore` (спека 033, 4.7, 4.8): задания и запуски планировщика, аренда `claimDue` через `skip locked`, `recordTick` одной транзакцией, `takeQueued`, `counts`, `setRun`, `cancelQueued`.
 - `createPostgresNodeState(pool)` — `NodeStateStore` (спека 026, 4.5, 4.10): `get` и `set` по `(orgId, stateKey, key)`; `set(…, null)` удаляет только свою строку.
 - `ledgerReport(pool, { swarmId?, since? })` — суммы и счётчики ledger по основанию списания и наличию факта провайдера (спека 004, 4.5, отчёт для 4.10). Формат строк `money:report` (4.13) — в T-16.
 - `npm run db:migrate` в корне — `runMigrations` для базы из `DATABASE_URL` с хоста (`127.0.0.1`, как у `infra:check`).
@@ -18,14 +20,18 @@
 ## Что внутри сейчас
 
 - `src/secrets.ts` — `createPostgresSecretStore`, внутренние `secretHint` и `toSummary`; `src/node-state.ts` — `createPostgresNodeState`.
-- `src/index.ts` — `runMigrations`, `createPostgresSwarmStore`, `createPostgresBudgetStore`, `createPostgresPriceStore`, `createPostgresIdentityStore`, `createPostgresBalanceStore`, `ledgerReport`, внутренние `transact`, `plainPrice`, `userFromRow`, `isEmailConflict`, `USER_COLUMNS`, `toBalanceEntry`.
+- `src/process-store.ts` — `createPostgresProcessStore`; `src/job-store.ts` — `createPostgresJobStore`; `src/transact.ts` — `transact(pool, work)` (вынесено из `index.ts`, его используют `job-store.ts` и деньги).
+- `src/index.ts` — реэкспорт `process-store.ts` и `job-store.ts`, `runMigrations`, `createPostgresSwarmStore`, `createPostgresBudgetStore`, `createPostgresPriceStore`, `createPostgresIdentityStore`, `createPostgresBalanceStore`, `ledgerReport`, внутренние `transact`, `plainPrice`, `userFromRow`, `isEmailConflict`, `USER_COLUMNS`, `toBalanceEntry`.
 - `migrations/0001_swarms.sql` — таблицы `swarms` и `swarm_events` (003, 4.4), формат `-- Up Migration` / `-- Down Migration`.
 - `migrations/0002_money.sql` — `swarm_budgets`, `swarm_agents`, `budget_holds`, `ledger_entries`, `model_prices` (004, 4.5), текст из спеки без изменений.
 - `migrations/0003_identity.sql` — `organizations`, `users`, `email_confirmations`, `sessions` (012, 4.9), текст из спеки без изменений. Ограничения: `users.role` — `user`, `admin`, `supervisor`; у супервизора нет `org_id`, у остальных есть.
 - `migrations/0004_identity_access.sql` — `users.blocked_at`, `users.tokens_valid_after` с индексом `users_tokens_valid_after`, таблица `invitations` (024, 4.11), текст из спеки без изменений.
 - `migrations/0006_nodes.sql` — `org_secrets` (шифротекст, hint, `updated_by` → `users`) и `node_state` (`(org_id, state_key, key)`, значение `text`), текст из спеки 026, 4.5, без изменений; откат — `drop` обеих таблиц. Строки удаляются вместе с организацией (`on delete cascade`).
 - `migrations/0005_billing.sql` — `org_balances`, `balance_entries`, `balance_holds` (013, 4.2), текст из спеки без изменений. Ограничения: `held <= balance`; запись `topup` с `actor_id` и без резерва, запись `swarm` с `swarm_id` и без `actor_id`; `swarm_id` в `balance_entries` уникален.
-- `test/migrations.test.ts` — AC-003-1 (шесть миграций, включая 0006), AC-004-20 (колонки, ограничения, параллельный запуск; список таблиц включает `org_secrets` и `node_state`), AC-012-3 (таблицы identity, отказы ограничений, повторный запуск), AC-024-3 (0004 вверх и вниз, данные 0003 сохраняются).
+- `migrations/0007_processes.sql` — `processes`, `scheduler_jobs`, `process_runs` (033, 4.8), текст из спеки без изменений; `scheduler_jobs` без внешнего ключа на `processes` (таблица принадлежит api), `process_runs` — каскадом от `scheduler_jobs`.
+- `test/migrations.test.ts` — AC-003-1 (семь миграций, включая 0007), AC-004-20 (колонки, ограничения, параллельный запуск; список таблиц включает `org_secrets` и `node_state`), AC-012-3 (таблицы identity, отказы ограничений, повторный запуск), AC-024-3 (0004 вверх и вниз, данные 0003 сохраняются).
+- `test/job-store.test.ts` — общий набор `jobStoreCases` из `adapter-memory` на Postgres; второй пул к той же схеме — второе соединение для `skip locked` (AC-033-11).
+- `test/process-store.test.ts` — общий набор `processStoreCases`; автор процесса создаётся в схеме (внешние ключи `organizations`, `users`) (AC-033-11).
 - `test/balance-store.test.ts` — общий набор `balanceStoreContract` из `adapter-memory` на Postgres (AC-013-1, AC-013-11, AC-013-12 и проверки пагинации, `insufficient`, повтора `swarmId`, `holds`) и AC-013-10 (10 параллельных резервов: ровно 3 `ok`, баланс не меняется).
 - `test/store.test.ts` — AC-003-2 и AC-003-3 на `createPostgresSwarmStore`.
 - `test/money.test.ts` — AC-004-13 (параллельные резервы роя и агента, закрытый рой, агент не из регистрации), AC-004-14 (списание, повтор, параллельный повтор, гонка с `releaseHolds`), AC-004-18, AC-004-32, AC-004-40 (часть хранилища); тесты `close`, `findAgent` и повторной регистрации.
@@ -74,8 +80,8 @@
 
 ## Связи
 
-- Порты: `SwarmStore` и `SecretStore` из `@swag/api-core`; `SecretReader` и `NodeStateStore` из `@swag/orchestrator-core`; `SecretCipher` из `@swag/adapter-crypto` (тип; структурно совпадает с портом шифра 4.5); `BudgetStore`, `PriceStore`, `LedgerEntry`, `RegisteredAgent`, `ReserveResult`, `StoredPrice` из `@swag/llm-gateway-core`; `BalanceStore` из `@swag/billing-core` (только типы).
-- Использует: `@swag/adapter-crypto` (тип `SecretCipher`), `@swag/orchestrator-core` (типы `SecretReader`, `NodeStateStore`), `@swag/api-core` (типы), `@swag/api-integration` (`applyEvent`, `SwarmView`), `@swag/contracts` (`SwarmId`, `PlatformEvent`, `LlmSwarmRegistration`, `LlmCaller`, `ChargeBasis`), `@swag/llm-gateway-core` (типы портов), `@swag/identity-core` (типы порта `IdentityStore`), `@swag/billing-core` (типы порта `BalanceStore`), `node-pg-migrate`, `pg` (тесты: `pg.Client`, `pg.Pool`). Тесты identity импортируют общий набор из `packages/adapter-memory/test/identity-store.contract.ts`.
+- Порты: `SwarmStore`, `ProcessStore` и `SecretStore` из `@swag/api-core`; `JobStore`, `JobRecord`, `RunRecord`, `TickRecord` из `@swag/scheduler-core` (типы); `SecretReader` и `NodeStateStore` из `@swag/orchestrator-core`; `SecretCipher` из `@swag/adapter-crypto` (тип; структурно совпадает с портом шифра 4.5); `BudgetStore`, `PriceStore`, `LedgerEntry`, `RegisteredAgent`, `ReserveResult`, `StoredPrice` из `@swag/llm-gateway-core`; `BalanceStore` из `@swag/billing-core` (только типы).
+- Использует: `@swag/scheduler-core` (типы), `@swag/adapter-crypto` (тип `SecretCipher`), `@swag/orchestrator-core` (типы `SecretReader`, `NodeStateStore`), `@swag/api-core` (типы), `@swag/api-integration` (`applyEvent`, `SwarmView`), `@swag/contracts` (`SwarmId`, `PlatformEvent`, `LlmSwarmRegistration`, `LlmCaller`, `ChargeBasis`), `@swag/llm-gateway-core` (типы портов), `@swag/identity-core` (типы порта `IdentityStore`), `@swag/billing-core` (типы порта `BalanceStore`), `node-pg-migrate`, `pg` (тесты: `pg.Client`, `pg.Pool`). Тесты identity импортируют общий набор из `packages/adapter-memory/test/identity-store.contract.ts`.
 - Оболочки: `apps/api` (T-7), `scripts/db-migrate.ts`, `apps/llm-gateway` (подключение хранилища денег — отдельной задачей спеки 004).
 
 ## Ключевые решения
@@ -94,9 +100,19 @@
 - Баланс (013, 4.2): `reserve` — условный `update` org_balances (остаток проверяется в том же запросе), при 0 строк — `insufficient` и откат без записи; повтор `swarmId` — конфликт первичного ключа в `balance_holds`, откат и исключение. `settle` — `delete ... returning` резерва: повторное закрытие даёт `null`, без записей.
 - Вся логика применимости — в `applyEvent` (`api-integration`), адаптер только вызывает её внутри транзакции: одинаково с адаптером в памяти.
 
+## Процессы и задания (спека 033, T-11)
+
+- Аренда задания живёт только в `scheduler_jobs.lease_until`: `claimDue` ставит её в `update … where process_id in (select … for update skip locked) returning`; `put` её не трогает (`insert … on conflict do update` без `lease_until`), `recordTick` снимает одной транзакцией вместе с курсором и вставкой запусков (`transact`), `delete` — вместе со строкой.
+- `claimDue` и `takeQueued` сортируют результат в JS по `nextRunAt` и `createdAt`, потому что `RETURNING` порядок не гарантирует; `byStatus` и `runs` сортируют в `order by` обычного `select`.
+- Неизвестный `processId` в `ProcessStore.update` и `JobStore.recordTick` — `rowCount = 0`, ошибка, курсор и запуски не меняются; `setRun` неизвестного id — no-op (D-185, вариант а, решение принято в T-10 и сохранено здесь).
+- `setRun`: `event` очищается в том же `update`, если статус вне `queued` и `launching` (`case when`); `reason`, `launchedAt`, `finishedAt` — `coalesce` и флаг `reason`, поэтому отсутствующее поле не затирает значение, а `reason: null` затирает явно.
+- `counts` — `count(*) filter` по `process_id = any(…)`; для каждого запрошенного id есть запись, пустые — нули.
+- `spec`, `definition`, `last_error` и `event` — jsonb: пишутся `JSON.stringify` (массив иначе ушёл бы в pg-массив), `null` — SQL `null`. Времена — `timestamptz`, отдаются `toISOString()`.
+- Миграция `0007_processes.sql` — текст 4.8 без изменений.
+
 ## Деньги (спека 004)
 
-- Одна транзакция на операцию: `transact(pool, work)` берёт клиента, `begin`, `work` возвращает `{ commit, value }`. `commit: false` откатывает — так отказ по бюджету не оставляет частичного резерва. Ошибка — `rollback`, сбой rollback выбрасывает клиента через `release(true)`, как в `writeOnce`.
+- Одна транзакция на операцию: `transact(pool, work)` (`src/transact.ts`) берёт клиента, `begin`, `work` возвращает `{ commit, value }`. `commit: false` откатывает — так отказ по бюджету не оставляет частичного резерва. Ошибка — `rollback`, сбой rollback выбрасывает клиента через `release(true)`, как в `writeOnce`.
 - `reserve`: сначала условный `update` роя, потом агента, потом вставка в `budget_holds`. Условный `update` берёт блокировку строки, поэтому параллельные резервы одного роя выстраиваются в очередь без `for update`. Агент не найден в `swarm_agents` → `agent_budget_exceeded`: ядро проверяет агента через `findAgent` раньше, так что до адаптера это не доходит.
 - `settle` — отклонение от порядка шагов 4.5, сделано ради AC-004-14: запись в `ledger_entries` (`on conflict (call_id) do nothing`) идёт первой. Если строка не вставилась (повтор того же `callId`), транзакция откатывается и `spent` не меняется. По порядку из 4.5 повтор увеличивал бы `spent`, потому что резерв уже удалён. Резерва нет — `held` не меняется, трата и запись пишутся.
 - `register` — рой и агенты в одной транзакции; повтор `swarmId` — `false`, ничего не пишется (`on conflict (swarm_id) do nothing`).
@@ -127,3 +143,4 @@
 - 004 — 4.4 и 4.5 (хранилище), REQ-004-9, REQ-004-10, AC-004-13, AC-004-14, AC-004-18 (хранилище), AC-004-20, AC-004-32, AC-004-40 (хранилище), NFR-004-1 (T-3).
 - 012 — 4.3 (хранилище), 4.9 (миграция 0003), AC-012-3, AC-012-9, AC-012-30 (T-11); D-114.
 - 024 — 4.9 (хранилище), 4.11 (миграция 0004); задачи T-4 (AC-024-3), T-5, T-6 (AC-024-4, AC-024-5). Гонка `rotateSession` (N-22): SQL 012 уже закрывает её, правок не потребовалось.
+- 033 — 4.6, 4.7, 4.8 (хранилища и миграция 0007), AC-033-11 (T-11); D-185 (вариант а).

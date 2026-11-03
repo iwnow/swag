@@ -23,6 +23,7 @@ import type {
 } from '@swag/llm-gateway-core';
 import type { Pool, PoolClient } from 'pg';
 import { runner } from 'node-pg-migrate';
+import { transact } from './transact.ts';
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../migrations', import.meta.url));
 
@@ -116,30 +117,6 @@ async function writeEvent(client: PoolClient, event: PlatformEvent): Promise<boo
     JSON.stringify(event),
   ]);
   return true;
-}
-
-// Одна транзакция. commit: false откатывает её (отказ по бюджету — ничего не записано).
-async function transact<T>(
-  pool: Pool,
-  work: (client: PoolClient) => Promise<{ commit: boolean; value: T }>,
-): Promise<T> {
-  const client = await pool.connect();
-  let broken = false;
-  try {
-    await client.query('begin');
-    const { commit, value } = await work(client);
-    await client.query(commit ? 'commit' : 'rollback');
-    return value;
-  } catch (error) {
-    try {
-      await client.query('rollback');
-    } catch {
-      broken = true;
-    }
-    throw error;
-  } finally {
-    client.release(broken);
-  }
 }
 
 // Спека 004, 4.5. Условные update'ы блокируют строки роя, поэтому параллельные резервы идут по очереди без select for update.
@@ -915,3 +892,5 @@ export function createPostgresBalanceStore(pool: Pool): BalanceStore {
 
 export * from './secrets.ts';
 export * from './node-state.ts';
+export * from './process-store.ts';
+export * from './job-store.ts';
