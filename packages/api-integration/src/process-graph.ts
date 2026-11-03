@@ -437,15 +437,8 @@ function expandLevel(
     graph: {
       nodes,
       edges: [
-        // link с процессом-узлом — flow от выхода к входу (D-184, 4).
-        ...graph.edges.map((edge) => ({
-          from: exitOf(edge.from),
-          to: entryOf(edge.to),
-          kind:
-            edge.kind === 'link' && (bounds.has(edge.from) || bounds.has(edge.to))
-              ? 'flow'
-              : edge.kind,
-        })),
+        // Ребро с процессом-узлом — от его выхода, к его входу; вид ребра не меняется (D-184, 4).
+        ...graph.edges.map((edge) => ({ ...edge, from: exitOf(edge.from), to: entryOf(edge.to) })),
         ...innerEdges,
       ],
       entry: entryOf(graph.entry),

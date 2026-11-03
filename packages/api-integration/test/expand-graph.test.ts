@@ -336,7 +336,7 @@ describe('expandGraph (033, 4.4)', () => {
     });
   });
 
-  it('AC-033-5: link с процессом-узлом переносится как flow от выхода к входу процесса', () => {
+  it('AC-033-5: link с процессом-узлом ведёт во вход процесса и остаётся link', () => {
     const root = graph(
       [agent('a'), processNode('p', C)],
       [{ from: 'a', to: 'p', kind: 'link' }],
@@ -348,7 +348,7 @@ describe('expandGraph (033, 4.4)', () => {
       ok: true,
       graph: {
         nodes: [agent('a'), echo('p-x')],
-        edges: [flow('a', 'p-x')],
+        edges: [{ from: 'a', to: 'p-x', kind: 'link' }],
         entry: 'a',
         exit: 'p-x',
       },
