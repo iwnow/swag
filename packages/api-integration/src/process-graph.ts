@@ -14,6 +14,8 @@ import type { NodeRegistry } from './node-registry.ts';
 
 // Спека 009, 4.3. Форма роя → граф: агенты формы — узлы llm-agent, все пары связаны link.
 export const LLM_AGENT_TYPE = 'swag/llm-agent@1.0.0';
+// Спека 033, 4.5: встроенный триггер-расписание; общая для api-core и scheduler-core.
+export const SCHEDULE_TRIGGER_TYPE = 'swag/schedule@1.0.0';
 
 export function formGraph(agents: readonly AgentDraft[]): ProcessGraph {
   const ids = agents.map((_, i) => `agent-${i + 1}`);
