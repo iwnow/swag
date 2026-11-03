@@ -65,7 +65,7 @@ services:
       API_REVOCATION_POLL_MS: ${API_REVOCATION_POLL_MS:-5000}
       API_REVOCATION_MAX_STALE_MS: ${API_REVOCATION_MAX_STALE_MS:-30000}
       # Спека 021, 4.9: пакеты узлов для каталога типов; без переменной в .env — набор из .env.example (N-35).
-      NODE_PACKAGES: ${NODE_PACKAGES:-@swag/node-llm-agent,@swag/node-example}
+      NODE_PACKAGES: ${NODE_PACKAGES:-@swag/node-llm-agent,@swag/node-example,@swag/node-schedule,@swag/node-process}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TELEMETRY_FLUSH_TIMEOUT_MS: ${TELEMETRY_FLUSH_TIMEOUT_MS:-2000}
@@ -169,7 +169,7 @@ services:
       ORCHESTRATOR_TOKEN: ${ORCHESTRATOR_TOKEN}
       # Спека 026, 4.11: секреты организаций, исполнение узлов и исходящий прокси. В сеть `nodes` оркестратор не входит.
       SECRETS_KEY: ${SECRETS_KEY}
-      NODE_PACKAGES: ${NODE_PACKAGES:-@swag/node-llm-agent,@swag/node-example}
+      NODE_PACKAGES: ${NODE_PACKAGES:-@swag/node-llm-agent,@swag/node-example,@swag/node-schedule,@swag/node-process}
       NODE_TEMPLATE: ${NODE_TEMPLATE}
       DOCKER_NODE_NETWORK: ${DOCKER_NODE_NETWORK}
       NODE_EGRESS_PROXY_URL: ${NODE_EGRESS_PROXY_URL}
