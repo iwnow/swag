@@ -21,7 +21,7 @@
 ## Ограничения
 
 - Не используется ядрами.
-- Значения по умолчанию есть у переменных телеметрии (016, 4.11), у трёх переменных `LLM_GATEWAY_*` (002, 4.9) и у `AGENT_LLM_TIMEOUT_MS`, `AGENT_LLM_MAX_RETRIES` (022, 4.8); у переменных узлов и прокси (026, 4.11) — `NODE_INVOKE_TIMEOUT_MS`, `NODE_ABORT_GRACE_MS`, `NODE_FRAME_MAX_BYTES`, `EGRESS_PROXY_PORT`, `EGRESS_PROXY_HEALTH_PORT`; остальное отсутствующее — ошибка запуска.
+- Значения по умолчанию есть у переменных телеметрии (016, 4.11), у трёх переменных `LLM_GATEWAY_*` (002, 4.9) и у `AGENT_LLM_TIMEOUT_MS`, `AGENT_LLM_MAX_RETRIES` (022, 4.8), `AGENT_TASK_FROM`, `AGENT_RESULT_TO` (009, 4.8); у переменных узлов и прокси (026, 4.11) — `NODE_INVOKE_TIMEOUT_MS`, `NODE_ABORT_GRACE_MS`, `NODE_FRAME_MAX_BYTES`, `EGRESS_PROXY_PORT`, `EGRESS_PROXY_HEALTH_PORT`; остальное отсутствующее — ошибка запуска.
 - `LlmGatewayConfig` не проверяет `.env.llm` отдельно: оболочка получает оба файла через `env_file` (002, 4.8), `.env.example` и `.env.llm.example` вместе проходят разбор (тест AC-002-27).
 
 ## Связи
@@ -52,6 +52,7 @@
 
 - 000 — `BaseConfig`, `loadConfig`.
 - 001 — 4.9, переменные окружения.
+- 009 — 4.8, `AGENT_TASK_FROM` и `AGENT_RESULT_TO` в `AgentConfig` (AC-009-23).
 - 016 — 4.11, переменные телеметрии.
 - 003 — 4.7, `TELEMETRY_RETENTION` (Q-5).
 - 002 — 4.8 (файлы окружения), 4.9 (`LlmGatewayConfig`), AC-002-27.

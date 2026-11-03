@@ -4,7 +4,7 @@
 
 ## Задачи
 
-- REST роёв (спека 001, 4.5.1): `POST /swarms`, `GET /swarms`, `GET /swarms/:id`, `GET /swarms/:id/events?after=`, `POST /swarms/:id/stop`, `GET /health`.
+- REST роёв (спека 001, 4.5.1): `POST /swarms`, `GET /swarms`, `GET /swarms/:id`, `GET /swarms/:id/events?after=`, `POST /swarms/:id/stop`, `GET /health`, `POST /graph-checks` (009, 4.9: проверка графа без запуска, `200 GraphCheckResult` с полными замечаниями, право `swarm.create`, без права — `403`; тело не `ProcessGraph` — `400 validation_error`). `POST /swarms` принимает граф (`graph`) или форму (`agents`); граф с замечаниями — `400 invalid_graph`.
 - REST баланса (спека 013, 4.5): `GET /organizations/:orgId/balance`, `GET /organizations/:orgId/balance/entries?before=&limit=` (`limit` 1…100, по умолчанию 50), `POST /organizations/:orgId/balance/topups` (`201`). Права и область — в `billing-core`. Ошибки ядра баланса — тем же способом, что у роёв: `insufficient_balance` 402 у `POST /swarms`, `org_directory_unavailable` 503 у пополнения.
 - `POST /swarms` требует `budgetMicroUsd` роя и принимает `budgetMicroUsd` агентов (спека 004, 4.1, 4.7). Предел — `SWARM_MAX_BUDGET_MICRO_USD` из `ApiConfig`, проверку делает ядро. `maxTokens` роя и агентов (спека 031, 4.1, 4.3) проверяется против `AGENT_MAX_TOKENS_LIMIT` из `ApiConfig`.
 - WebSocket `GET /swarms/:id/stream?after=` (4.6): события с `seq > after`; неизвестный, невидимый рой или нет права — закрытие с кодом `4404`; нет токена, токен не прошёл проверку или отозван — `4401` (причина `unauthorized`).
@@ -71,8 +71,6 @@
 - Наблюдаемость (016): телеметрия поднимается до чтения остальной конфигурации, поэтому ошибка конфигурации или подключения к NATS — `error`-лог `LogRecord`, сброс телеметрии, выход с кодом 1. Fastify пишет тем же логгером (`loggerInstance`), ошибки 5xx — `error request failed` с `err`. HTTP-сервер — `tracedHttpServer`: каждый запрос, кроме `/health`, идёт в серверном спане с родителем из `traceparent`; невалидный заголовок — новый трейс, ответ не меняется. Заголовок `traceparent` в ответ не добавляется (4.5).
 - Сообщения NATS обрабатываются в спанах `consumer` адаптера: `bus.message` получает `traceId` сообщения агента.
 - `SIGTERM`/`SIGINT`: закрыть Fastify → NATS → `pool.end()` → сбросить телеметрию (не дольше `TELEMETRY_FLUSH_TIMEOUT_MS`) → `exit(0)`.
-
-- `POST /graph-checks` (009, 4.9): проверка графа без запуска, `200 GraphCheckResult` с полными `GraphIssue`; право `swarm.create` (без него `403`), тело не `ProcessGraph` — `400 validation_error`. `POST /swarms` принимает граф или форму, граф с замечаниями — `400 invalid_graph`. Тесты — `test/graph-http.test.ts` (AC-009-13, AC-009-15 по HTTP).
 
 ## Спеки
 

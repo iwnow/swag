@@ -24,7 +24,7 @@ apps/<имя>/             оболочка
 packages/<имя>-core/    ядро
 packages/adapter-<технология>/   адаптер инфраструктуры
 packages/contracts/     общие схемы и типы, в т.ч. манифест узла `NodeManifest` (`node.ts`, спека 021)
-packages/api-integration/  общая чистая логика ядер, работающих с API платформы; правила ядра; реестр типов узлов `createNodeRegistry` (спека 021, 4.2)
+packages/api-integration/  общая чистая логика ядер, работающих с API платформы; правила ядра; реестр типов узлов `createNodeRegistry` (спека 021, 4.2); форма → граф `formGraph`, проверка `checkGraph`, план `graphPlan` (спека 009)
 packages/node-sdk/      SDK авторов узлов `@swag/node-sdk`: `defineNode`, типы видов, `NodeContext`, тестовая обвязка на `./testing`; не ядро, `arch:check` его не проверяет (спека 021, 4.3)
 packages/node-packages/  загрузка пакетов типов узлов из `NODE_PACKAGES`: `bootNodePackages`, `packageOf`; общая для `api` и `orchestrator` (спека 026, 4.3)
 packages/node-<имя>/    пакет типа узла `@swag/node-<имя>`: определение в `src/node.ts`, выгруженный `swag-node.json` (спека 021, 4.4); сейчас `node-llm-agent`, `node-example`
@@ -44,9 +44,9 @@ packages/ui-angular/    общий Angular-пакет фронтендов: се
 
 | Ядро | Что внутри | Оболочки |
 |---|---|---|
-| `orchestrator-core` | Исполнение плана роя: песочницы, сети, ключи, accounts шины, уборка; исполнение вызова узла `invokeNode` (спека 026) | `apps/orchestrator` (Fastify) |
+| `orchestrator-core` | Исполнение графа роя (шаги, команды, программы; спека 009): песочницы, сети, ключи, accounts шины, уборка; исполнение вызова узла `invokeNode` (спека 026) | `apps/orchestrator` (Fastify) |
 | `llm-gateway-core` (спека 002) | Вызов модели через LLM Gateway: проверки запроса, каталог моделей, стоимость, событие `llm.call`, поток, сверка с апстримом | `apps/llm-gateway` (Fastify) |
-| `api-core` | Координатор, рои, планы, расходы, доступ к данным пользователя по `Actor`, каталог типов узлов (`listNodeTypes`, `getNodeType`, право `node.read`), секреты организации (`listSecrets`, `putSecret`, `deleteSecret`, право `secret.manage`) | `apps/api` (Fastify) |
+| `api-core` | Координатор, рои (граф роя, проверка через `checkGraph` из `api-integration` и `checkGraphFor`, спека 009), расходы, доступ к данным пользователя по `Actor`, каталог типов узлов (`listNodeTypes`, `getNodeType`, право `node.read`), секреты организации (`listSecrets`, `putSecret`, `deleteSecret`, право `secret.manage`) | `apps/api` (Fastify) |
 | `identity-core` (спека 012) | Регистрация компании, вход, сессии и токены, роли, лимиты частоты, первый супервизор (блокировка и проверка доступа — спека 024) | `apps/identity` (Fastify) |
 | `egress-proxy-core` (спека 026) | Исходящий прокси узлов: проверка `CONNECT` по гранту, `egress` и публичности адресов (`authorize`, `isPublicAddress`) | `apps/egress-proxy` (`node:http`) |
 | `billing-core` (спека 013) | Баланс по предоплате: пополнение, резерв бюджета роя, закрытие резерва по ledger | в MVP подключается в `apps/api`, позже свой сервис |
@@ -111,7 +111,7 @@ HTTP / CLI / UI →│ контроллер → фабрика ядра(deps) �
 3. `api` при старте (`bootNodeRegistry` из `@swag/node-packages`) читает только `swag-node.json` этих пакетов и не импортирует их код. `createNodeRegistry` (`@swag/api-integration`) проверяет манифест, повторы `type@version` и схемы. Ошибка — лог `node_manifest_invalid` и выход до подключения к Postgres и NATS.
 4. `api-core` получает реестр зависимостью `nodeTypes`; `GET /node-types` отдаёт каталог.
 
-Ядра, `@swag/contracts` и `apps/*/src` при подключении нового типа не меняются (REQ-021-15, REQ-026-16). Граф процесса, который вызывает узлы, — спека 009.
+Ядра, `@swag/contracts` и `apps/*/src` при подключении нового типа не меняются (REQ-021-15, REQ-026-16). Граф процесса, который вызывает узлы, — раздел «Граф процесса» ниже (спека 009).
 
 ## Исполнение узлов
 
@@ -123,6 +123,35 @@ HTTP / CLI / UI →│ контроллер → фабрика ядра(deps) �
 4. **Исходящий прокси** `egress-proxy` (`apps/egress-proxy`, ядро `egress-proxy-core`) в сетях `default` и `nodes` пропускает только `CONNECT` с действующим грантом к хостам из `egress` манифеста (`egressMatches` из `@swag/contracts`) и не соединяется с внутренними и частными адресами. Грант — HMAC на `EGRESS_PROXY_KEY`, общий у оркестратора и прокси.
 5. **Секреты организации** хранятся в Postgres зашифрованными AES-256-GCM (`createPostgresSecretStore`, ключ `SECRETS_KEY`). Администратор задаёт их через `api`: `GET`, `PUT`, `DELETE /secrets`; значение наружу не отдаётся. Узел получает только секреты из своих `credentials`; в логах и сообщениях ошибок оркестратор вымарывает их значения.
 6. **Состояние узла** — в Postgres (`createPostgresNodeState`, порт `NodeStateStore`), по организации и ключу состояния `stateKey`.
+
+## Граф процесса
+
+Рой описывается графом (спека 009). Граф — `ProcessGraph` из `@swag/contracts` (`graph.ts`): узлы `{ id, type, settings, credentials }`, рёбра `{ from, to, kind }`, `entry` (шаг, который получает задачу) и `exit` (шаг, чей выход — итог роя). Тип узла — ссылка `type@version` (`swag/llm-agent@1.0.0`, `example/echo@1.0.0`); вид — `llm-agent` (агент) или `program` (вызывается через `invokeNode`, 026). Лимиты — 16 узлов, 64 ребра, 8 агентов: константы в контрактах.
+
+- **`link`** — неориентированная связь агентов: оба пишут друг другу через шину. Компонента агентов по `link` — **команда**; агент-вход команды получает вход потока и вызывает `finish`.
+- **`flow`** — направленный поток между шагами; шаг — программа или команда. У шага не больше одного входящего `flow`, циклы `flow` запрещены.
+
+**Проверка.** `api` проверяет граф до резерва бюджета и запуска: `checkGraph` (`packages/api-integration/src/process-graph.ts`) не бросает и возвращает все замечания (`GraphIssue`: `code`, `path`, `message`) — дубли и типы узлов, настройки, секреты организации, рёбра, потоки, вход, выход и достижимость. Задача, не прошедшая схему `inputs` программы-входа, даёт `entry_input_invalid`. Граф проверяет только `api` (Q-5): оркестратор доверяет настройкам из `SwarmLaunch` и реестр для проверки не использует.
+- `POST /swarms` — тело с полем `agents` (форма) или `graph` (граф); смесь отклоняется. Замечания — `400 invalid_graph`, все в `issues`.
+- `POST /graph-checks` — проверка без запуска: `200 GraphCheckResult` с полными замечаниями, право `swarm.create`.
+
+**Форма → граф.** `formGraph(agents)` превращает агентов формы в узлы `swag/llm-agent@1.0.0` с ids `agent-1…agent-N`, связывает все пары `link`, вход и выход — `agent-1`. Форма проходит ту же проверку, что граф, а поведение роя из формы не меняется (AC-009-28).
+
+**Запуск.** `SwarmLaunch` (api → orchestrator) несёт `agents` (агенты графа с настройками после `validateSettings`), `programs` (`LaunchProgram`: id, тип, настройки, `credentials`), `edges`, `entry`, `exit`. `swarm.created` получает поле `graph` (для формы — результат `formGraph`). У агентов `credentials` пусты.
+
+**Исполнение в оркестраторе** (`graphPlan` из `api-integration`, `packages/orchestrator-core`):
+1. `graphPlan` строит шаги: программа — шаг сама; команда — шаг с id агента-входа. `next(stepId)` — цели исходящих `flow`, `peers(agentId)` — соседи по `link`.
+2. Env агентов: `AGENT_PEERS` — соседи по `link`, `AGENT_ENTRY` — агент-вход команды. Агенту-входу дополнительно `AGENT_TASK_FROM` (id шага-источника его входящего `flow`; входящего `flow` нет — `user`) и `AGENT_RESULT_TO` (`user`, если команда — шаг-выход, иначе `process`). Промпт по этим полям — в `packages/agent-core/src/prompt.ts`: строка о том, кто ставит задачу и куда уходит итог, и описание `finish`.
+3. Когда агенты стартовали, задача уходит шагу-входу, затем публикуется `swarm.started`.
+4. **Программа** получает вход потока: `node.started` → `invokeNode` (026) с `call: { kind: 'execute', input }` и `stateKey = swarm:<swarmId>:<nodeId>` → `node.completed` с `durationMs` и выход по `next`. Ошибка — `node.failed` и `swarm.failed` с причиной `node_failed`, `detail: '<nodeId>: <code>'`.
+5. **Команда** получает вход потоком: оркестратор публикует в шину сообщение агенту-входу (`from` — шаг-источник, текст — `valueText(value)`). Выход — `agent.result` агента-входа. Песочницы команды убираются (`agent.stopped`), выход передаётся по `next`.
+6. Выход шага уходит всем целям `flow` параллельно. Рой завершается `swarm.completed` с `result = valueText(выход шага-выхода)`, когда шаг-выход завершён и незавершённых шагов не осталось.
+
+`ENTRY_AGENT_ID` в оркестраторе не используется: вход и выход роя из формы задаются `formGraph`, а не ядром исполнения.
+
+**Проекция и UI.** `SwarmView.nodes` (`packages/api-integration/src/swarm-view.ts`) — программы графа в порядке узлов: `waiting` → `running` → `completed` или `failed`, с `durationMs`; у формы список пуст. `ui-core` выводит строки `node.*` в ленте (`formatNodeEvent`) и текст причины `node_failed` (`failureReasonText`). Страница роя в кабинете (`apps/ui/cabinet`) показывает программы под агентами, если граф задан.
+
+**Что не входит в 009:** слияние нескольких `flow` в один шаг (Q-6, вместе с маппингом полей в 017/027), статическая проверка совместимости схем на рёбрах (схемы проверяются в момент передачи), память между роями, сохранённые процессы и запуск по триггеру (спека 033).
 
 ## Наблюдаемость: traceId, логи, трейсы
 

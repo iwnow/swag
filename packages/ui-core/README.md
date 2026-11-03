@@ -105,6 +105,7 @@
 - 024 — 4.15, REQ-024-13 (ядро), AC-024-23.
 - 002 — 4.11, REQ-002-15, AC-002-24.
 - 022 — 4.1 (`PlatformModel`, `AgentDraft.model`), 4.10, REQ-022-15, AC-022-23.
+- 009 — 4.10, REQ-009-19 (`formatNodeEvent`, `failureReasonText('node_failed')`), AC-009-25 в `test/format-node-event.test.ts`.
 - 030 — 4.4, REQ-030-6, AC-030-7.
 - 031 — 4.5, REQ-031-5, AC-031-5: `maxTokensInput` — пустое поле → `null`, нечисловое → `NaN`, которое отсекает схема (проверка предела — в `api`, не в форме).
 - 004 — 4.8, AC-004-27 (`formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney`, `formatLlmCall` с `charge`); T-15 (`agentBudgetMicro`, `swarmFormInput`, `failureReasonText`, тесты `money-input`).
