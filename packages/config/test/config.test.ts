@@ -543,7 +543,12 @@ describe('AC-021-24: NODE_PACKAGES', () => {
         IDENTITY_JWT_PUBLIC_KEY: 'fake-key',
         SECRETS_KEY: fakeKey,
       }).NODE_PACKAGES,
-    ).toEqual(['@swag/node-llm-agent', '@swag/node-example']);
+    ).toEqual([
+      '@swag/node-llm-agent',
+      '@swag/node-example',
+      '@swag/node-schedule',
+      '@swag/node-process',
+    ]);
   });
 });
 
