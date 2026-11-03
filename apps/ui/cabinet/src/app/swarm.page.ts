@@ -1,7 +1,13 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, inject, Input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { PlatformEvent } from '@swag/contracts';
-import { failureReasonText, formatAgentStep, formatLlmCall, formatUsd } from '@swag/ui-core';
+import {
+  failureReasonText,
+  formatAgentStep,
+  formatLlmCall,
+  formatNodeEvent,
+  formatUsd,
+} from '@swag/ui-core';
 import { AlertComponent, ButtonDirective, CABINET_STORE, PageComponent } from '@swag/ui-angular';
 import { SwarmGraphComponent } from './swarm-graph.ts';
 
@@ -10,6 +16,13 @@ const STATUS_LABEL: Record<string, string> = {
   running: 'работает',
   completed: 'завершён',
   stopped: 'остановлен',
+  failed: 'ошибка',
+};
+
+const NODE_STATUS_LABEL: Record<string, string> = {
+  waiting: 'ожидает',
+  running: 'работает',
+  completed: 'завершён',
   failed: 'ошибка',
 };
 
@@ -50,6 +63,22 @@ const STATUS_LABEL: Record<string, string> = {
             }
           </ul>
         </section>
+
+        @if (swarm.nodes.length > 0) {
+          <section>
+            <h2>Программы</h2>
+            <ul>
+              @for (node of swarm.nodes; track node.id) {
+                <li>
+                  {{ node.id }} ({{ node.type }}): {{ nodeStatusLabel(node.status) }}
+                  @if (node.durationMs !== null) {
+                    · {{ node.durationMs }} мс
+                  }
+                </li>
+              }
+            </ul>
+          </section>
+        }
 
         @if (swarm.status === 'completed') {
           <section>
@@ -121,6 +150,10 @@ export class SwarmPageComponent {
     return STATUS_LABEL[status] ?? status;
   }
 
+  nodeStatusLabel(status: string): string {
+    return NODE_STATUS_LABEL[status] ?? status;
+  }
+
   detail(event: PlatformEvent): string {
     switch (event.type) {
       case 'bus.message':
@@ -133,6 +166,10 @@ export class SwarmPageComponent {
         return formatAgentStep(event.data);
       case 'llm.call':
         return formatLlmCall(event.data);
+      case 'node.started':
+      case 'node.completed':
+      case 'node.failed':
+        return formatNodeEvent(event);
       default:
         return '';
     }
