@@ -58,13 +58,11 @@ export function applyEvent(view: SwarmView | null, event: PlatformEvent): SwarmV
   if (event.type === 'swarm.created') {
     throw new Error(`повторный swarm.created для роя ${event.swarmId}`);
   }
-  // Итоговый статус окончателен (003, 4.3): событие двигает только lastSeq. Расход приходит и после финала.
-  const moved = FINAL_SWARM_STATUSES.includes(view.status)
-    ? { ...view, lastSeq: event.seq }
-    : updateView(view, event);
-  // Программы графа (009, 4.10) не меняют статус роя и идут после финала, как расход (D-190).
-  const next = { ...moved, nodes: applyNodeEvent(moved.nodes ?? [], event) };
-  return event.type === 'llm.call' ? addSpend(next, event) : next;
+  // Итоговый статус окончателен (003, 4.3): событие двигает только lastSeq, nodes тоже не меняет. Расход приходит и после финала.
+  const moved: SwarmView = FINAL_SWARM_STATUSES.includes(view.status)
+    ? { ...view, lastSeq: event.seq, nodes: view.nodes ?? [] } // проекции, сохранённые до спеки 009 (D-191)
+    : { ...updateView(view, event), nodes: applyNodeEvent(view.nodes ?? [], event) };
+  return event.type === 'llm.call' ? addSpend(moved, event) : moved;
 }
 
 // Программы графа (009, 4.10). Событие о неизвестном nodeId ничего не меняет.

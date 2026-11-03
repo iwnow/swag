@@ -31,7 +31,7 @@
 - `agent.step` — `steps + 1` у агента.
 - `swarm.created` — `budgetMicroUsd` роя и агентов, если поля есть в событии; у событий до 004 полей нет, и в проекции их тоже нет.
 - `swarm.created` с `graph` — по элементу в `nodes` на каждую программу графа (узел не `swag/llm-agent@1.0.0`), в порядке узлов, `waiting`, `durationMs: null`; без `graph` — `nodes: []` (009, 4.10).
-- `node.started` → `running`; `node.completed` → `completed` и `durationMs`; `node.failed` → `failed` и `durationMs`. Событие с `nodeId`, которого нет в `nodes`, проекцию не меняет. После итогового статуса роя `node.*` меняют только `nodes` (D-190).
+- `node.started` → `running`; `node.completed` → `completed` и `durationMs`; `node.failed` → `failed` и `durationMs`. Событие с `nodeId`, которого нет в `nodes`, проекцию не меняет. После итогового статуса роя `node.*` не меняют `nodes`: событие двигает только `lastSeq` (003, 4.3). Проекция без поля `nodes` (сохранена до T-7) читается как `nodes: []` (D-191).
 - `llm.call` — `spentMicroUsd` роя и агента увеличивается на сумму; расход учитывается и после итогового статуса, статус при этом не меняется (D-101).
 - `agent.idle` — статус `idle`, если агент не `done`, `failed`, `stopped`.
 - Итоговый статус роя (`completed`, `stopped`, `failed`) окончательный (003, REQ-003-7, 4.3): после него событие двигает только `lastSeq`, статус роя, `result` и `failure` не меняются.
