@@ -191,6 +191,45 @@ describe('createSchedulerHttpClient', () => {
     expect(escaped.requests[0]?.url).toBe('/jobs/a%2Fb%20c/enable');
   });
 
+  it('REQ-033-23: планировщик не отвечает — вызов падает по timeoutMs, не позже чем через 1 с', async () => {
+    const hanging = createServer();
+    await new Promise<void>((resolve) => hanging.listen(0, '127.0.0.1', () => resolve()));
+    try {
+      const { port } = hanging.address() as AddressInfo;
+      const client = createSchedulerHttpClient({
+        baseUrl: `http://127.0.0.1:${port}`,
+        token: TOKEN,
+        timeoutMs: 50,
+      });
+      const started = Date.now();
+      await expect(client.putJob(PROCESS_ID, SPEC)).rejects.toThrow();
+      expect(Date.now() - started).toBeLessThan(1000);
+    } finally {
+      hanging.closeAllConnections();
+      await new Promise<void>((resolve) => hanging.close(() => resolve()));
+    }
+  });
+
+  type Client = ReturnType<typeof clientFor>;
+  it.each<[string, string, number, unknown, (client: Client) => Promise<unknown>]>([
+    ['PUT', '', 200, JOB_STATE, (client) => client.putJob('a/b c', SPEC)],
+    ['POST', '/enable', 200, JOB_STATE, (client) => client.enable('a/b c')],
+    ['POST', '/disable', 200, JOB_STATE, (client) => client.disable('a/b c', 'user')],
+    ['DELETE', '', 204, undefined, (client) => client.deleteJob('a/b c')],
+    ['POST', '/runs', 201, RUN_VIEW, (client) => client.createRun('a/b c', {})],
+    ['GET', '/runs', 200, { items: [] }, (client) => client.runs('a/b c')],
+  ])(
+    'REQ-033-23: %s /jobs/:processId%s — processId с "/" и пробелом экранируется в пути',
+    async (method, suffix, status, reply, call) => {
+      const { baseUrl, requests } = await fakeScheduler(status, reply);
+
+      await call(clientFor(baseUrl));
+
+      expect(requests[0]?.method).toBe(method);
+      expect(requests[0]?.url).toBe(`/jobs/a%2Fb%20c${suffix}`);
+    },
+  );
+
   it('REQ-033-23: traceparent текущего спана уходит в заголовке запроса', async () => {
     const { baseUrl, requests } = await fakeScheduler(200, JOB_STATE);
     const telemetry = startTelemetry({

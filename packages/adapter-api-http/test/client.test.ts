@@ -1,7 +1,7 @@
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { RunLaunchRequest } from '@swag/contracts';
+import type { RunLaunchRequest, RunLaunchResult } from '@swag/contracts';
 import { startTelemetry } from '@swag/adapter-telemetry';
 import { createApiInternalHttpClient } from '../src/index.ts';
 
@@ -112,6 +112,37 @@ describe('createApiInternalHttpClient', () => {
     const { baseUrl } = await fakeApi(500, { error: { code: 'internal' } });
 
     await expect(clientFor(baseUrl).runStatuses([RUN_ID])).rejects.toThrow('500');
+  });
+
+  it.each<[string, RunLaunchResult]>([
+    ['launched', { outcome: 'launched' }],
+    ['rejected insufficient_balance', { outcome: 'rejected', reason: 'insufficient_balance' }],
+    ['rejected invalid_graph', { outcome: 'rejected', reason: 'invalid_graph' }],
+    ['busy', { outcome: 'busy' }],
+    ['process_not_found', { outcome: 'process_not_found' }],
+  ])('REQ-033-23: launchRun разбирает ответ %s', async (_name, reply) => {
+    const { baseUrl } = await fakeApi(200, reply);
+
+    await expect(clientFor(baseUrl).launchRun(LAUNCH)).resolves.toEqual(reply);
+  });
+
+  it('REQ-033-23: api не отвечает — launchRun падает по timeoutMs, не позже чем через 1 с', async () => {
+    const hanging = createServer();
+    await new Promise<void>((resolve) => hanging.listen(0, '127.0.0.1', () => resolve()));
+    try {
+      const { port } = hanging.address() as AddressInfo;
+      const client = createApiInternalHttpClient({
+        baseUrl: `http://127.0.0.1:${port}`,
+        token: TOKEN,
+        timeoutMs: 50,
+      });
+      const started = Date.now();
+      await expect(client.launchRun(LAUNCH)).rejects.toThrow();
+      expect(Date.now() - started).toBeLessThan(1000);
+    } finally {
+      hanging.closeAllConnections();
+      await new Promise<void>((resolve) => hanging.close(() => resolve()));
+    }
   });
 
   it('REQ-033-23: traceparent текущего спана уходит в заголовке запроса', async () => {

@@ -32,6 +32,9 @@ packages/config/        чтение env, только для оболочек
 packages/helpers/       универсальные хелперы без зависимостей (`@swag/helpers`), серверные — `@swag/helpers/server`; ядра не импортируют
 packages/adapter-openrouter/  источник цен OpenRouter на `fetch` (спека 004, 4.9)
 packages/adapter-gateway-http/  регистрация роёв в llm-gateway для оркестратора на `fetch` (спека 004, 4.6)
+packages/adapter-orchestrator-http/  клиент оркестратора на `fetch`: запуск, остановка, вызов узла (спека 001, 033, 4.10)
+packages/adapter-scheduler-http/  клиент планировщика для `api` на `fetch` (спека 033, 4.9)
+packages/adapter-api-http/  клиент внутреннего API для планировщика на `fetch` (спека 033, 4.10)
 packages/adapter-crypto/  argon2id-хэш паролей и непрозрачные токены на `node:crypto` и `@node-rs/argon2` (спека 012, 4.7); шифр секретов AES-256-GCM `createAesGcmCipher` и HMAC-гранты прокси `createEgressGrants` (спека 026)
 packages/adapter-jose/  подпись и проверка JWT Ed25519 через `jose` (спека 012, 4.7)
 packages/adapter-smtp/  отправка писем по SMTP через `nodemailer` (спека 012, 4.7)

@@ -18,7 +18,7 @@ export function createSchedulerHttpClient(options: SchedulerHttpOptions): Schedu
   const doFetch = options.fetch ?? fetch;
   const server = new URL(base);
 
-  // Тот же приём, что в adapter-orchestrator-http: заголовок передаётся явно, без автоинструментации fetch.
+  // Заголовок traceparent передаётся явно, без автоинструментации fetch; обёртка повторяет adapter-orchestrator-http, вынос — N-38.
   async function send(method: string, path: string, body?: unknown): Promise<Response> {
     const url = `${base}${path}`;
     return trace.getTracer(TRACER).startActiveSpan(

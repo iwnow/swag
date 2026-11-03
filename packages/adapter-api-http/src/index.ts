@@ -18,7 +18,7 @@ export function createApiInternalHttpClient(options: ApiInternalHttpOptions): Ap
   const doFetch = options.fetch ?? fetch;
   const server = new URL(base);
 
-  // Тот же приём, что в adapter-orchestrator-http: заголовок передаётся явно, без автоинструментации fetch.
+  // Заголовок traceparent передаётся явно, без автоинструментации fetch; обёртка повторяет adapter-orchestrator-http, вынос — N-38.
   async function post(path: string, body: unknown): Promise<Response> {
     const url = `${base}${path}`;
     return trace.getTracer(TRACER).startActiveSpan(
@@ -59,20 +59,20 @@ export function createApiInternalHttpClient(options: ApiInternalHttpOptions): Ap
     );
   }
 
-  async function expectJson(response: Response, what: string): Promise<unknown> {
+  function expectOk(response: Response, what: string): Response {
     if (!response.ok) throw new Error(`api ответил ${response.status} на ${what}`);
-    return response.json();
+    return response;
   }
 
   return {
     async launchRun(request: RunLaunchRequest) {
       const response = await post('/internal/process-runs', request);
-      return RunLaunchResult.parse(await expectJson(response, 'запуск процесса'));
+      return RunLaunchResult.parse(await expectOk(response, 'запуск процесса').json());
     },
 
     async runStatuses(runIds) {
       const response = await post('/internal/process-runs/status', { runIds });
-      const { items } = RunStatusList.parse(await expectJson(response, 'статусы запусков'));
+      const { items } = RunStatusList.parse(await expectOk(response, 'статусы запусков').json());
       return new Map(items.map((item) => [item.runId, item.status]));
     },
   };
