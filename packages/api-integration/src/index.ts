@@ -8,3 +8,4 @@ export {
   type SettingsResult,
   type ValueResult,
 } from './node-registry.ts';
+export { checkGraph, formGraph, type GraphCheckDeps, LLM_AGENT_TYPE } from './process-graph.ts';
