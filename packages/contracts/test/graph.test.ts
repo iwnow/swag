@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   AgentId,
+  GRAPH_MAX_AGENTS,
   GRAPH_MAX_EDGES,
   GRAPH_MAX_NODES,
   GraphIssueCode,
+  GraphNode,
   NodeId,
   PlatformEventInput,
   ProcessGraph,
@@ -59,6 +61,25 @@ describe('NodeId', () => {
   it('AgentId совпадает с NodeId: id графа допустим как id агента', () => {
     expect(AgentId.safeParse('writer').success).toBe(true);
     expect(AgentId.safeParse('user').success).toBe(false);
+  });
+});
+
+describe('GraphNode', () => {
+  it('settings и credentials по умолчанию {}', () => {
+    const parsed = GraphNode.parse({ id: 'writer', type: 'swag/llm-agent@1.0.0' });
+    expect(parsed.settings).toEqual({});
+    expect(parsed.credentials).toEqual({});
+  });
+
+  it('credentials принимает только валидный SecretName', () => {
+    const node = (secret: string) => ({
+      id: 'writer',
+      type: 'swag/llm-agent@1.0.0',
+      credentials: { llm: secret },
+    });
+    expect(GraphNode.safeParse(node('llm_key')).success).toBe(true);
+    expect(GraphNode.safeParse(node('LLM Key')).success).toBe(false);
+    expect(GraphNode.safeParse(node('1key')).success).toBe(false);
   });
 });
 
@@ -151,6 +172,37 @@ describe('SwarmLaunch', () => {
     expect(SwarmLaunch.safeParse(noOrg).success).toBe(false);
     expect(SwarmLaunch.safeParse({ ...launch, image: 'x' }).success).toBe(false);
   });
+
+  it('agents: пустой и больше GRAPH_MAX_AGENTS отклоняются', () => {
+    const agent = (i: number) => ({ ...launch.agents[0], id: `agent-${i}` });
+    expect(SwarmLaunch.safeParse({ ...launch, agents: [] }).success).toBe(false);
+    const full = Array.from({ length: GRAPH_MAX_AGENTS }, (_, i) => agent(i + 1));
+    expect(SwarmLaunch.safeParse({ ...launch, agents: full }).success).toBe(true);
+    const tooMany = [...full, agent(GRAPH_MAX_AGENTS + 1)];
+    expect(SwarmLaunch.safeParse({ ...launch, agents: tooMany }).success).toBe(false);
+  });
+
+  it('programs больше GRAPH_MAX_NODES отклоняются', () => {
+    const program = (i: number) => ({ ...launch.programs[0], id: `p${i}` });
+    const full = Array.from({ length: GRAPH_MAX_NODES }, (_, i) => program(i));
+    expect(SwarmLaunch.safeParse({ ...launch, programs: full }).success).toBe(true);
+    const tooMany = [...full, program(GRAPH_MAX_NODES)];
+    expect(SwarmLaunch.safeParse({ ...launch, programs: tooMany }).success).toBe(false);
+  });
+
+  it('edges больше GRAPH_MAX_EDGES отклоняются', () => {
+    const edge = { from: 'echo', to: 'writer', kind: 'flow' };
+    const full = Array.from({ length: GRAPH_MAX_EDGES }, () => edge);
+    expect(SwarmLaunch.safeParse({ ...launch, edges: full }).success).toBe(true);
+    expect(SwarmLaunch.safeParse({ ...launch, edges: [...full, edge] }).success).toBe(false);
+  });
+
+  it('entry и exit обязательны', () => {
+    const { entry: _entry, ...noEntry } = launch;
+    const { exit: _exit, ...noExit } = launch;
+    expect(SwarmLaunch.safeParse(noEntry).success).toBe(false);
+    expect(SwarmLaunch.safeParse(noExit).success).toBe(false);
+  });
 });
 
 describe('события графа', () => {
@@ -219,6 +271,26 @@ describe('события графа', () => {
       data: { nodeId: 'echo', code: 'boom', message: 'x', durationMs: 1 },
     };
     expect(PlatformEventInput.safeParse(failed).success).toBe(false);
+  });
+
+  it('node.started отклоняет type, который не NodeTypeRef', () => {
+    const started = {
+      ...base,
+      source: 'orchestrator',
+      type: 'node.started',
+      data: { nodeId: 'echo', type: 'echo' },
+    };
+    expect(PlatformEventInput.safeParse(started).success).toBe(false);
+  });
+
+  it('node.completed отклоняет отрицательный durationMs', () => {
+    const completed = {
+      ...base,
+      source: 'orchestrator',
+      type: 'node.completed',
+      data: { nodeId: 'echo', durationMs: -1 },
+    };
+    expect(PlatformEventInput.safeParse(completed).success).toBe(false);
   });
 
   it('swarm.failed принимает причину node_failed', () => {

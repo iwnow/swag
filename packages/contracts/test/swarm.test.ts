@@ -174,6 +174,8 @@ describe('LlmSwarmRegistration', () => {
     // Спека 009, Q-8: AgentId — NodeId, зарезервированный 'user' и заглавные буквы не проходят.
     const badId = [{ agentId: 'user', model: 'chat-small', budgetMicroUsd: null }];
     expect(LlmSwarmRegistration.safeParse(registration({ agents: badId })).success).toBe(false);
+    const upperId = [{ agentId: 'Agent-1', model: 'chat-small', budgetMicroUsd: null }];
+    expect(LlmSwarmRegistration.safeParse(registration({ agents: upperId })).success).toBe(false);
   });
 });
 
