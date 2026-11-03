@@ -12,6 +12,7 @@
     { "path": "../api-integration" },
     { "path": "../contracts" },
     { "path": "../identity-core" },
-    { "path": "../billing-core" }
+    { "path": "../billing-core" },
+    { "path": "../scheduler-core" }
   ]
 }

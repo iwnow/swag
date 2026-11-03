@@ -4,6 +4,7 @@ import {
   NodeManifest,
   NodeTypeList,
   PlatformEventInput,
+  ProcessDraft,
   ProcessGraph,
   SecretList,
   SecretName,
@@ -62,6 +63,25 @@ export interface SwarmStore {
   events(swarmId: string, afterSeq: number): Promise<PlatformEvent[]>; // по возрастанию seq
   view(swarmId: string): Promise<SwarmView | null>;
   views(): Promise<SwarmView[]>; // порядок не задан, сортирует ядро
+}
+
+// Спека 033, 4.6: определение процесса в api. Пишет только api; задание — в планировщике (4.8).
+export interface ProcessRecord {
+  id: string;
+  orgId: string;
+  createdBy: string;
+  definition: ProcessDraft;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProcessStore {
+  create(record: ProcessRecord): Promise<void>;
+  update(record: ProcessRecord): Promise<void>; // целиком, по id
+  get(id: string): Promise<ProcessRecord | null>;
+  list(orgId: string | null): Promise<ProcessRecord[]>; // null — все организации
+  count(orgId: string): Promise<number>;
+  delete(id: string): Promise<boolean>;
 }
 
 export interface OrchestratorClient {
