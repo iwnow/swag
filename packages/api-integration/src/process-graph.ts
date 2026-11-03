@@ -6,8 +6,9 @@ import {
   type GraphEdge,
   type GraphIssue,
   type GraphIssueCode,
+  type GraphNode,
   type JobTrigger,
-  type NodeId,
+  NodeId,
   type NodeManifest,
   type ProcessGraph,
 } from '@swag/contracts';
@@ -288,6 +289,136 @@ export function launchGraph(
       settings: settings.settings,
       credentials: triggerNode.credentials,
     },
+  };
+}
+
+// Спека 033, 4.4. Процесс-узел разворачивается в узлы родителя; узлы корня — глубина 1.
+export const PROCESS_NODE_TYPE = 'swag/process@1.0.0';
+export const PROCESS_NEST_MAX_DEPTH = 3; // корень + два уровня вложенности
+
+export interface NodeOrigin {
+  processId: string;
+  nodeId: NodeId;
+} // процесс и id узла в его графе
+
+export type ExpandResult =
+  | { ok: true; graph: ProcessGraph; origin: Record<NodeId, NodeOrigin | null> } // null — узел корневого графа
+  | { ok: false; issues: GraphIssue[] };
+
+// Цикл, глубина и длина id относятся к цепочке целиком: не оборачиваются в process_invalid.
+const CHAIN_ISSUE_CODES: readonly GraphIssueCode[] = [
+  'process_cycle',
+  'process_too_deep',
+  'process_node_id_too_long',
+];
+
+// rootId — id процесса корневого графа (null у POST /swarms); children — графы процессов организации по id.
+// registry нужен, чтобы узнать вид trigger у дочернего графа (033, D-184): триггер и его flow убираются через launchGraph.
+export function expandGraph(
+  graph: ProcessGraph,
+  children: ReadonlyMap<string, ProcessGraph>,
+  rootId: string | null,
+  registry: NodeRegistry,
+): ExpandResult {
+  return expandLevel(graph, children, registry, null, rootId === null ? [] : [rootId], '', 1);
+}
+
+// owner — процесс этого графа (null у корня), chain — процессы от корня до него, prefix — `<p>-` по цепочке, level — глубина графа.
+function expandLevel(
+  graph: ProcessGraph,
+  children: ReadonlyMap<string, ProcessGraph>,
+  registry: NodeRegistry,
+  owner: string | null,
+  chain: readonly string[],
+  prefix: string,
+  level: number,
+): ExpandResult {
+  const issues: GraphIssue[] = [];
+  const nodes: GraphNode[] = [];
+  const origin: Record<NodeId, NodeOrigin | null> = {};
+  const innerEdges: GraphEdge[] = [];
+  const bounds = new Map<NodeId, { entry: NodeId; exit: NodeId }>();
+
+  graph.nodes.forEach((node, i) => {
+    if (node.type !== PROCESS_NODE_TYPE) {
+      const id = prefix + node.id;
+      if (!NodeId.safeParse(id).success) {
+        issues.push({
+          code: 'process_node_id_too_long',
+          path: `nodes.${i}.id`,
+          message: `node id "${id}" is not a valid node id`,
+        });
+        return;
+      }
+      nodes.push({ ...node, id });
+      origin[id] = owner === null ? null : { processId: owner, nodeId: node.id };
+      return;
+    }
+
+    const childId = String(node.settings.processId);
+    const path = `nodes.${i}.settings.processId`;
+    const child = children.get(childId);
+    if (!child) {
+      issues.push({ code: 'process_not_found', path, message: `process ${childId} is not found` });
+      return;
+    }
+    if (chain.includes(childId)) {
+      issues.push({ code: 'process_cycle', path, message: `process ${childId} includes itself` });
+      return;
+    }
+    if (level > PROCESS_NEST_MAX_DEPTH - 1) {
+      issues.push({
+        code: 'process_too_deep',
+        path,
+        message: `process nesting is deeper than ${PROCESS_NEST_MAX_DEPTH}`,
+      });
+      return;
+    }
+
+    const expanded = expandLevel(
+      launchGraph(child, registry).graph,
+      children,
+      registry,
+      childId,
+      [...chain, childId],
+      `${prefix}${node.id}-`,
+      level + 1,
+    );
+    if (!expanded.ok) {
+      const first = expanded.issues[0]!;
+      issues.push(
+        CHAIN_ISSUE_CODES.includes(first.code)
+          ? first
+          : { code: 'process_invalid', path, message: `${first.code} at ${first.path}` },
+      );
+      return;
+    }
+    bounds.set(node.id, { entry: expanded.graph.entry, exit: expanded.graph.exit });
+    nodes.push(...expanded.graph.nodes);
+    innerEdges.push(...expanded.graph.edges);
+    Object.assign(origin, expanded.origin);
+  });
+
+  if (issues.length > 0) return { ok: false, issues };
+
+  const entryOf = (id: NodeId): NodeId => bounds.get(id)?.entry ?? prefix + id;
+  const exitOf = (id: NodeId): NodeId => bounds.get(id)?.exit ?? prefix + id;
+  return {
+    ok: true,
+    graph: {
+      nodes,
+      edges: [
+        ...graph.edges.map((edge) => ({
+          from: exitOf(edge.from),
+          to: entryOf(edge.to),
+          kind: edge.kind,
+        })),
+        ...innerEdges,
+      ],
+      entry: entryOf(graph.entry),
+      exit: exitOf(graph.exit),
+    },
+    origin,
   };
 }
 
