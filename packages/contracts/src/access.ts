@@ -12,11 +12,21 @@ export const Permission = z.enum([
   'balance.topup',
   'node.read', // 021, 4.6: каталог типов узлов
   'secret.manage', // 026, 4.6: секреты организации
+  'process.read', // 033, 4.1: процессы организации
+  'process.manage',
 ]);
 export type Permission = z.infer<typeof Permission>;
 
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
-  user: ['swarm.create', 'swarm.read', 'swarm.stop', 'balance.read', 'node.read'],
+  user: [
+    'swarm.create',
+    'swarm.read',
+    'swarm.stop',
+    'balance.read',
+    'node.read',
+    'process.read',
+    'process.manage',
+  ],
   admin: [
     'swarm.create',
     'swarm.read',
@@ -26,6 +36,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'balance.topup',
     'node.read',
     'secret.manage',
+    'process.read',
+    'process.manage',
   ],
   supervisor: [
     'swarm.read',
@@ -35,6 +47,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'balance.read',
     'balance.topup',
     'node.read',
+    'process.read',
   ], // Q-4: роёв не создаёт
 };
 

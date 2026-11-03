@@ -26,7 +26,15 @@ const claims = (role: Role): AccessTokenClaims => ({
 });
 
 const EXPECTED: Record<Role, Permission[]> = {
-  user: ['swarm.create', 'swarm.read', 'swarm.stop', 'balance.read', 'node.read'],
+  user: [
+    'swarm.create',
+    'swarm.read',
+    'swarm.stop',
+    'balance.read',
+    'node.read',
+    'process.read',
+    'process.manage',
+  ],
   admin: [
     'swarm.create',
     'swarm.read',
@@ -36,6 +44,8 @@ const EXPECTED: Record<Role, Permission[]> = {
     'balance.topup',
     'node.read',
     'secret.manage',
+    'process.read',
+    'process.manage',
   ],
   supervisor: [
     'swarm.read',
@@ -45,6 +55,7 @@ const EXPECTED: Record<Role, Permission[]> = {
     'balance.read',
     'balance.topup',
     'node.read',
+    'process.read',
   ],
 };
 

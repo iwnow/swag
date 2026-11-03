@@ -58,6 +58,13 @@ export const GraphIssueCode = z.enum([
   'exit_not_step',
   'unreachable',
   'entry_input_invalid',
+  'trigger_not_entry', // спека 033, 4.3
+  'trigger_flow',
+  'process_not_found', // спека 033, 4.4
+  'process_cycle',
+  'process_too_deep',
+  'process_node_id_too_long',
+  'process_invalid',
 ]);
 export type GraphIssueCode = z.infer<typeof GraphIssueCode>;
 
