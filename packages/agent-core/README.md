@@ -13,10 +13,10 @@
 ## Что внутри сейчас
 
 - `runAgentLoop(deps, context)` в `src/loop.ts` (спека 022, 4.2): цикл «вызов модели → инструменты → результаты». Вход — `AgentCallContext` (модель, системный промпт, история, новое сообщение, инструменты, `maxSteps`/`maxTokens`), порт `ChatModel` и колбэк `onStep`; выход — `AgentLoopResult` (`text`, `stopped`, `yielded`, `max_steps`, `model_error`). `ToolOutcome.yieldTurn` (030, 4.1): после шага, в котором инструмент уступил ход и никто не вернул `stop`, цикл заканчивается без вызова модели. Код `model_error` — `ChatModelErrorCode`, в том числе `max_tokens` (обрезанный ответ, 4.3). Цикл не импортирует ничего о рое.
-- `src/prompt.ts` (спека 022, 4.5): чистые функции `systemPrompt(agent)`, `inboxMessage({from, text}, peers)` и `swarmTools(agent, send)`, константа `ENTRY_REMINDER` (текст напоминания шага 5). Типы `AgentPeer`, `PromptAgent`, `SendMessage`.
+- `src/prompt.ts` (спека 022, 4.5; спека 009, 4.8): чистые функции `systemPrompt(agent)`, `inboxMessage({from, text}, peers)` и `swarmTools(agent, send)`, константа `ENTRY_REMINDER`. У агента-входа `PromptAgent.taskFrom` и `resultTo` задают строку о задаче и итоге и описание `finish` по таблице 4.8; сообщение от не-участника — `Вход от шага процесса <id>:` (текст напоминания шага 5). Типы `AgentPeer`, `PromptAgent`, `SendMessage`.
 - `src/index.ts` (спека 022, 4.4): `createAgentCore(deps)` с портами `AgentBus`, `ChatModel`, `Clock`, `IdGenerator`, `Logger`, `TraceContext`. Ход агента — `turn` и `handle`, исход — `publishOutcome` по `TurnOutcome` (`AgentLoopResult` или локальный `empty_result`, которого в цикле нет); итог повторного текста — `afterReminder`. История, счётчик шагов и множество `awaiting` (адресаты `send_message`, от которых не пришёл ответ) живут в замыкании на всё время жизни агента.
 - Логи по 4.11 спеки 022: `info agent started`, `debug turn finished` (`messageId`, `kind`, `steps`), `warn message dropped` с `reason` (`invalid_schema`, `wrong_recipient`, `agent_finished`). Тексты промпта, сообщений и ответов в логах нет.
-- Тесты: `test/loop.test.ts` — AC-022-3…11, AC-030-1…3; `test/prompt.test.ts` — AC-022-12, AC-022-14, AC-030-4; `test/agent-core.test.ts` — AC-000-16, AC-001-19, AC-016-6, AC-016-7, AC-022-13, AC-022-15, AC-022-16 (включая `model_error:max_tokens`), AC-022-28 (ожидание ответов, `empty_result` при `null` и пробелах), AC-030-5.
+- Тесты: `test/loop.test.ts` — AC-022-3…11, AC-030-1…3; `test/prompt.test.ts` — AC-022-12, AC-022-14, AC-030-4, AC-009-23; `test/agent-core.test.ts` — AC-000-16, AC-001-19, AC-016-6, AC-016-7, AC-022-13, AC-022-15, AC-022-16 (включая `model_error:max_tokens`), AC-022-28 (ожидание ответов, `empty_result` при `null` и пробелах), AC-030-5.
 
 ## Ограничения
 
@@ -46,6 +46,7 @@
 - `agent.started` публикуется после подписки.
 - `traceId` в конверте — из обязательного порта `TraceContext` (016, Q-1): ход агента — один трейс роя. Ядро значение не разбирает.
 - В логах нет текста роли и сообщений, только id, числа и `kind` (016, Q-4; 022, 4.11).
+- `taskFrom` и `resultTo` (009, 4.8, D-184) — необязательные, по умолчанию `user`: тесты и форма роя их не передают, промпт и `finish` идут как в 022 (`user` + `user` даёт строку `ENTRY_LINE` побайтно). `AgentConfigCore` передаёт их оболочка из `AGENT_TASK_FROM` и `AGENT_RESULT_TO`.
 - Промпт и инструменты — чистые функции без шины: отправка — колбэк `send(to, text)`, `BusMessage` собирает агент. Так проверка адресата (AC-022-14) не зависит от шины, а `AgentPeer` живёт в `prompt.ts`, чтобы не было цикла импортов с `index.ts`.
 - Схемы инструментов в `parameters` — литералы из 4.5 (JSON Schema для модели); проверка аргументов — отдельно, Zod (`z.strictObject`, `enum` из id участников). Два описания одной схемы сверены тестом AC-022-12.
 - Пустой путь ошибки Zod (аргументы не объект) выводится как `args`, чтобы сообщение модели начиналось с имени поля.

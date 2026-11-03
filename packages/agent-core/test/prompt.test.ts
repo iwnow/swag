@@ -194,3 +194,64 @@ describe('промпт и инструменты агента роя (спека
     expect((await finish?.execute({ result: 'x', extra: 1 }))?.content).toMatch(/^error: /);
   });
 });
+
+describe('промпт агента-входа команды графа (спека 009, 4.8)', () => {
+  const cases: {
+    taskFrom: 'user' | 'intake';
+    resultTo: 'user' | 'process';
+    task: string;
+    result: string;
+    finish: string;
+  }[] = [
+    {
+      taskFrom: 'user',
+      resultTo: 'user',
+      task: 'Задачу тебе ставит пользователь.',
+      result:
+        'Когда задача решена, вызови finish с итоговым результатом: его получит пользователь.',
+      finish: 'Завершить задачу и вернуть итог пользователю',
+    },
+    {
+      taskFrom: 'user',
+      resultTo: 'process',
+      task: 'Задачу тебе ставит пользователь.',
+      result:
+        'Когда задача решена, вызови finish с итоговым результатом: он уйдёт следующему шагу процесса.',
+      finish: 'Завершить задачу и вернуть итог следующему шагу процесса',
+    },
+    {
+      taskFrom: 'intake',
+      resultTo: 'user',
+      task: 'Задачу тебе передаёт шаг процесса intake.',
+      result:
+        'Когда задача решена, вызови finish с итоговым результатом: его получит пользователь.',
+      finish: 'Завершить задачу и вернуть итог пользователю',
+    },
+    {
+      taskFrom: 'intake',
+      resultTo: 'process',
+      task: 'Задачу тебе передаёт шаг процесса intake.',
+      result:
+        'Когда задача решена, вызови finish с итоговым результатом: он уйдёт следующему шагу процесса.',
+      finish: 'Завершить задачу и вернуть итог следующему шагу процесса',
+    },
+  ];
+
+  it.each(cases)(
+    'AC-009-23: вход $taskFrom → $resultTo — строки промпта и описание finish по таблице 4.8',
+    ({ taskFrom, resultTo, task, result, finish }) => {
+      const agent: PromptAgent = { ...entry, taskFrom, resultTo };
+      const lines = systemPrompt(agent).split('\n');
+      expect(lines.at(-1)).toBe(`${task} ${result}`);
+      const [, finishTool] = swarmTools(agent, async () => {});
+      expect(finishTool?.definition.description).toBe(finish);
+    },
+  );
+
+  it('AC-009-23: сообщение от шага, не участника команды, подписано как вход от шага процесса', () => {
+    expect(inboxMessage({ from: 'intake', text: 'исходные данные' }, peers)).toEqual({
+      role: 'user',
+      content: 'Вход от шага процесса intake:\nисходные данные',
+    });
+  });
+});

@@ -186,14 +186,37 @@ describe('loadConfig', () => {
     ).toMatchObject({ AGENT_LLM_TIMEOUT_MS: 5000, AGENT_LLM_MAX_RETRIES: 0 });
   });
 
+  it('AC-009-23: AgentConfig берёт AGENT_TASK_FROM и AGENT_RESULT_TO, по умолчанию user и user, неверные значения отвергает', () => {
+    expect(loadConfig(AgentConfig, agentEnv)).toMatchObject({
+      AGENT_TASK_FROM: 'user',
+      AGENT_RESULT_TO: 'user',
+    });
+    expect(
+      loadConfig(AgentConfig, {
+        ...agentEnv,
+        AGENT_TASK_FROM: 'intake',
+        AGENT_RESULT_TO: 'process',
+      }),
+    ).toMatchObject({ AGENT_TASK_FROM: 'intake', AGENT_RESULT_TO: 'process' });
+    expect(
+      loadConfig(AgentConfig, { ...agentEnv, AGENT_TASK_FROM: 'user', AGENT_RESULT_TO: 'user' }),
+    ).toMatchObject({ AGENT_TASK_FROM: 'user', AGENT_RESULT_TO: 'user' });
+    expect(() => loadConfig(AgentConfig, { ...agentEnv, AGENT_TASK_FROM: 'Intake' })).toThrow(
+      /AGENT_TASK_FROM/,
+    );
+    expect(() => loadConfig(AgentConfig, { ...agentEnv, AGENT_RESULT_TO: 'next' })).toThrow(
+      /AGENT_RESULT_TO/,
+    );
+  });
+
   it('спека 022, 4.8: AgentConfig отвергает плохой AGENT_PEERS, AGENT_ENTRY и лимиты', () => {
     expect(() => loadConfig(AgentConfig, { ...agentEnv, AGENT_PEERS: 'не json' })).toThrow(
       /AGENT_PEERS/,
     );
     expect(() =>
-      loadConfig(AgentConfig, { ...agentEnv, AGENT_PEERS: '[{"id":"bob","name":"x","role":"y"}]' }),
+      loadConfig(AgentConfig, { ...agentEnv, AGENT_PEERS: '[{"id":"Bob","name":"x","role":"y"}]' }),
     ).toThrow(/AGENT_PEERS/);
-    expect(() => loadConfig(AgentConfig, { ...agentEnv, AGENT_ENTRY: 'bob' })).toThrow(
+    expect(() => loadConfig(AgentConfig, { ...agentEnv, AGENT_ENTRY: 'Bob' })).toThrow(
       /AGENT_ENTRY/,
     );
     expect(() => loadConfig(AgentConfig, { ...agentEnv, AGENT_MAX_STEPS: '0' })).toThrow(
