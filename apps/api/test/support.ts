@@ -1,4 +1,6 @@
 import { generateKeyPairSync } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import {
   createApiCore,
   type ApiCore,
@@ -14,7 +16,13 @@ import {
 } from '@swag/adapter-memory';
 import { createBillingCore, type BillingCore, type OrgDirectory } from '@swag/billing-core';
 import { createJoseSigner, createJoseVerifier } from '@swag/adapter-jose';
-import { actorFromClaims, type Actor, type Role, type TokenRevocationList } from '@swag/contracts';
+import {
+  actorFromClaims,
+  NodeManifest,
+  type Actor,
+  type Role,
+  type TokenRevocationList,
+} from '@swag/contracts';
 import { createAuthenticator } from '../src/auth.ts';
 import { createRevocationSync, type RevocationSync } from '../src/revocations.ts';
 import { createBlockHandler, createStreamRegistry } from '../src/streams.ts';
@@ -76,7 +84,7 @@ export async function makeApi(
     ids: { uuid: () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}` },
     log: options.log ?? silentLog,
     trace: { currentTraceId: () => null },
-    nodeTypes: options.nodeTypes ?? emptyNodeTypes(),
+    nodeTypes: options.nodeTypes ?? formNodeTypes(),
     limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
     billing,
     secrets: createMemorySecretStore(),
@@ -85,8 +93,11 @@ export async function makeApi(
 }
 
 // Спека 021, T-8: пустой реестр до T-11 (загрузка пакетов узлов в api).
-export function emptyNodeTypes(): NodeRegistry {
-  const created = createNodeRegistry([]);
+// Спека 009, 4.3: форма роя превращается в узлы swag/llm-agent, поэтому реестр тестов содержит его манифест.
+export function formNodeTypes(): NodeRegistry {
+  const path = createRequire(import.meta.url).resolve('@swag/node-llm-agent/swag-node.json');
+  const manifest = NodeManifest.parse(JSON.parse(readFileSync(path, 'utf8')));
+  const created = createNodeRegistry([manifest]);
   if (!created.ok) throw new Error(created.error.code);
   return created.registry;
 }

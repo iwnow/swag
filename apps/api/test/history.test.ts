@@ -9,7 +9,7 @@ import { startApiCore } from '../src/start.ts';
 import {
   body,
   bearer,
-  emptyNodeTypes,
+  formNodeTypes,
   makeBilling,
   makeStartedAuth,
   silentLog,
@@ -47,7 +47,7 @@ describe.skipIf(!url)('история роёв на Postgres', () => {
         ids: { uuid: () => randomUUID() },
         log: silentLog,
         trace: { currentTraceId: () => null },
-        nodeTypes: emptyNodeTypes(),
+        nodeTypes: formNodeTypes(),
         limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
       },
     );
