@@ -5,6 +5,7 @@ import { OrgId, UserId } from './auth.ts';
 import { NodeId, ProcessGraph } from './graph.ts';
 import { NodeTypeRef } from './node.ts';
 import { NodeInvocationErrorCode } from './node-invocation.ts';
+import { ProcessId } from './process.ts';
 
 // Спека 016, 4.1. W3C trace-id: 32 hex в нижнем регистре, не нули.
 export const TraceId = z
@@ -34,6 +35,7 @@ export const PlatformEventInput = z.discriminatedUnion('type', [
       maxTokens: MaxTokens.nullable().optional(), // до спеки 031 поля нет (031, 4.1)
       orgId: OrgId.nullable().optional(), // организация автора; null — рой до 024 (024, 4.3)
       createdBy: UserId.nullable().optional(), // автор (024, 4.3)
+      processId: ProcessId.nullable().optional(), // процесс запуска; null — POST /swarms (033, 4.2)
       agents: z.array(AgentSpec.partial({ budgetMicroUsd: true, maxTokens: true })),
       graph: ProcessGraph.optional(), // спека 009, 4.5: граф роя; для формы — formGraph
     }),

@@ -67,8 +67,13 @@ export const LaunchProgram = z.strictObject({
   type: NodeTypeRef,
   settings: z.record(z.string(), z.unknown()), // после validateSettings: с умолчаниями
   credentials: z.record(z.string(), SecretName),
+  stateKey: z.string().min(1).max(200).optional(), // нет — оркестратор берёт swarm:<swarmId>:<id> (как в 009; 033, REQ-033-18)
 });
 export type LaunchProgram = z.infer<typeof LaunchProgram>;
+
+// Спека 033, 4.2: вход шага-входа от триггера запуска (REQ-033-15). null — задача пользователя, как в 009.
+export const LaunchTrigger = z.strictObject({ nodeId: NodeId, event: z.unknown() });
+export type LaunchTrigger = z.infer<typeof LaunchTrigger>;
 
 // api → orchestrator. Строгая схема (4.6.1 спеки 001 остаётся).
 export const SwarmLaunch = z.strictObject({
@@ -82,6 +87,7 @@ export const SwarmLaunch = z.strictObject({
   edges: z.array(GraphEdge).max(GRAPH_MAX_EDGES),
   entry: NodeId,
   exit: NodeId,
+  trigger: LaunchTrigger.nullable().default(null), // спека 033, 4.2
 });
 export type SwarmLaunch = z.infer<typeof SwarmLaunch>;
 

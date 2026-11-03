@@ -420,6 +420,7 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
             edges: graph.edges,
             entry: graph.entry,
             exit: graph.exit,
+            trigger: null,
           });
         } catch (error) {
           log.error('orchestrator unavailable', { swarmId, err: error });

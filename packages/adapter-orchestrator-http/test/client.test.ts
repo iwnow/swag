@@ -53,6 +53,7 @@ describe('createOrchestratorHttpClient', () => {
       edges: [],
       entry: 'agent-1',
       exit: 'agent-1',
+      trigger: null,
     });
     await client.stop(SWARM_ID);
 
@@ -85,6 +86,7 @@ describe('createOrchestratorHttpClient', () => {
           edges: [],
           entry: 'agent-1',
           exit: 'agent-1',
+          trigger: null,
         }),
       ).rejects.toThrow();
       expect(Date.now() - started).toBeLessThan(1000);
