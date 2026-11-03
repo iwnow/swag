@@ -1,6 +1,7 @@
-import type { SecretStore, SwarmStore } from '@swag/api-core';
+import type { ProcessStore, ProcessRecord, SecretStore, SwarmStore } from '@swag/api-core';
 import { applyEvent, createNodeRegistry, type SwarmView } from '@swag/api-integration';
 import type { BalanceStore } from '@swag/billing-core';
+import type { JobRecord, JobStore, RunRecord, TickRecord } from '@swag/scheduler-core';
 import type { BalanceEntry, PlatformEvent, SecretSummary } from '@swag/contracts';
 import type {
   IdentityStore,
@@ -455,6 +456,185 @@ export function createMemoryNodePorts() {
       timeoutMs: 30000,
       abortGraceMs: 1000,
       frameMaxBytes: 1048576,
+    },
+  };
+}
+
+// Спека 033, 4.7 и 4.8: хранилище заданий и запусков в памяти с семантикой createPostgresJobStore.
+// Аренда задания — внутреннее поле хранилища (в JobRecord её нет). Каждая операция синхронна внутри
+// async-функции, поэтому проверка и запись атомарны на одном потоке JS.
+const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T; // событие и записи — JSON-данные
+const at = (iso: string): number => Date.parse(iso);
+const dueTime = (job: JobRecord): number => (job.nextRunAt === null ? Infinity : at(job.nextRunAt));
+const byCreatedAt = (a: RunRecord, b: RunRecord): number => at(a.createdAt) - at(b.createdAt);
+const pending = (run: RunRecord): boolean => run.status === 'queued' || run.status === 'launching';
+
+export function createMemoryJobStore(): JobStore {
+  const jobs = new Map<string, JobRecord>();
+  const leases = new Map<string, string>(); // processId → leaseUntil, пока аренда не снята
+  const runs = new Map<string, RunRecord>();
+
+  const runsOf = (processId: string): RunRecord[] =>
+    [...runs.values()].filter((run) => run.processId === processId);
+  const leased = (processId: string, now: string): boolean => {
+    const until = leases.get(processId);
+    return until !== undefined && at(until) >= at(now);
+  };
+  const insertRuns = (list: RunRecord[]): void => {
+    const ids = list.map((run) => run.id);
+    if (new Set(ids).size !== ids.length || ids.some((id) => runs.has(id))) {
+      throw new Error('run already exists');
+    }
+    for (const run of list) runs.set(run.id, copy(run));
+  };
+
+  return {
+    async put(record: JobRecord): Promise<void> {
+      jobs.set(record.processId, copy(record));
+    },
+
+    async get(processId: string): Promise<JobRecord | null> {
+      const job = jobs.get(processId);
+      return job ? copy(job) : null;
+    },
+
+    async getMany(processIds: readonly string[]): Promise<JobRecord[]> {
+      return processIds.flatMap((id) => {
+        const job = jobs.get(id);
+        return job ? [copy(job)] : [];
+      });
+    },
+
+    async delete(processId: string): Promise<boolean> {
+      leases.delete(processId);
+      for (const run of runsOf(processId)) runs.delete(run.id);
+      return jobs.delete(processId);
+    },
+
+    async claimDue(now: string, leaseUntil: string, limit: number): Promise<JobRecord[]> {
+      const due = [...jobs.values()]
+        .filter((job) => job.enabled && dueTime(job) <= at(now) && !leased(job.processId, now))
+        .sort((a, b) => dueTime(a) - dueTime(b))
+        .slice(0, limit);
+      return due.map((job) => {
+        leases.set(job.processId, leaseUntil);
+        return copy(job);
+      });
+    },
+
+    async recordTick(processId: string, tick: TickRecord): Promise<void> {
+      const job = jobs.get(processId);
+      if (!job) throw new Error('job not found');
+      insertRuns(tick.enqueue); // проверка до записи: при сбое курсор не меняется
+      Object.assign(job, {
+        cursor: tick.cursor,
+        nextRunAt: tick.nextRunAt,
+        lastPollAt: tick.lastPollAt,
+        lastError: tick.lastError,
+        consecutiveFailures: tick.consecutiveFailures,
+        enabled: tick.enabled,
+        disabledReason: tick.disabledReason,
+      });
+      leases.delete(processId);
+    },
+
+    async enqueue(run: RunRecord): Promise<void> {
+      if (!jobs.has(run.processId)) throw new Error('job not found');
+      insertRuns([run]);
+    },
+
+    async counts(processIds: readonly string[]) {
+      const result = new Map<string, { queued: number; running: number }>();
+      for (const id of processIds) {
+        const own = runsOf(id);
+        result.set(id, {
+          queued: own.filter(pending).length,
+          running: own.filter((run) => run.status === 'running').length,
+        });
+      }
+      return result;
+    },
+
+    async takeQueued(limit: number): Promise<RunRecord[]> {
+      return [...runs.values()]
+        .filter((run) => run.status === 'queued')
+        .sort(byCreatedAt)
+        .slice(0, limit)
+        .map((run) => {
+          run.status = 'launching';
+          return copy(run);
+        });
+    },
+
+    async setRun(id, patch): Promise<void> {
+      const run = runs.get(id);
+      if (!run) return;
+      run.status = patch.status;
+      if (patch.reason !== undefined) run.reason = patch.reason;
+      if (patch.launchedAt !== undefined) run.launchedAt = patch.launchedAt;
+      if (patch.finishedAt !== undefined) run.finishedAt = patch.finishedAt;
+      if (!pending(run)) run.event = null;
+    },
+
+    async cancelQueued(processId: string): Promise<number> {
+      const queued = runsOf(processId).filter((run) => run.status === 'queued');
+      for (const run of queued) {
+        run.status = 'cancelled';
+        run.event = null;
+      }
+      return queued.length;
+    },
+
+    async byStatus(status, limit) {
+      return [...runs.values()]
+        .filter((run) => run.status === status)
+        .sort(byCreatedAt)
+        .slice(0, limit)
+        .map((run) => copy(run));
+    },
+
+    async runs(processId: string, limit: number): Promise<RunRecord[]> {
+      return runsOf(processId)
+        .sort((a, b) => byCreatedAt(b, a))
+        .slice(0, limit)
+        .map((run) => copy(run));
+    },
+  };
+}
+
+// Спека 033, 4.6: определение процесса в памяти. list — по updatedAt по убыванию, как индекс 4.8.
+export function createMemoryProcessStore(): ProcessStore {
+  const records = new Map<string, ProcessRecord>();
+
+  return {
+    async create(record: ProcessRecord): Promise<void> {
+      if (records.has(record.id)) throw new Error('process already exists');
+      records.set(record.id, copy(record));
+    },
+
+    async update(record: ProcessRecord): Promise<void> {
+      if (!records.has(record.id)) throw new Error('process not found');
+      records.set(record.id, copy(record));
+    },
+
+    async get(id: string): Promise<ProcessRecord | null> {
+      const record = records.get(id);
+      return record ? copy(record) : null;
+    },
+
+    async list(orgId: string | null): Promise<ProcessRecord[]> {
+      return [...records.values()]
+        .filter((record) => orgId === null || record.orgId === orgId)
+        .sort((a, b) => at(b.updatedAt) - at(a.updatedAt))
+        .map((record) => copy(record));
+    },
+
+    async count(orgId: string): Promise<number> {
+      return [...records.values()].filter((record) => record.orgId === orgId).length;
+    },
+
+    async delete(id: string): Promise<boolean> {
+      return records.delete(id);
     },
   };
 }

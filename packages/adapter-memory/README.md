@@ -1,6 +1,6 @@
 # @swag/adapter-memory
 
-Адаптеры портов в памяти процесса: `SwarmStore` из `api-core` (роевое хранилище), `IdentityStore`, `Mailer` и `RateLimiter` из `identity-core` (спеки 012 и 024), `BalanceStore` из `billing-core` (спека 013). Для тестов ядер и оболочек; при перезапуске всё теряется.
+Адаптеры портов в памяти процесса: `SwarmStore` из `api-core` (роевое хранилище), `IdentityStore`, `Mailer` и `RateLimiter` из `identity-core` (спеки 012 и 024), `BalanceStore` из `billing-core` (спека 013), `JobStore` из `scheduler-core` и `ProcessStore` из `api-core` (спека 033). Для тестов ядер и оболочек; при перезапуске всё теряется.
 
 ## Задачи
 
@@ -8,6 +8,7 @@
 - Реализовать порты identity в памяти (спека 012, 4.7) для тестов `identity-core` (T-6…T-10) и общего набора тестов хранилища.
 - Реализовать методы доступа порта `IdentityStore` (спека 024, 4.9, T-5): пользователи, блокировка, приглашения, организации, отзывы, уборка.
 - Реализовать `BalanceStore` в памяти (спека 013, 4.2, T-3) с той же семантикой, что у Postgres, для тестов `billing-core` и общего набора тестов хранилища баланса.
+- Реализовать `JobStore` (задания и запуски планировщика, спека 033, 4.7, T-10) и `ProcessStore` (определения процессов, 4.6) в памяти — для тестов `scheduler-core` и `api-core`, с общими наборами тестов.
 - Порты узлов без узлов (спека 026, 4.10) — `createMemoryNodePorts`: пустой реестр, песочница не создаётся. Для оболочек и тестов без узлов.
 - Рабочие хранилища — `@swag/adapter-postgres` (спека 003, T-5, T-6; спека 012, T-11); этот адаптер в `apps/api` больше не используется.
 
@@ -21,6 +22,9 @@
 - `createMemoryBalanceStore()` — `BalanceStore` (спека 013, 4.2): `balance`, `entries`, `topup`, `reserve`, `settle`, `holds`. Строка организации появляется при первом пополнении; `id` записей — общий счётчик от 1 на все организации; `ts` — строка как передана. Каждая операция синхронна внутри async-функции: проверка и запись не разделены `await`.
 - `createMemorySecretStore()` — `SecretStore` из `api-core` (спека 026, 4.6, T-8): `list`, `put`, `delete` по организации. Значение секрета не хранит — только имя, подсказку и время обновления; подсказка — последние 4 символа при длине значения от 16, иначе `null`, как в Postgres. `list` отдаёт список, отсортированный по имени.
 - `createMemoryNodePorts()` — порты узлов без узлов (спека 026, 4.10): пустой реестр, песочница не создаётся.
+- `createMemoryJobStore()` — `JobStore` (спека 033, 4.7, 4.8): `put`, `get`, `getMany`, `delete` (запуски каскадом), `claimDue` с арендой, `recordTick` (курсор, поля и запуски одной операцией), `enqueue`, `counts`, `takeQueued`, `setRun`, `cancelQueued`, `byStatus`, `runs`. Аренда — внутреннее поле хранилища, в `JobRecord` её нет.
+- `createMemoryProcessStore()` — `ProcessStore` (спека 033, 4.6): `create`, `update`, `get`, `list` (`null` — все организации; по `updatedAt` по убыванию), `count`, `delete`.
+- `test/job-store.cases.ts` и `test/process-store.cases.ts` — общие наборы `jobStoreCases(name, makeStore, makeSecond?)` и `processStoreCases(name, makeStore, makeOwner?)` (AC-033-11): свойства каждого метода, конкурентный `claimDue` и `takeQueued` через `makeSecond`, атомарность `recordTick`. Вызываются из `test/job-store.test.ts` и `test/process-store.test.ts` здесь и из тестов Postgres (T-11). Проверки идут по своим id, поэтому набор не требует пустой базы.
 - `test/balance-store.contract.ts` — общий набор `balanceStoreContract(name, makeStore)` (AC-013-1, AC-013-11, AC-013-12 и проверки пагинации, `insufficient`, повтора `swarmId`, `holds`). Вызывается из `test/balance-store.test.ts` здесь и из теста Postgres-хранилища баланса.
 - Тесты: `test/identity-store.test.ts` (общий набор на памяти и `hasSupervisor === false` на пустом хранилище), `test/rate-limiter.test.ts` (AC-012-14, REQ-012-17), `test/mailer.test.ts`.
 
@@ -35,11 +39,13 @@
 - `updateUser` с неизвестным `id` бросает `Error`; проверку существования делает ядро до вызова.
 - Ограничитель при более чем 10000 записях проходит весь `Map` на каждый `hit` (N-21).
 - Баланс: `balance` для организации без строки отдаёт нули; `reserve` и `settle` не проверяют формат `orgId` и `swarmId` (проверяет ядро); `settle` без открытого резерва отдаёт `null`.
+- Задания: `recordTick` и `enqueue` для несуществующего задания, а также занятый id запуска бросают `Error`; `recordTick` проверяет запуски до записи, поэтому при сбое курсор не меняется. `setRun` для неизвестного id ничего не делает, как `UPDATE` без строк в Postgres.
+- `ProcessStore.update` для неизвестного id бросает `Error` (как `updateUser`).
 
 ## Связи
 
 - Порты: `SwarmStore` из `@swag/api-core`, `IdentityStore`, `Mailer`, `RateLimiter` из `@swag/identity-core`, `BalanceStore` из `@swag/billing-core` (только типы), `SecretStore` из `@swag/api-core` (тип порта).
-- Использует: `@swag/api-core` (типы), `@swag/api-integration`, `@swag/billing-core` (типы), `@swag/contracts`, `@swag/identity-core`.
+- Использует: `@swag/api-core` (типы), `@swag/api-integration`, `@swag/billing-core` (типы), `@swag/contracts`, `@swag/identity-core`, `@swag/scheduler-core` (типы `JobStore`, `JobRecord`, `RunRecord`, `TickRecord`).
 - Потребители: тесты `packages/api-core`, `apps/api`; тесты `identity-core` (T-6…T-10) и общий набор хранилища (T-11); тесты `billing-core` и общий набор хранилища баланса (спека 013).
 
 ## Ключевые решения
@@ -51,6 +57,9 @@
 - Правила `confirmRegistration` и `rotateSession` (4.3) повторяют шаги SQL: токен подтверждения не гасится при `email_taken`; сессия с `previousHash = oldHash` отзывается при `reused`.
 - Общий набор тестов — функция, а не файл `.test.ts`: Vitest его не запускает сам, его вызывают тесты адаптеров. Набор не использует внутреннее состояние адаптера, поэтому подходит и для Postgres.
 - Ограничитель сверяет окно по `resetAt <= now`: запись истёкшего окна заменяется при следующем `hit` по её ключу.
+- Задания (033, 4.7): аренда свободна, когда `leaseUntil < now` (равенство — ещё занята). Времена сравниваются через `Date.parse`, `nextRunAt = null` в `claimDue` не попадает. `put` аренду не трогает: она не часть `JobRecord`, снимается `recordTick` и `delete`.
+- Копии (033, 4.6–4.7): записи отдаются и принимаются через `JSON`-копию, а не `structuredClone`: `structuredClone` в `lib` проекта не объявлен (`lib: ES2023`, `types: []`), а записи состоят из JSON-данных (событие запуска — из JSON-запроса). Поле со значением `undefined` в записи пропадёт; запуски и задания приходят из JSON, поэтому поведение не меняется.
+- Сортировка запусков по `createdAt` стабильна: при равных временах порядок — порядок постановки.
 
 ## Спеки
 
@@ -59,3 +68,4 @@
 - 012 — 4.3, 4.7, 4.8; задача T-5 (REQ-012-17, AC-012-14, AC-012-30 — память).
 - 024 — 4.9, 4.11; задачи T-5 (AC-024-4 — память, `test/identity-store.contract.ts`).
 - 026 — 4.6, T-8: `createMemorySecretStore` (реализация `SecretStore`).
+- 033 — 4.6, 4.7, 4.8; задача T-10 (AC-033-11 — память): `createMemoryJobStore`, `createMemoryProcessStore`, `test/job-store.cases.ts`, `test/process-store.cases.ts`.

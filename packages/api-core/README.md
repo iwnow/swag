@@ -18,6 +18,7 @@
 
 - `createApiCore(deps)` с портами `SwarmStore` (асинхронный), `OrchestratorClient`, `Billing`, `Clock`, `IdGenerator`, `Logger` (`debug`/`info`/`warn`/`error` с `LogContext`), `TraceContext`.
 - Порт `SecretStore` (спека 026, 4.6): `list`, `put`, `delete` для секретов организации; обязательная зависимость `ApiCoreDeps` (`secrets`). Реализация — `createPostgresSecretStore` в `adapter-postgres`, в тестах — `createMemorySecretStore` из `adapter-memory`.
+- Порт `ProcessStore` и тип `ProcessRecord` (033, 4.6, T-10; только типы): `create`, `update`, `get`, `list`, `count`, `delete` для определений процессов организации. Реализации — `createMemoryProcessStore` в `adapter-memory` и хранилище Postgres (T-11). Операции процессов и `ApiCoreDeps.processes` — T-19.
 - Порт `Billing` (013, 4.4): `reserve(orgId, swarmId, amountMicroUsd)` → `'ok' | 'insufficient'` (сбой — исключение), `settle(swarmId, spentMicroUsd)`, `holds()`. Обязательная зависимость `ApiCoreDeps`; реализацию передаёт оболочка.
 - Порт `nodeTypes: NodeRegistry` (021, 4.6) из `@swag/api-integration`: обязательная зависимость `ApiCoreDeps`, реестр собирает оболочка.
 - Операции (все асинхронные): `createSwarm(actor, body)`, `checkGraphFor(actor, body)` (009, 4.9), `listSwarms(actor)`, `getSwarm(actor, id)`, `getEvents(actor, id, after)`, `stopSwarm(actor, id)`, `subscribe(actor, swarmId, after, listener)`, `stopSwarmsOfUser(userId)`, `ingestEvent`, `ingestMessage`, `closeInterrupted`, `settlePending`; синхронные `info`, `listNodeTypes(actor)` → `{ items }` и `getNodeType(actor, ref)` → манифест.
@@ -81,6 +82,7 @@
 - 000 — заглушка.
 - 009 — граф роя в `createSwarm`, `checkGraphFor`, `SwarmLaunch` с графом (4.4, 4.5, 4.9, T-4; REQ-009-1, 2, 5, 6, 7; AC-009-5 (ядро), AC-009-12…15).
 - 004 — бюджеты в `createSwarm` (4.7, REQ-004-1, REQ-004-2, AC-004-2).
+- 033 — порт `ProcessStore` и `ProcessRecord` (4.6, T-10), только типы; `SchedulerClient` и `ApiCoreDeps` — позже (T-13, T-19).
 - 031 — лимит ответа в `createSwarm` (4.3, REQ-031-2, REQ-031-3, AC-031-2, AC-031-3).
 - 001 — 4.5 ([REST и WebSocket](../../docs/spec/001-walking-skeleton.md#45-api)).
 - 002 — `llm.call` от `llm-gateway`: приём, `seq`, `unknown_swarm` (REQ-002-15, AC-002-26).
