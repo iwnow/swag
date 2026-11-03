@@ -76,7 +76,7 @@ describe.skipIf(!url)('adapter-postgres хранилище заданий', () =
   // Без skip locked вызов ждал бы блокировку и не уложился бы в таймаут теста.
   it('AC-033-11: claimDue пропускает строку, заблокированную другим соединением (skip locked)', async () => {
     const store = createPostgresJobStore(pool);
-    const ids = [randomUUID(), randomUUID(), randomUUID()];
+    const ids: string[] = [randomUUID(), randomUUID(), randomUUID()];
     const [locked, ...free] = ids;
     try {
       for (const [i, id] of ids.entries()) await store.put(jobOf(id, at(i + 1)));
@@ -104,7 +104,7 @@ describe.skipIf(!url)('adapter-postgres хранилище заданий', () =
   it('AC-033-11: takeQueued пропускает запуск, заблокированный другим соединением (skip locked)', async () => {
     const store = createPostgresJobStore(pool);
     const processId = randomUUID();
-    const runIds = [randomUUID(), randomUUID(), randomUUID()];
+    const runIds: string[] = [randomUUID(), randomUUID(), randomUUID()];
     const [locked, ...free] = runIds;
     try {
       await store.put(jobOf(processId, at(0)));
