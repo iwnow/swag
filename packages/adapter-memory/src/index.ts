@@ -1,7 +1,6 @@
 import type { ProcessStore, ProcessRecord, SecretStore, SwarmStore } from '@swag/api-core';
 import { applyEvent, createNodeRegistry, type SwarmView } from '@swag/api-integration';
 import type { BalanceStore } from '@swag/billing-core';
-import type { JobRecord, JobStore, RunRecord, TickRecord } from '@swag/scheduler-core';
 import type { BalanceEntry, PlatformEvent, SecretSummary } from '@swag/contracts';
 import type {
   IdentityStore,
@@ -11,6 +10,7 @@ import type {
   StoredOrganization,
   StoredUser,
 } from '@swag/identity-core';
+import type { JobRecord, JobStore, RunRecord, TickRecord } from '@swag/scheduler-core';
 
 // Спека 001, 4.10; спека 003, REQ-003-10: SwarmStore в памяти с тем же асинхронным портом.
 // Остаётся для тестов ядра; при перезапуске всё теряется. Рабочее хранилище — @swag/adapter-postgres (спека 003, T-5, T-6).
@@ -530,7 +530,7 @@ export function createMemoryJobStore(): JobStore {
         cursor: tick.cursor,
         nextRunAt: tick.nextRunAt,
         lastPollAt: tick.lastPollAt,
-        lastError: tick.lastError,
+        lastError: tick.lastError === null ? null : copy(tick.lastError),
         consecutiveFailures: tick.consecutiveFailures,
         enabled: tick.enabled,
         disabledReason: tick.disabledReason,

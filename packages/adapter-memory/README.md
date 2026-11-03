@@ -24,7 +24,8 @@
 - `createMemoryNodePorts()` — порты узлов без узлов (спека 026, 4.10): пустой реестр, песочница не создаётся.
 - `createMemoryJobStore()` — `JobStore` (спека 033, 4.7, 4.8): `put`, `get`, `getMany`, `delete` (запуски каскадом), `claimDue` с арендой, `recordTick` (курсор, поля и запуски одной операцией), `enqueue`, `counts`, `takeQueued`, `setRun`, `cancelQueued`, `byStatus`, `runs`. Аренда — внутреннее поле хранилища, в `JobRecord` её нет.
 - `createMemoryProcessStore()` — `ProcessStore` (спека 033, 4.6): `create`, `update`, `get`, `list` (`null` — все организации; по `updatedAt` по убыванию), `count`, `delete`.
-- `test/job-store.cases.ts` и `test/process-store.cases.ts` — общие наборы `jobStoreCases(name, makeStore, makeSecond?)` и `processStoreCases(name, makeStore, makeOwner?)` (AC-033-11): свойства каждого метода, конкурентный `claimDue` и `takeQueued` через `makeSecond`, атомарность `recordTick`. Вызываются из `test/job-store.test.ts` и `test/process-store.test.ts` здесь и из тестов Postgres (T-11). Проверки идут по своим id, поэтому набор не требует пустой базы.
+- `test/job-store.cases.ts` и `test/process-store.cases.ts` — общие наборы `jobStoreCases(name, makeStore, makeSecond?)` и `processStoreCases(name, makeStore, makeOwner?)` (AC-033-11): свойства каждого метода, конкурентный `claimDue` и `takeQueued` через `makeSecond`, атомарность `recordTick`. Вызываются из `test/job-store.test.ts` и `test/process-store.test.ts` здесь и из тестов Postgres (T-11). Проверки идут по своим id, поэтому набор не требует пустой базы. Задание, созданное через `putJob`, удаляется в `afterEach` (запуски каскадом), чтобы общая база не копила мусор и не вытесняла свои строки из `claimDue(…, 1000)` и `takeQueued(1000)`.
+- Контракт наборов для адаптеров (Postgres — T-11): `claimDue` отдаёт задания по `nextRunAt`; `takeQueued` и `byStatus` — запуски по `createdAt`; `runs` — по `createdAt` по убыванию. `RETURNING` в Postgres порядок не гарантирует, поэтому адаптер Postgres сортирует результат сам. `counts` содержит запись для каждого запрошенного id (нули для пустых). Даты в записях — строки `toISOString()`. Тест двух соединений на Postgres идёт через `makeSecond` на втором соединении пула.
 - `test/balance-store.contract.ts` — общий набор `balanceStoreContract(name, makeStore)` (AC-013-1, AC-013-11, AC-013-12 и проверки пагинации, `insufficient`, повтора `swarmId`, `holds`). Вызывается из `test/balance-store.test.ts` здесь и из теста Postgres-хранилища баланса.
 - Тесты: `test/identity-store.test.ts` (общий набор на памяти и `hasSupervisor === false` на пустом хранилище), `test/rate-limiter.test.ts` (AC-012-14, REQ-012-17), `test/mailer.test.ts`.
 
@@ -40,7 +41,7 @@
 - Ограничитель при более чем 10000 записях проходит весь `Map` на каждый `hit` (N-21).
 - Баланс: `balance` для организации без строки отдаёт нули; `reserve` и `settle` не проверяют формат `orgId` и `swarmId` (проверяет ядро); `settle` без открытого резерва отдаёт `null`.
 - Задания: `recordTick` и `enqueue` для несуществующего задания, а также занятый id запуска бросают `Error`; `recordTick` проверяет запуски до записи, поэтому при сбое курсор не меняется. `setRun` для неизвестного id ничего не делает, как `UPDATE` без строк в Postgres.
-- `ProcessStore.update` для неизвестного id бросает `Error` (как `updateUser`).
+- `ProcessStore.update` для неизвестного id бросает `Error` (как `updateUser`; трактовка — D-185).
 
 ## Связи
 
@@ -58,7 +59,7 @@
 - Общий набор тестов — функция, а не файл `.test.ts`: Vitest его не запускает сам, его вызывают тесты адаптеров. Набор не использует внутреннее состояние адаптера, поэтому подходит и для Postgres.
 - Ограничитель сверяет окно по `resetAt <= now`: запись истёкшего окна заменяется при следующем `hit` по её ключу.
 - Задания (033, 4.7): аренда свободна, когда `leaseUntil < now` (равенство — ещё занята). Времена сравниваются через `Date.parse`, `nextRunAt = null` в `claimDue` не попадает. `put` аренду не трогает: она не часть `JobRecord`, снимается `recordTick` и `delete`.
-- Копии (033, 4.6–4.7): записи отдаются и принимаются через `JSON`-копию, а не `structuredClone`: `structuredClone` в `lib` проекта не объявлен (`lib: ES2023`, `types: []`), а записи состоят из JSON-данных (событие запуска — из JSON-запроса). Поле со значением `undefined` в записи пропадёт; запуски и задания приходят из JSON, поэтому поведение не меняется.
+- Копии (033, 4.6–4.7): записи отдаются и принимаются через `JSON`-копию, включая `lastError` в `recordTick`, а не `structuredClone`: `structuredClone` в `lib` проекта не объявлен (`lib: ES2023`, `types: []`), а записи состоят из JSON-данных (событие запуска — из JSON-запроса). Поле со значением `undefined` в записи пропадёт; запуски и задания приходят из JSON, поэтому поведение не меняется.
 - Сортировка запусков по `createdAt` стабильна: при равных временах порядок — порядок постановки.
 
 ## Спеки
