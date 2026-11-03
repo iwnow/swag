@@ -46,7 +46,7 @@ packages/ui-angular/    общий Angular-пакет фронтендов: се
 |---|---|---|
 | `orchestrator-core` | Исполнение графа роя (шаги, команды, программы; спека 009): песочницы, сети, ключи, accounts шины, уборка; исполнение вызова узла `invokeNode` (спека 026) | `apps/orchestrator` (Fastify) |
 | `llm-gateway-core` (спека 002) | Вызов модели через LLM Gateway: проверки запроса, каталог моделей, стоимость, событие `llm.call`, поток, сверка с апстримом | `apps/llm-gateway` (Fastify) |
-| `api-core` | Координатор, рои (граф роя и его проверка `checkGraph`, спека 009), расходы, доступ к данным пользователя по `Actor`, каталог типов узлов (`listNodeTypes`, `getNodeType`, право `node.read`), секреты организации (`listSecrets`, `putSecret`, `deleteSecret`, право `secret.manage`) | `apps/api` (Fastify) |
+| `api-core` | Координатор, рои (граф роя, проверка через `checkGraph` из `api-integration` и `checkGraphFor`, спека 009), расходы, доступ к данным пользователя по `Actor`, каталог типов узлов (`listNodeTypes`, `getNodeType`, право `node.read`), секреты организации (`listSecrets`, `putSecret`, `deleteSecret`, право `secret.manage`) | `apps/api` (Fastify) |
 | `identity-core` (спека 012) | Регистрация компании, вход, сессии и токены, роли, лимиты частоты, первый супервизор (блокировка и проверка доступа — спека 024) | `apps/identity` (Fastify) |
 | `egress-proxy-core` (спека 026) | Исходящий прокси узлов: проверка `CONNECT` по гранту, `egress` и публичности адресов (`authorize`, `isPublicAddress`) | `apps/egress-proxy` (`node:http`) |
 | `billing-core` (спека 013) | Баланс по предоплате: пополнение, резерв бюджета роя, закрытие резерва по ledger | в MVP подключается в `apps/api`, позже свой сервис |
@@ -141,7 +141,7 @@ HTTP / CLI / UI →│ контроллер → фабрика ядра(deps) �
 
 **Исполнение в оркестраторе** (`graphPlan` из `api-integration`, `packages/orchestrator-core`):
 1. `graphPlan` строит шаги: программа — шаг сама; команда — шаг с id агента-входа. `next(stepId)` — цели исходящих `flow`, `peers(agentId)` — соседи по `link`.
-2. Env агентов: `AGENT_PEERS` — соседи по `link`, `AGENT_ENTRY` — агент-вход команды. Агенту-входу дополнительно `AGENT_TASK_FROM` (`user` для шага-входа, иначе id шага-источника его входящего `flow`) и `AGENT_RESULT_TO` (`user`, если команда — шаг-выход, иначе `process`). Промпт по этим полям — в `packages/agent-core/src/prompt.ts`: строка о том, кто ставит задачу и куда уходит итог, и описание `finish`.
+2. Env агентов: `AGENT_PEERS` — соседи по `link`, `AGENT_ENTRY` — агент-вход команды. Агенту-входу дополнительно `AGENT_TASK_FROM` (id шага-источника его входящего `flow`; входящего `flow` нет — `user`) и `AGENT_RESULT_TO` (`user`, если команда — шаг-выход, иначе `process`). Промпт по этим полям — в `packages/agent-core/src/prompt.ts`: строка о том, кто ставит задачу и куда уходит итог, и описание `finish`.
 3. Когда агенты стартовали, задача уходит шагу-входу, затем публикуется `swarm.started`.
 4. **Программа** получает вход потока: `node.started` → `invokeNode` (026) с `call: { kind: 'execute', input }` и `stateKey = swarm:<swarmId>:<nodeId>` → `node.completed` с `durationMs` и выход по `next`. Ошибка — `node.failed` и `swarm.failed` с причиной `node_failed`, `detail: '<nodeId>: <code>'`.
 5. **Команда** получает вход потоком: оркестратор публикует в шину сообщение агенту-входу (`from` — шаг-источник, текст — `valueText(value)`). Выход — `agent.result` агента-входа. Песочницы команды убираются (`agent.stopped`), выход передаётся по `next`.
