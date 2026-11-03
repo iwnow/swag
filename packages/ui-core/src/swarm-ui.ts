@@ -159,10 +159,28 @@ export function swarmFormInput(
 const FAILURE_REASON_TEXT: Record<string, string> = {
   budget_exceeded: 'бюджет исчерпан',
   gateway_unavailable: 'шлюз моделей недоступен',
+  node_failed: 'ошибка шага процесса',
 };
 
 export function failureReasonText(reason: string): string {
   return FAILURE_REASON_TEXT[reason] ?? reason;
+}
+
+export type NodeEvent = Extract<
+  PlatformEvent,
+  { type: 'node.started' | 'node.completed' | 'node.failed' }
+>;
+
+// Спека 009, 4.10: строка события программы графа в ленте роя.
+export function formatNodeEvent(event: NodeEvent): string {
+  switch (event.type) {
+    case 'node.started':
+      return `${event.data.nodeId} запущен`;
+    case 'node.completed':
+      return `${event.data.nodeId} завершён за ${event.data.durationMs} мс`;
+    case 'node.failed':
+      return `${event.data.nodeId}: ошибка ${event.data.code} — ${event.data.message}`;
+  }
 }
 
 function formatMicroUsd6(microUsd: number): string {
