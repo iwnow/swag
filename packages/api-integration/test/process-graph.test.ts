@@ -215,26 +215,13 @@ describe('checkGraph', () => {
       ],
     });
     const { issues } = check(g);
-    expect(issues).toContainEqual({
-      code: 'edge_unknown_node',
-      path: 'edges.0',
-      message: expect.any(String),
-    });
-    expect(issues).toContainEqual({
-      code: 'edge_self',
-      path: 'edges.1',
-      message: expect.any(String),
-    });
-    expect(issues).toContainEqual({
-      code: 'edge_duplicate',
-      path: 'edges.3',
-      message: expect.any(String),
-    });
-    expect(issues).toContainEqual({
-      code: 'link_requires_agents',
-      path: 'edges.4',
-      message: expect.any(String),
-    });
+    expect(codes(issues)).toEqual([
+      'edge_unknown_node',
+      'edge_self',
+      'edge_duplicate',
+      'link_requires_agents',
+      'unreachable',
+    ]);
   });
 
   it('AC-009-7: flow в агента, который не вход команды, — flow_not_at_team_entry', () => {
@@ -245,11 +232,18 @@ describe('checkGraph', () => {
         { from: 'p', to: 'b', kind: 'flow' },
       ],
     });
-    expect(check(g).issues).toContainEqual({
-      code: 'flow_not_at_team_entry',
-      path: 'edges.1',
-      message: expect.any(String),
+    expect(codes(check(g).issues)).toEqual(['flow_not_at_team_entry', 'unreachable']);
+  });
+
+  it('AC-009-7: flow между агентами одной команды — flow_not_at_team_entry, без flow_cycle', () => {
+    const g = graph({
+      nodes: [agent('a'), agent('b')],
+      edges: [
+        { from: 'a', to: 'b', kind: 'link' },
+        { from: 'a', to: 'b', kind: 'flow' },
+      ],
     });
+    expect(codes(check(g).issues)).toEqual(['flow_not_at_team_entry']);
   });
 
   it('AC-009-8: второй flow в программу — flow_fan_in, flow в шаг-вход — entry_has_input', () => {
@@ -263,16 +257,7 @@ describe('checkGraph', () => {
       exit: 'p',
     });
     const { issues } = check(g);
-    expect(issues).toContainEqual({
-      code: 'flow_fan_in',
-      path: 'edges.1',
-      message: expect.any(String),
-    });
-    expect(issues).toContainEqual({
-      code: 'entry_has_input',
-      path: 'edges.2',
-      message: expect.any(String),
-    });
+    expect(codes(issues)).toEqual(['flow_fan_in', 'entry_has_input', 'unreachable']);
     expect(find(issues, 'flow_fan_in')).toHaveLength(1);
   });
 
@@ -293,6 +278,16 @@ describe('checkGraph', () => {
     ]);
     expect(find(issues, 'link_requires_agents')).toEqual([]);
     expect(find(issues, 'edge_duplicate')).toEqual([]);
+
+    const linkCycle = graph({
+      nodes: [agent('a'), agent('b'), agent('c')],
+      edges: [
+        { from: 'a', to: 'b', kind: 'link' },
+        { from: 'b', to: 'c', kind: 'link' },
+        { from: 'c', to: 'a', kind: 'link' },
+      ],
+    });
+    expect(check(linkCycle)).toEqual({ ok: true, issues: [] });
   });
 
   it('AC-009-10: программа без входа — unreachable; exit не агент-вход — exit_not_step; неизвестные entry и exit — entry_unknown, exit_unknown', () => {
@@ -443,5 +438,6 @@ describe('valueText', () => {
     expect(valueText({ n: 1 })).toBe('{"n":1}');
     expect(valueText({ text: 5 })).toBe('{"text":5}');
     expect(valueText(null)).toBe('null');
+    expect(valueText(undefined)).toBe('null');
   });
 });

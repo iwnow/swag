@@ -188,11 +188,12 @@ export function checkGraph(graph: ProcessGraph, deps: GraphCheckDeps): GraphChec
     if (count > 1)
       report('flow_fan_in', `edges.${j}`, `step ${edge.to} already has an incoming flow`);
   }
-  const stepEdges = flows.map(({ edge, j }) => ({
-    from: stepOf(edge.from),
-    to: stepOf(edge.to),
-    j,
-  }));
+  // Петля шага на себя (flow между агентами одной команды) — не цикл между шагами.
+  const stepEdges = flows.flatMap(({ edge, j }) => {
+    const from = stepOf(edge.from);
+    const to = stepOf(edge.to);
+    return from === to ? [] : [{ from, to, j }];
+  });
   const stepLinks = adjacency(stepEdges);
   const inCycle = new Set<NodeId>();
   for (const { from } of stepEdges) {
@@ -351,5 +352,5 @@ export function valueText(value: unknown): string {
   ) {
     return value.text;
   }
-  return JSON.stringify(value);
+  return JSON.stringify(value) ?? 'null';
 }
