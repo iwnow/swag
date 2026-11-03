@@ -1,7 +1,7 @@
 ---
 id: "033"
 title: Сохранённый процесс и запуск по триггеру
-status: draft
+status: ready
 roadmap_stage: 9
 depends_on: ["009", "021", "026", "013", "024"]
 superseded_by: null
