@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { BusMessage, LlmSwarmRegistration, PlatformEventInput } from '@swag/contracts';
+import {
+  SwarmLaunch,
+  type BusMessage,
+  type LlmSwarmRegistration,
+  type PlatformEventInput,
+} from '@swag/contracts';
 import {
   createOrchestratorCore,
   type LlmSwarms,
@@ -782,6 +787,7 @@ type Program = {
   type: string;
   settings: Record<string, unknown>;
   credentials: Record<string, string>;
+  stateKey?: string;
 };
 
 const ECHO = 'example/echo@1.0.0';
@@ -1189,5 +1195,57 @@ describe('orchestrator-core: граф процесса (спека 009, 4.6)', (
       nodeId: 'p',
       errorName: 'Error',
     });
+  });
+});
+
+describe('orchestrator-core: запуск по триггеру и stateKey программ (спека 033, 4.2)', () => {
+  it('AC-033-7: без trigger и stateKey — trigger разбирается в null, программа со stateKey swarm:<id>:<nodeId>; программа со stateKey process:c:x — вызов с ним', async () => {
+    expect(SwarmLaunch.parse({ ...graphBody(CHAIN), programs: [] }).trigger).toBeNull();
+
+    const fake = graphSetup({ respond: stateThenAnswer(OUT) });
+    expect((await fake.core.launch(graphBody(CHAIN))).ok).toBe(true);
+    await startAll(fake, ['a', 'b', 'c']);
+    expect(fake.node.stateSets).toEqual([
+      expect.objectContaining({ stateKey: `swarm:${SWARM}:p` }),
+    ]);
+
+    const keyed = graphSetup({ respond: stateThenAnswer(OUT) });
+    const body = graphBody({ ...CHAIN, programs: [{ ...program('p'), stateKey: 'process:c:x' }] });
+    expect((await keyed.core.launch(body)).ok).toBe(true);
+    await startAll(keyed, ['a', 'b', 'c']);
+    expect(keyed.node.stateSets).toEqual([expect.objectContaining({ stateKey: 'process:c:x' })]);
+  });
+
+  it('AC-033-8: trigger с шагом-входом-программой — execute со входом trigger.event, после старта всех агентов', async () => {
+    const fake = graphSetup();
+    const body = { ...graphBody(CHAIN), trigger: { nodeId: 't', event: { text: 'x' } } };
+    expect((await fake.core.launch(body)).ok).toBe(true);
+    await startAll(fake, ['a', 'b']);
+    expect(invokeOf(fake)).toBeUndefined();
+    await fake.core.handleEvent(agentEvent('agent.started', 'c', {}));
+    expect(invokeOf(fake)).toMatchObject({ call: { kind: 'execute', input: { text: 'x' } } });
+  });
+
+  it('AC-033-8: trigger с шагом-входом-командой — сообщение от t агенту-входу a, AGENT_TASK_FROM=t у a', async () => {
+    const fake = graphSetup();
+    const team = graphBody({
+      agents: ['a', 'b'],
+      programs: [],
+      edges: [{ from: 'a', to: 'b', kind: 'link' }],
+      entry: 'a',
+      exit: 'a',
+    });
+    expect(
+      (await fake.core.launch({ ...team, trigger: { nodeId: 't', event: { n: 1 } } })).ok,
+    ).toBe(true);
+    await startAll(fake, ['a', 'b']);
+    expect(fake.messages).toEqual([
+      expect.objectContaining({ from: 't', to: 'a', text: '{"n":1}' }),
+    ]);
+    const envOf = (agentId: string): Record<string, string> =>
+      [...fake.sandboxes.values()].find((spec) => spec.metadata['swag.agent'] === agentId)?.env ??
+      {};
+    expect(envOf('a')).toMatchObject({ AGENT_ENTRY: 'a', AGENT_TASK_FROM: 't' });
+    expect(envOf('b')).not.toHaveProperty('AGENT_TASK_FROM');
   });
 });
