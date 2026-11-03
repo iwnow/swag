@@ -1,7 +1,7 @@
 ---
 id: "026"
 title: Исполнение узлов
-status: review
+status: done
 roadmap_stage: 8а
 depends_on: ["021", "024"]
 superseded_by: null
