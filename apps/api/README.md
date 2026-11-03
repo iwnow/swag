@@ -64,7 +64,7 @@
 - Сквозной тест диалога (AC-030-6): сценарий «agent-1 пишет agent-2 и уступает ход, agent-2 отвечает agent-1, agent-1 после ответа вызывает finish». Проверяется порядок `bus.message` и `agent.working` с тем же `messageId` в ленте и пустой результат `unreadMessageIds` для `completed`. Сценарий передаётся в `world(…, script)`; по умолчанию — сценарий AC-022-21.
 - Fastify 5.12.7, `@fastify/websocket` 11.3.4 (точные версии); WebSocket на `ws` внутри плагина.
 - Сверка с документацией (T-33 спеки 002, 2026-10-28). 5.12.7 — актуальная версия ветки v5 (https://fastify.dev/docs/latest/Reference/Server/): `listen({ host, port })`, `setErrorHandler`, `logLevel` маршрута — без изменений. `@fastify/websocket` 11.3.4 (https://github.com/fastify/fastify-websocket): регистрация до маршрутов, `{ websocket: true }`, обработчик `(socket, request)`, где `socket` — сам WebSocket (`send`, `on('close')`, `close(4404, …)`); пир-зависимость — Fastify 5.
-- Ошибки ядра → HTTP: `validation_error` 400, `not_found` 404, `too_many_active_swarms` и `swarm_finished` 409 (`STATUS` в `app.ts`); ошибки формата тела Fastify приводятся к формату 4.5.3.
+- Ошибки ядра → HTTP: `validation_error` 400, `invalid_graph` 400 (009, 4.9), `not_found` 404, `too_many_active_swarms` и `swarm_finished` 409 (`STATUS` в `app.ts`); ошибки формата тела Fastify приводятся к формату 4.5.3.
 - Закрытие WebSocket с кодом `4404` для неизвестного роя (4.5.2).
 - WebSocket (003, REQ-003-4): подписка асинхронна. Если сокет закрылся раньше, чем подписка установилась, отписка вызывается сразу после её получения.
 - Адрес оркестратора — `ORCHESTRATOR_URL`; каждый вызов несёт `Authorization: Bearer <ORCHESTRATOR_TOKEN>` (024, 4.13) — без него оркестратор отвечает `401`. Порт API публикуется только на `127.0.0.1` (compose).
@@ -72,10 +72,13 @@
 - Сообщения NATS обрабатываются в спанах `consumer` адаптера: `bus.message` получает `traceId` сообщения агента.
 - `SIGTERM`/`SIGINT`: закрыть Fastify → NATS → `pool.end()` → сбросить телеметрию (не дольше `TELEMETRY_FLUSH_TIMEOUT_MS`) → `exit(0)`.
 
+- `POST /graph-checks` (009, 4.9): проверка графа без запуска, `200 GraphCheckResult` с полными `GraphIssue`; право `swarm.create` (без него `403`), тело не `ProcessGraph` — `400 validation_error`. `POST /swarms` принимает граф или форму, граф с замечаниями — `400 invalid_graph`. Тесты — `test/graph-http.test.ts` (AC-009-13, AC-009-15 по HTTP).
+
 ## Спеки
 
 - 000 — `/health`. 001 — 4.5, T-10. 024 — 4.5, 4.6, 4.12, T-12 (`revocations.ts`, AC-024-19), T-13 (`auth.ts`, `streams.ts`, `start.ts`, AC-024-15, 16, 18, 20, 21, 25, NFR-024-2). 016 — 4.5, REQ-016-5, AC-016-9. 002 — приём `llm.call` (REQ-002-15; AC-002-26 — тест в `api-core`). 003 — хранилище в Postgres и порядок старта (4.5, T-7, REQ-003-1, REQ-003-5, REQ-003-6, AC-003-8).
 - 004 — бюджеты в `POST /swarms` (4.1, 4.7) и предел в `ApiConfig` (4.11); тесты оболочки передают бюджет в тела запросов (T-13).
+- 009 — T-4: `POST /graph-checks` и код `invalid_graph` → 400 в `app.ts`; тесты оболочки — `test/graph-http.test.ts`. Тестовый реестр — `formNodeTypes` в `support.ts` (манифест `swag/llm-agent`, без него форма роя не проходит проверку графа).
 - 026 — T-9: маршруты `/secrets` в `app.ts`, шифр и хранилище секретов в `main.ts` и `start.ts`, тест `test/secrets-http.test.ts` (AC-026-7; REQ-026-7, REQ-026-8). Операции — `api-core`, T-8.
 - 021 — T-8: `nodeTypes` в `ApiCoreDeps`. T-10: загрузчик манифестов — в `@swag/node-packages` (026 T-4, вынесен из `api`; его тесты и фикстуры — в `packages/node-packages`). T-11: `main.ts` грузит реестр из `NODE_PACKAGES`, маршруты `GET /node-types` в `app.ts`, тесты `test/node-types-http.test.ts` (AC-021-19, 20).
 - 013 — 4.9, 4.5, T-12 (`organizations.ts`), T-13 (`start.ts`: фабрика `billing`, `settlePending` после `closeInterrupted`, AC-013-16), T-14 (`app.ts`: маршруты баланса и `STATUS`; `main.ts`: `createBillingCore`, `ORCHESTRATOR_TIMEOUT_MS`; AC-013-2…9 в `test/balance.test.ts`).

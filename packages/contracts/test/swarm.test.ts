@@ -171,8 +171,11 @@ describe('LlmSwarmRegistration', () => {
   it('регистрация без агентов, с 9 агентами и с неверным agentId отклоняется', () => {
     expect(LlmSwarmRegistration.safeParse(registration({ agents: [] })).success).toBe(false);
     expect(LlmSwarmRegistration.safeParse(registration({ agents: agents(9) })).success).toBe(false);
-    const badId = [{ agentId: 'agent-0', model: 'chat-small', budgetMicroUsd: null }];
+    // Спека 009, Q-8: AgentId — NodeId, зарезервированный 'user' и заглавные буквы не проходят.
+    const badId = [{ agentId: 'user', model: 'chat-small', budgetMicroUsd: null }];
     expect(LlmSwarmRegistration.safeParse(registration({ agents: badId })).success).toBe(false);
+    const upperId = [{ agentId: 'Agent-1', model: 'chat-small', budgetMicroUsd: null }];
+    expect(LlmSwarmRegistration.safeParse(registration({ agents: upperId })).success).toBe(false);
   });
 });
 

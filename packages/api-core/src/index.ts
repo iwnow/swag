@@ -1,23 +1,33 @@
 import {
+  AgentSpec,
   BusMessage,
   NodeManifest,
   NodeTypeList,
   PlatformEventInput,
+  ProcessGraph,
   SecretList,
   SecretName,
   SecretPutRequest,
   type SecretSummary,
   SwarmCreateRequest,
+  SwarmGraphRequest,
   can,
   type Actor,
-  type AgentId,
-  type AgentSpec,
+  type GraphCheckResult,
+  type GraphIssue,
+  type LaunchProgram,
   type PlatformEvent,
   type ServiceInfo,
   type SwarmLaunch,
   type SwarmSummary,
 } from '@swag/contracts';
-import { FINAL_SWARM_STATUSES, type NodeRegistry, type SwarmView } from '@swag/api-integration';
+import {
+  checkGraph,
+  FINAL_SWARM_STATUSES,
+  formGraph,
+  type NodeRegistry,
+  type SwarmView,
+} from '@swag/api-integration';
 
 // Спека 001, 4.5.4. Порты объявляет ядро; адаптеры передаёт оболочка.
 
@@ -104,6 +114,7 @@ export type Result<T> = { ok: true; value: T } | { ok: false; error: ApiError };
 export interface ApiCore {
   info(): ServiceInfo;
   createSwarm(actor: Actor, body: unknown): Promise<Result<SwarmView>>;
+  checkGraphFor(actor: Actor, body: unknown): Promise<Result<GraphCheckResult>>; // 009, 4.9: POST /graph-checks
   listSwarms(actor: Actor): Promise<SwarmSummary[]>;
   getSwarm(actor: Actor, id: string): Promise<Result<SwarmView>>;
   getEvents(actor: Actor, id: string, after: number): Promise<Result<PlatformEvent[]>>;
@@ -140,6 +151,17 @@ const fail = <T>(code: string, message: string, issues?: ApiError['issues']): Re
   issues === undefined
     ? { ok: false, error: { code, message } }
     : { ok: false, error: { code, message, issues } };
+
+// Ошибка разбора тела: пути и сообщения zod, как у прежнего validation_error.
+const invalidBody = <T>(
+  message: string,
+  error: { issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey>; message: string }> },
+): Result<T> =>
+  fail(
+    'validation_error',
+    message,
+    error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
+  );
 
 // Спека 024, 4.4, правило 1. Рой до 024 (orgId и createdBy = null) виден только супервизору.
 function visible(actor: Actor, view: SwarmView): boolean {
@@ -242,41 +264,99 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
     return written;
   }
 
+  // Спека 009, 4.9: тело — граф или форма; форма превращается в граф (formGraph) и дальше идёт тем же путём.
+  // Вид тела различается по полю graph, а не через z.union: пути ошибок формы остаются прежними (AC-001-4, D-181).
+  function parseRequest(body: unknown): Result<SwarmGraphRequest> {
+    if (typeof body === 'object' && body !== null && 'graph' in body) {
+      const parsed = SwarmGraphRequest.safeParse(body);
+      return parsed.success
+        ? ok(parsed.data)
+        : invalidBody('Запрос на рой не прошёл проверку', parsed.error);
+    }
+    const parsed = SwarmCreateRequest.safeParse(body);
+    if (!parsed.success) return invalidBody('Запрос на рой не прошёл проверку', parsed.error);
+    const { task, budgetMicroUsd, maxTokens, agents } = parsed.data;
+    return ok({ task, budgetMicroUsd, maxTokens, graph: formGraph(agents) });
+  }
+
+  // Спека 009, 4.4: проверка графа; секреты — имена секретов организации, без orgId секретов нет.
+  async function graphCheck(graph: ProcessGraph, orgId: string | null): Promise<GraphCheckResult> {
+    const secretNames = new Set(
+      orgId === null ? [] : (await secrets.list(orgId)).map((secret) => secret.name),
+    );
+    return checkGraph(graph, { registry: deps.nodeTypes, secretNames });
+  }
+
+  // Спека 009, 4.9, шаг 4: задача роя — вход шага-программы; проверка по схеме inputs этой программы.
+  function entryInputIssues(graph: ProcessGraph, task: string): GraphIssue[] {
+    const entry = graph.nodes.find((node) => node.id === graph.entry);
+    if (!entry || deps.nodeTypes.get(entry.type)?.kind !== 'program') return [];
+    const result = deps.nodeTypes.validate(entry.type, { place: 'inputs' }, { text: task });
+    if (result.ok) return [];
+    const message =
+      result.error.code === 'invalid_value'
+        ? result.error.issues
+            .map((issue) => (issue.path ? `${issue.path}: ${issue.message}` : issue.message))
+            .join('; ')
+        : result.error.code;
+    return [{ code: 'entry_input_invalid', path: 'entry', message }];
+  }
+
+  // Спека 009, 4.5: настройки узлов после validateSettings (с умолчаниями), порядок — узлов графа.
+  // После checkGraph настройки проверены; иная ситуация — ошибка сервера.
+  function launchNodes(graph: ProcessGraph): { agents: AgentSpec[]; programs: LaunchProgram[] } {
+    const agents: AgentSpec[] = [];
+    const programs: LaunchProgram[] = [];
+    for (const node of graph.nodes) {
+      const checked = deps.nodeTypes.validateSettings(node.type, node.settings);
+      if (!checked.ok)
+        throw new Error(`настройки узла ${node.id} не прошли проверку после checkGraph`);
+      if (deps.nodeTypes.get(node.type)?.kind === 'llm-agent') {
+        agents.push(AgentSpec.parse({ ...checked.settings, id: node.id }));
+      } else {
+        programs.push({
+          id: node.id,
+          type: node.type,
+          settings: checked.settings,
+          credentials: node.credentials,
+        });
+      }
+    }
+    return { agents, programs };
+  }
+
   return {
     info: () => ({ service: 'api', version: deps.version }),
 
     async createSwarm(actor, body) {
       if (!can(actor, 'swarm.create')) return fail('forbidden', 'Нет права на создание роя');
-      const parsed = SwarmCreateRequest.safeParse(body);
-      if (!parsed.success) {
+      const parsed = parseRequest(body);
+      if (!parsed.ok) return parsed;
+      if (actor.orgId === null) return fail('forbidden', 'У создателя роя нет организации');
+      const orgId = actor.orgId;
+      const { task, budgetMicroUsd, maxTokens, graph } = parsed.value;
+      const issues = [...(await graphCheck(graph, orgId)).issues, ...entryInputIssues(graph, task)];
+      if (issues.length > 0) {
         return fail(
-          'validation_error',
-          'Запрос на рой не прошёл проверку',
-          parsed.error.issues.map((issue) => ({
-            path: issue.path.join('.'),
-            message: issue.message,
-          })),
+          'invalid_graph',
+          'graph has issues',
+          issues.map((issue) => ({ path: issue.path, message: `${issue.code}: ${issue.message}` })),
         );
       }
-      const { budgetMicroUsd, maxTokens } = parsed.data;
+      const { agents, programs } = launchNodes(graph);
       if (budgetMicroUsd > deps.limits.maxBudgetMicroUsd) {
         return fail('validation_error', 'budget exceeds SWARM_MAX_BUDGET_MICRO_USD');
       }
-      if (
-        parsed.data.agents.some(
-          (a) => a.budgetMicroUsd !== null && a.budgetMicroUsd > budgetMicroUsd,
-        )
-      ) {
+      if (agents.some((a) => a.budgetMicroUsd !== null && a.budgetMicroUsd > budgetMicroUsd)) {
         return fail('validation_error', 'agent budget exceeds swarm budget');
       }
       if (
-        [maxTokens, ...parsed.data.agents.map((a) => a.maxTokens)].some(
+        [maxTokens, ...agents.map((a) => a.maxTokens)].some(
           (tokens) => tokens !== null && tokens > deps.limits.maxTokens,
         )
       ) {
         return fail('validation_error', 'max_tokens exceeds AGENT_MAX_TOKENS_LIMIT');
       }
-      if (actor.orgId === null) return fail('forbidden', 'У создателя роя нет организации');
       const views = await store.views();
       const active = views.filter((v) => v.status === 'starting' || v.status === 'running').length;
       if (active + reserving >= deps.limits.maxActiveSwarms) {
@@ -294,13 +374,9 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
       };
 
       const swarmId = ids.uuid();
-      const agents: AgentSpec[] = parsed.data.agents.map((draft, i) => ({
-        ...draft,
-        id: `agent-${i + 1}` as AgentId,
-      }));
       const ts = clock.now();
       try {
-        if ((await billing.reserve(actor.orgId, swarmId, budgetMicroUsd)) === 'insufficient') {
+        if ((await billing.reserve(orgId, swarmId, budgetMicroUsd)) === 'insufficient') {
           return fail('insufficient_balance', 'balance is not enough for budget');
         }
         const created = await commit(swarmId, {
@@ -312,12 +388,13 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
           traceId: trace.currentTraceId(),
           type: 'swarm.created',
           data: {
-            task: parsed.data.task,
+            task,
             budgetMicroUsd,
             maxTokens,
             agents,
-            orgId: actor.orgId,
+            orgId,
             createdBy: actor.userId,
+            graph,
           },
         });
         if (created === null) {
@@ -334,10 +411,15 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         try {
           await orchestrator.launch({
             swarmId,
-            task: parsed.data.task,
+            orgId,
+            task,
             budgetMicroUsd,
             maxTokens,
             agents,
+            programs,
+            edges: graph.edges,
+            entry: graph.entry,
+            exit: graph.exit,
           });
         } catch (error) {
           log.error('orchestrator unavailable', { swarmId, err: error });
@@ -364,6 +446,14 @@ export function createApiCore(deps: ApiCoreDeps): ApiCore {
         releaseSlot();
       }
       return ok((await store.view(swarmId)) as SwarmView);
+    },
+
+    // Спека 009, 4.9: та же проверка графа без резерва, запуска и событий; нужна редактору и координатору.
+    async checkGraphFor(actor, body) {
+      if (!can(actor, 'swarm.create')) return fail('forbidden', 'Нет права на создание роя');
+      const parsed = ProcessGraph.safeParse(body);
+      if (!parsed.success) return invalidBody('Граф не прошёл проверку', parsed.error);
+      return ok(await graphCheck(parsed.data, actor.orgId));
     },
 
     // У всех ролей есть swarm.read (4.1), поэтому без права список пуст, а не forbidden: сигнатура 4.4 без Result.

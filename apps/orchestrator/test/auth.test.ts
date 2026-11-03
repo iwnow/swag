@@ -6,6 +6,7 @@ import { makeCore, TOKEN } from './support.ts';
 const SWARM_ID = '0b6f6d2e-6a4c-4c3e-9f5e-222222222222';
 const LAUNCH = {
   swarmId: SWARM_ID,
+  orgId: '0b6f6d2e-6a4c-4c3e-9f5e-444444444444',
   task: 'T',
   budgetMicroUsd: 1000000,
   maxTokens: null,
@@ -19,6 +20,10 @@ const LAUNCH = {
       maxTokens: null,
     },
   ],
+  programs: [],
+  edges: [],
+  entry: 'agent-1',
+  exit: 'agent-1',
 };
 
 function setup() {

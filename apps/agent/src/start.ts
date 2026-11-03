@@ -105,6 +105,8 @@ export async function startAgentProcess(deps: AgentProcessDeps): Promise<AgentPr
             model: config.AGENT_MODEL as ModelId,
             peers: config.AGENT_PEERS,
             entryAgentId: config.AGENT_ENTRY as AgentId,
+            taskFrom: config.AGENT_TASK_FROM,
+            resultTo: config.AGENT_RESULT_TO,
             maxSteps: config.AGENT_MAX_STEPS,
             maxTokens: config.AGENT_MAX_TOKENS,
           },

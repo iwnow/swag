@@ -20,7 +20,7 @@ import {
   type SandboxSpec,
 } from '@swag/orchestrator-core';
 import { unreadMessageIds } from '@swag/ui-core';
-import { actorOf, emptyNodeTypes, WHO } from './support.ts';
+import { actorOf, formNodeTypes, WHO } from './support.ts';
 import {
   createMemoryNodePorts,
   createMemorySecretStore,
@@ -257,7 +257,7 @@ function world(log: Logger, trace: TraceContext, script: Script = team) {
     ids,
     log,
     trace,
-    nodeTypes: emptyNodeTypes(),
+    nodeTypes: formNodeTypes(),
     limits: { maxActiveSwarms: 3, maxBudgetMicroUsd: 5000000, maxTokens: 65536 },
     billing: unlimitedBilling,
     secrets: createMemorySecretStore(),

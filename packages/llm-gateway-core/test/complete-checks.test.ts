@@ -52,7 +52,7 @@ describe('complete: проверка вызывающего (LlmCaller)', () => 
   it.each([
     ['нет x-swag-swarm-id', { agentId: 'agent-1' }],
     ['x-swag-swarm-id не UUID', { swarmId: 'swarm-1', agentId: 'agent-1' }],
-    ['x-swag-agent-id равен bob', { swarmId: SWARM_ID, agentId: 'bob' }],
+    ['x-swag-agent-id равен Bob (не NodeId)', { swarmId: SWARM_ID, agentId: 'Bob' }],
     ['нет x-swag-agent-id', { swarmId: SWARM_ID }],
   ])('AC-002-3: %s — 400 invalid_caller, апстрим не вызван, событий нет', async (_, rawCaller) => {
     expect(await refuse(rawCaller, body)).toEqual({

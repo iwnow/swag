@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createMemorySecretStore, createMemorySwarmStore } from '@swag/adapter-memory';
-import { createNodeRegistry, type NodeRegistry } from '@swag/api-integration';
+import { createNodeRegistry, formGraph, type NodeRegistry } from '@swag/api-integration';
 import {
   NodeManifest,
   ROLE_PERMISSIONS,
@@ -77,6 +77,38 @@ const ECHO = NodeManifest.parse({
     required: ['text'],
     additionalProperties: false,
   },
+  operations: [],
+  egress: [],
+});
+
+// Спека 009, 4.3: форма роя превращается в узлы swag/llm-agent, поэтому реестр по умолчанию его содержит.
+const LLM_AGENT = NodeManifest.parse({
+  type: 'swag/llm-agent',
+  version: '1.0.0',
+  kind: 'llm-agent',
+  title: 'LLM-агент',
+  description: 'Агент на модели платформы.',
+  settings: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', minLength: 1, maxLength: 40 },
+      role: { type: 'string', minLength: 1, maxLength: 500 },
+      model: { default: 'chat-small', type: 'string', enum: ['chat-small', 'chat-large'] },
+      budgetMicroUsd: {
+        default: null,
+        anyOf: [{ type: 'integer', minimum: 1, maximum: 1000000000 }, { type: 'null' }],
+      },
+      maxTokens: {
+        default: null,
+        anyOf: [{ type: 'integer', minimum: 1, maximum: 1000000 }, { type: 'null' }],
+      },
+    },
+    required: ['name', 'role'],
+    additionalProperties: false,
+  },
+  credentials: [],
+  inputs: null,
+  outputs: null,
   operations: [],
   egress: [],
 });
@@ -162,7 +194,7 @@ function setup(
     ids: { uuid: () => uuid(++counter) },
     log,
     trace: { currentTraceId: () => traceState.current },
-    nodeTypes: options.nodeTypes ?? registryOf([]),
+    nodeTypes: options.nodeTypes ?? registryOf([LLM_AGENT]),
     limits: {
       maxActiveSwarms: options.maxActiveSwarms ?? 3,
       maxBudgetMicroUsd: 5000000,
@@ -1519,7 +1551,275 @@ describe('api-core — спека 021: каталог типов узлов', ()
   });
 
   it('AC-021-20: пустой реестр — listNodeTypes отдаёт пустой список', () => {
-    const { core } = setup();
+    const { core } = setup({ nodeTypes: registryOf([]) });
     expect(core.listNodeTypes(ACTOR)).toEqual({ ok: true, value: { items: [] } });
+  });
+});
+
+// Спека 009, 4.5 и 4.9 (AC-009-12…15): граф в createSwarm и операция checkGraphFor.
+// Программа со схемой входа, которая не принимает { text }.
+const STRICT = NodeManifest.parse({
+  ...ECHO,
+  type: 'test/strict',
+  inputs: {
+    type: 'object',
+    properties: { n: { type: 'integer' } },
+    required: ['n'],
+    additionalProperties: false,
+  },
+});
+// Программа с credential apiKey (как в тестах api-integration).
+const KEYED = NodeManifest.parse({
+  ...ECHO,
+  type: 'test/keyed',
+  credentials: [{ name: 'apiKey', title: 'Ключ', kind: 'api-key' }],
+});
+const AGENT_NODE = (id: string) => ({
+  id,
+  type: 'swag/llm-agent@1.0.0',
+  settings: { name: id, role: 'роль' },
+  credentials: {},
+});
+const ECHO_NODE = (id: string) => ({
+  id,
+  type: 'example/echo@1.0.0',
+  settings: {},
+  credentials: {},
+});
+const GRAPH_REGISTRY = () => registryOf([ECHO, LLM_AGENT, STRICT, KEYED]);
+const codesOf = (issues: { code: string }[] | undefined) => issues?.map((i) => i.code);
+
+describe('api-core — спека 009: граф роя', () => {
+  it('AC-009-12: граф echo → agent-1 — 201; swarm.created несёт граф; SwarmLaunch с orgId, agents, programs, edges, entry, exit', async () => {
+    const { core, launches } = setup({ nodeTypes: GRAPH_REGISTRY() });
+    const graph = {
+      nodes: [ECHO_NODE('echo'), AGENT_NODE('agent-1')],
+      edges: [{ from: 'echo', to: 'agent-1', kind: 'flow' }],
+      entry: 'echo',
+      exit: 'agent-1',
+    };
+    const result = await core.createSwarm(ACTOR, {
+      task: 'Задача',
+      budgetMicroUsd: 1000000,
+      graph,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const events = await core.getEvents(ACTOR, result.value.id, 0);
+    const created = events.ok ? events.value.find((e) => e.type === 'swarm.created') : undefined;
+    expect(created?.type === 'swarm.created' && created.data.graph).toEqual(graph);
+    expect(launches).toHaveLength(1);
+    expect(launches[0]).toEqual({
+      swarmId: result.value.id,
+      orgId: ORG_A,
+      task: 'Задача',
+      budgetMicroUsd: 1000000,
+      maxTokens: null,
+      agents: [
+        {
+          name: 'agent-1',
+          role: 'роль',
+          model: 'chat-small',
+          budgetMicroUsd: null,
+          maxTokens: null,
+          id: 'agent-1',
+        },
+      ],
+      programs: [
+        { id: 'echo', type: 'example/echo@1.0.0', settings: { prefix: '' }, credentials: {} },
+      ],
+      edges: graph.edges,
+      entry: 'echo',
+      exit: 'agent-1',
+    });
+  });
+
+  it('REQ-009-1: форма идёт в граф formGraph и в SwarmLaunch', async () => {
+    const { core, launches } = setup({ nodeTypes: GRAPH_REGISTRY() });
+    // Черновики после разбора формы: с умолчаниями AgentDraft, как их получает formGraph.
+    const agents = [
+      {
+        name: 'Агент 1',
+        role: 'роль 1',
+        model: 'chat-small',
+        budgetMicroUsd: null,
+        maxTokens: null,
+      },
+      {
+        name: 'Агент 2',
+        role: 'роль 2',
+        model: 'chat-small',
+        budgetMicroUsd: null,
+        maxTokens: null,
+      },
+    ] as const;
+    const graph = formGraph(agents);
+    const result = await core.createSwarm(ACTOR, {
+      task: 'Задача',
+      budgetMicroUsd: 1000000,
+      agents,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const events = await core.getEvents(ACTOR, result.value.id, 0);
+    const created = events.ok ? events.value.find((e) => e.type === 'swarm.created') : undefined;
+    expect(created?.type === 'swarm.created' && created.data.graph).toEqual(graph);
+    expect(launches).toHaveLength(1);
+    const [launch] = launches;
+    expect(launch?.orgId).toBe(ORG_A);
+    expect(launch?.programs).toEqual([]);
+    expect(launch?.edges).toEqual(graph.edges);
+    expect(launch?.edges).toEqual([{ from: 'agent-1', to: 'agent-2', kind: 'link' }]);
+    expect(launch?.entry).toBe('agent-1');
+    expect(launch?.exit).toBe('agent-1');
+    expect(launch?.agents.map((a) => a.id)).toEqual(['agent-1', 'agent-2']);
+  });
+
+  it('AC-009-26: маркеры настроек узла, текста задачи и имени секрета не попадают в логи api — ни при 201, ни при 400 invalid_graph', async () => {
+    const { core, entries } = setup({ nodeTypes: GRAPH_REGISTRY() });
+    const created = await core.createSwarm(ACTOR, {
+      task: 'input-marker-009',
+      budgetMicroUsd: 1000000,
+      graph: {
+        nodes: [
+          { ...ECHO_NODE('echo'), settings: { prefix: 'settings-marker-009' } },
+          AGENT_NODE('agent-1'),
+        ],
+        edges: [{ from: 'echo', to: 'agent-1', kind: 'flow' }],
+        entry: 'echo',
+        exit: 'agent-1',
+      },
+    });
+    expect(created.ok).toBe(true);
+    const rejected = await core.createSwarm(ACTOR, {
+      task: 'input-marker-009',
+      budgetMicroUsd: 1000000,
+      graph: {
+        nodes: [
+          {
+            id: 'keyed',
+            type: 'test/keyed@1.0.0',
+            settings: {},
+            credentials: { apiKey: 'secret-marker-009' },
+          },
+          AGENT_NODE('agent-1'),
+        ],
+        edges: [{ from: 'keyed', to: 'agent-1', kind: 'flow' }],
+        entry: 'keyed',
+        exit: 'agent-1',
+      },
+    });
+    expect(rejected.ok).toBe(false);
+    expect(entries.length).toBeGreaterThan(0);
+    const dump = JSON.stringify(entries);
+    expect(dump).not.toContain('settings-marker-009');
+    expect(dump).not.toContain('input-marker-009');
+    expect(dump).not.toContain('secret-marker-009');
+  });
+
+  it('AC-009-13: граф с замечаниями — invalid_graph со всеми замечаниями; без swarm.created, резерва и запуска', async () => {
+    const billing = fakeBilling();
+    const { core, launches } = setup({ nodeTypes: GRAPH_REGISTRY(), billing });
+    const result = await core.createSwarm(ACTOR, {
+      task: 'Задача',
+      budgetMicroUsd: 1000000,
+      graph: {
+        nodes: [
+          ECHO_NODE('echo'),
+          AGENT_NODE('agent-1'),
+          { ...ECHO_NODE('x'), type: 'test/none@1.0.0' },
+        ],
+        edges: [{ from: 'echo', to: 'ghost', kind: 'flow' }],
+        entry: 'echo',
+        exit: 'agent-1',
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('invalid_graph');
+    expect(result.error.issues?.map((i) => [i.path, i.message.split(':')[0]])).toEqual([
+      ['nodes.2.type', 'node_type_not_found'],
+      ['edges.0', 'edge_unknown_node'],
+      ['nodes.1', 'unreachable'],
+    ]);
+    expect(await core.listSwarms(ACTOR)).toEqual([]);
+    expect(billing.reserves).toHaveLength(0);
+    expect(launches).toHaveLength(0);
+  });
+
+  it('AC-009-14: вход — программа, схема inputs не принимает { text } — invalid_graph с entry_input_invalid по пути entry', async () => {
+    const billing = fakeBilling();
+    const { core, launches } = setup({ nodeTypes: GRAPH_REGISTRY(), billing });
+    const result = await core.createSwarm(ACTOR, {
+      task: 'Задача',
+      budgetMicroUsd: 1000000,
+      graph: {
+        nodes: [{ ...ECHO_NODE('strict'), type: 'test/strict@1.0.0' }, AGENT_NODE('agent-1')],
+        edges: [{ from: 'strict', to: 'agent-1', kind: 'flow' }],
+        entry: 'strict',
+        exit: 'agent-1',
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('invalid_graph');
+    expect(result.error.issues?.map((i) => [i.path, i.message.split(':')[0]])).toEqual([
+      ['entry', 'entry_input_invalid'],
+    ]);
+    expect(billing.reserves).toHaveLength(0);
+    expect(launches).toHaveLength(0);
+  });
+
+  it('AC-009-15: checkGraphFor — полный GraphCheckResult без событий, резервов и запуска; без swarm.create — forbidden', async () => {
+    const billing = fakeBilling();
+    const { core, launches } = setup({ nodeTypes: GRAPH_REGISTRY(), billing });
+    const bad = { nodes: [ECHO_NODE('a'), ECHO_NODE('a')], edges: [], entry: 'a', exit: 'a' };
+    const result = await core.checkGraphFor(ACTOR, bad);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.ok).toBe(false);
+    expect(result.value.issues.map((i) => [i.code, i.path])).toEqual([
+      ['node_duplicate', 'nodes.1.id'],
+      ['no_agents', 'nodes'],
+    ]);
+    expect(await core.listSwarms(ACTOR)).toEqual([]);
+    expect(billing.reserves).toHaveLength(0);
+    expect(launches).toHaveLength(0);
+    expect(codeOf(await core.checkGraphFor(actorOf('supervisor', SUPERVISOR, null), bad))).toBe(
+      'forbidden',
+    );
+  });
+
+  it('AC-009-15: checkGraphFor — корректный граф даёт ok: true и пустой список; тело не ProcessGraph — validation_error', async () => {
+    const { core } = setup({ nodeTypes: GRAPH_REGISTRY() });
+    const valid = {
+      nodes: [ECHO_NODE('echo'), AGENT_NODE('agent-1')],
+      edges: [{ from: 'echo', to: 'agent-1', kind: 'flow' }],
+      entry: 'echo',
+      exit: 'agent-1',
+    };
+    const result = await core.checkGraphFor(ACTOR, valid);
+    expect(result.ok && result.value).toEqual({ ok: true, issues: [] });
+    expect(codeOf(await core.checkGraphFor(ACTOR, { nodes: 'x' }))).toBe('validation_error');
+  });
+
+  it('AC-009-5 (ядро): credentials сверяются с секретами организации (secrets.list); без секрета — secret_not_found, с секретом — без замечаний', async () => {
+    const { core } = setup({ nodeTypes: GRAPH_REGISTRY() });
+    const graph = {
+      nodes: [
+        { ...ECHO_NODE('keyed'), type: 'test/keyed@1.0.0', credentials: { apiKey: 'test-key' } },
+        AGENT_NODE('agent-1'),
+      ],
+      edges: [{ from: 'keyed', to: 'agent-1', kind: 'flow' }],
+      entry: 'keyed',
+      exit: 'agent-1',
+    };
+    const before = await core.checkGraphFor(ACTOR, graph);
+    expect(before.ok && codesOf(before.value.issues)).toEqual(['secret_not_found']);
+    await core.putSecret(actorOf('admin', ADMIN_A, ORG_A), 'test-key', {
+      value: 'fake-secret-value-0001',
+    });
+    const after = await core.checkGraphFor(ACTOR, graph);
+    expect(after.ok && after.value.issues).toEqual([]);
   });
 });

@@ -1,18 +1,21 @@
 import {
   BusMessage,
-  ENTRY_AGENT_ID,
   PlatformEventInput,
   SwarmLaunch,
+  type LaunchProgram,
   type LlmSwarmRegistration,
   type AgentId,
   type AgentSpec,
+  type NodeId,
   type NodeInvocation,
   type NodeInvocationResult,
   type ServiceInfo,
 } from '@swag/contracts';
+import { graphPlan, valueText, type GraphPlan } from '@swag/api-integration';
 import { createInvokeNode, type NodeInvokeDeps } from './node-invoke.ts';
 
 // Спека 001, 4.6.2 и 4.6.3. Порты объявляет ядро; адаптеры передаёт оболочка.
+// Спека 009, 4.6: исполнение графа процесса.
 
 export type TimerId = unknown;
 
@@ -141,9 +144,15 @@ type Phase = 'creating' | 'waiting' | 'running' | 'finished';
 
 interface Run {
   launch: SwarmLaunch;
+  plan: GraphPlan;
+  programs: Map<NodeId, LaunchProgram>;
   phase: Phase;
+  begun: boolean; // swarm.started опубликован (4.6, шаг 2)
   sandboxes: Map<AgentId, string>; // agentId → sandboxId
+  stopped: Set<AgentId>; // агенты, по которым уже опубликован agent.stopped
   started: Set<AgentId>;
+  running: Set<NodeId>; // шаги, получившие вход и не давшие выход (id шага: программа или агент-вход команды)
+  exit: { value: unknown } | null; // выход шага-выхода; null — ещё не получен
   timers: TimerId[];
 }
 
@@ -159,7 +168,8 @@ type Outcome =
           | 'sandbox_error'
           | 'agent_failed'
           | 'budget_exceeded'
-          | 'gateway_unavailable';
+          | 'gateway_unavailable'
+          | 'node_failed';
         detail?: string;
       };
     };
@@ -169,6 +179,9 @@ const FINISHED_STATUS: Record<Outcome['type'], 'completed' | 'stopped' | 'failed
   'swarm.stopped': 'stopped',
   'swarm.failed': 'failed',
 };
+
+// Имя исключения вместо текста: текст может содержать значения настроек или секретов (AC-009-26).
+const errorName = (error: unknown): string => (error instanceof Error ? error.name : typeof error);
 
 const ok = (): Result<void> => ({ ok: true, value: undefined });
 const fail = (code: string, message: string, issues?: OrchestratorError['issues']): Result<void> =>
@@ -208,6 +221,26 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
     }
   }
 
+  // Уборка агентов (4.6, шаг 6): песочницы, затем agent.stopped. Каждый агент получает agent.stopped один раз.
+  async function stopAgents(run: Run, agentIds: readonly AgentId[]): Promise<void> {
+    const swarmId = run.launch.swarmId;
+    const targets = agentIds.filter((id) => !run.stopped.has(id));
+    for (const agentId of targets) run.stopped.add(agentId); // до первого await: параллельный finish их не повторит
+    for (const agentId of targets) {
+      const sandboxId = run.sandboxes.get(agentId);
+      if (sandboxId === undefined) continue;
+      run.sandboxes.delete(agentId);
+      try {
+        await sandboxes.remove(sandboxId);
+      } catch (error) {
+        log.warn('sandbox remove failed', { swarmId, agentId, err: error });
+      }
+    }
+    for (const agentId of targets) {
+      await publish({ ...envelope(swarmId, agentId), type: 'agent.stopped', data: {} });
+    }
+  }
+
   // Уборка роя и итоговые события (4.6.2): песочницы → agent.stopped → событие роя.
   async function finish(run: Run, outcome: Outcome): Promise<void> {
     if (run.phase === 'finished') return;
@@ -215,16 +248,10 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
     for (const id of run.timers) timers.clearTimeout(id);
     const swarmId = run.launch.swarmId;
 
-    for (const [agentId, sandboxId] of run.sandboxes) {
-      try {
-        await sandboxes.remove(sandboxId);
-      } catch (error) {
-        log.warn('sandbox remove failed', { swarmId, agentId, err: error });
-      }
-    }
-    for (const agent of run.launch.agents) {
-      await publish({ ...envelope(swarmId, agent.id), type: 'agent.stopped', data: {} });
-    }
+    await stopAgents(
+      run,
+      run.launch.agents.map((agent) => agent.id),
+    );
     const spentMicroUsd = await closeInGateway(swarmId);
     const spent: { spentMicroUsd?: number } = spentMicroUsd === null ? {} : { spentMicroUsd };
     if (outcome.type === 'swarm.completed') {
@@ -249,44 +276,183 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
     log.info('swarm finished', { swarmId, status: FINISHED_STATUS[outcome.type] });
   }
 
-  // Когда все агенты стартовали — задача первому агенту и swarm.started (4.6.2, шаги 4–5).
+  // Сообщение шины агенту-входу команды (4.6, шаг 4). Команда становится запущенным шагом.
+  async function deliverTeam(
+    run: Run,
+    teamId: NodeId,
+    from: NodeId | 'user',
+    value: unknown,
+  ): Promise<void> {
+    run.running.add(teamId);
+    await bus.publishMessage({
+      id: ids.uuid(),
+      swarmId: run.launch.swarmId,
+      from,
+      to: teamId,
+      text: valueText(value),
+      ts: clock.now(),
+    });
+  }
+
+  // Шаг-программа (4.6, шаг 3). Исключение публикации или шины завершает рой node_failed (D-185).
+  async function runProgram(run: Run, nodeId: NodeId, value: unknown): Promise<void> {
+    try {
+      await callProgram(run, nodeId, value);
+    } catch (error) {
+      log.error('program step failed', {
+        swarmId: run.launch.swarmId,
+        nodeId,
+        errorName: errorName(error),
+      });
+      if (!isFinished(run))
+        await finish(run, {
+          type: 'swarm.failed',
+          data: { reason: 'node_failed', detail: `${nodeId}: node_failed` },
+        });
+    }
+  }
+
+  // Вызов программы (4.6, шаги 3 и 7; 026, 4.10). Ошибка вызова завершает рой node_failed.
+  async function callProgram(run: Run, nodeId: NodeId, value: unknown): Promise<void> {
+    const program = run.programs.get(nodeId);
+    if (!program || isFinished(run)) return;
+    const swarmId = run.launch.swarmId;
+    run.running.add(nodeId);
+    await publish({
+      ...envelope(swarmId, null),
+      type: 'node.started',
+      data: { nodeId, type: program.type },
+    });
+    if (isFinished(run)) return; // рой остановили во время публикации: вызов не запускаем
+    const startedAt = Date.parse(clock.now());
+    let result: NodeInvocationResult;
+    try {
+      result = await invokeNode({
+        orgId: run.launch.orgId,
+        type: program.type,
+        call: { kind: 'execute', input: value },
+        settings: program.settings,
+        credentials: program.credentials,
+        stateKey: `swarm:${swarmId}:${nodeId}`,
+      });
+    } catch (error) {
+      // Сбой хранилища секретов (026, 4.10): вызов не вернул результат, рой не должен зависнуть
+      log.error('node invoke threw', { swarmId, nodeId, errorName: errorName(error) });
+      result = {
+        ok: false,
+        error: { code: 'node_failed', message: 'Сбой вызова программы' },
+        durationMs: Math.max(0, Date.parse(clock.now()) - startedAt),
+      };
+    }
+    if (isFinished(run)) return; // ответ после завершения роя — без событий (4.6, шаг 7)
+    if (!result.ok) {
+      await publish({
+        ...envelope(swarmId, null),
+        type: 'node.failed',
+        data: {
+          nodeId,
+          code: result.error.code,
+          message: result.error.message,
+          durationMs: result.durationMs,
+        },
+      });
+      await finish(run, {
+        type: 'swarm.failed',
+        data: { reason: 'node_failed', detail: `${nodeId}: ${result.error.code}` },
+      });
+      return;
+    }
+    run.running.delete(nodeId);
+    await publish({
+      ...envelope(swarmId, null),
+      type: 'node.completed',
+      data: { nodeId, durationMs: result.durationMs },
+    });
+    await completeStep(run, nodeId, result.output);
+  }
+
+  // Программа, запущенная выходом другого шага, идёт в фоне: её ответ не задерживает остальные шаги (4.6, шаг 7; AC-009-21).
+  function startProgram(run: Run, nodeId: NodeId, value: unknown): void {
+    runProgram(run, nodeId, value).catch((error: unknown) => {
+      log.error('program step failed', { swarmId: run.launch.swarmId, nodeId, err: error });
+    });
+  }
+
+  // Выход шага (4.6, шаги 5 и 7): выход шага-выхода запоминается, выход передаётся по каждому исходящему потоку.
+  async function completeStep(run: Run, stepId: NodeId, output: unknown): Promise<void> {
+    if (isFinished(run)) return;
+    if (stepId === run.plan.exit) run.exit = { value: output };
+    await Promise.all(
+      run.plan.next(stepId).map(async (target) => {
+        const step = run.plan.stepOf(target);
+        if (step.kind === 'program') startProgram(run, step.id, output);
+        else await deliverTeam(run, step.id, stepId, output);
+      }),
+    );
+    await settle(run);
+  }
+
+  // Выход команды (4.6, шаг 6): agent.result агента-входа; песочницы команды убираются, выход передаётся дальше.
+  async function completeTeam(run: Run, entryId: AgentId, text: string): Promise<void> {
+    run.running.delete(entryId);
+    const step = run.plan.stepOf(entryId);
+    if (step.kind === 'team') await stopAgents(run, step.team.members);
+    await completeStep(run, entryId, { text });
+  }
+
+  // Рой завершён, когда шаг-выход дал выход и не осталось начатых незавершённых шагов (4.6, шаг 7).
+  async function settle(run: Run): Promise<void> {
+    if (isFinished(run) || !run.begun || run.exit === null || run.running.size > 0) return;
+    await finish(run, { type: 'swarm.completed', data: { result: valueText(run.exit.value) } });
+  }
+
+  // Когда все агенты стартовали — задача шагу-входу, затем swarm.started (4.6, шаги 2 и 4).
   async function checkReady(run: Run): Promise<void> {
     if (run.phase !== 'waiting' || run.started.size < run.launch.agents.length) return;
     run.phase = 'running'; // до первого await, чтобы параллельные agent.started не запустили задачу дважды
     const swarmId = run.launch.swarmId;
-    const first = run.launch.agents[0];
-    if (!first) return;
-    await bus.publishMessage({
-      id: ids.uuid(),
-      swarmId,
-      from: 'user',
-      to: first.id,
-      text: run.launch.task,
-      ts: clock.now(),
-    });
+    const value = { text: run.launch.task };
+    const entry = run.plan.stepOf(run.plan.entry);
+    if (entry.kind === 'program') await runProgram(run, entry.id, value);
+    else await deliverTeam(run, entry.id, 'user', value);
+    if (isFinished(run)) return;
+    run.begun = true;
     await publish({ ...envelope(swarmId, null), type: 'swarm.started', data: {} });
+    await settle(run);
   }
 
   // env 4.8 без адаптерных ключей. TRACEPARENT здесь нет: порт TraceContext отдаёт только traceId (см. README).
+  // Спека 009, 4.6 (шаг 1): AGENT_PEERS — соседи по link, AGENT_ENTRY — агент-вход команды;
+  // агенту-входу ещё AGENT_TASK_FROM и AGENT_RESULT_TO (4.8).
   function agentSpec(run: Run, agent: AgentSpec): SandboxSpec {
-    const peers = run.launch.agents
-      .filter((other) => other.id !== agent.id)
+    const { launch, plan } = run;
+    const linked = new Set(plan.peers(agent.id));
+    const peers = launch.agents
+      .filter((other) => linked.has(other.id))
       .map((other) => ({ id: other.id, name: other.name, role: other.role }));
+    const step = plan.stepOf(agent.id);
+    const entry = step.kind === 'team' ? step.team.entry : agent.id;
+    const env: Record<string, string> = {
+      SWARM_ID: launch.swarmId,
+      AGENT_ID: agent.id,
+      AGENT_NAME: agent.name,
+      AGENT_ROLE: agent.role,
+      AGENT_MODEL: agent.model,
+      AGENT_PEERS: JSON.stringify(peers),
+      AGENT_ENTRY: entry,
+      AGENT_MAX_STEPS: String(deps.agent.maxSteps),
+      AGENT_MAX_TOKENS: String(agent.maxTokens ?? launch.maxTokens ?? deps.agent.maxTokens), // 031, 4.4
+      LLM_GATEWAY_TOKEN: deps.agent.llmGatewayToken,
+      TELEMETRY_FLUSH_TIMEOUT_MS: String(deps.agent.flushTimeoutMs),
+    };
+    if (entry === agent.id) {
+      const incoming = launch.edges.find((edge) => edge.kind === 'flow' && edge.to === entry);
+      env['AGENT_TASK_FROM'] = incoming ? plan.stepOf(incoming.from).id : 'user';
+      env['AGENT_RESULT_TO'] = plan.exit === entry ? 'user' : 'process';
+    }
     return {
       template: deps.agent.template,
-      env: {
-        SWARM_ID: run.launch.swarmId,
-        AGENT_ID: agent.id,
-        AGENT_NAME: agent.name,
-        AGENT_ROLE: agent.role,
-        AGENT_MODEL: agent.model,
-        AGENT_PEERS: JSON.stringify(peers),
-        AGENT_ENTRY: ENTRY_AGENT_ID,
-        AGENT_MAX_STEPS: String(deps.agent.maxSteps),
-        AGENT_MAX_TOKENS: String(agent.maxTokens ?? run.launch.maxTokens ?? deps.agent.maxTokens), // 031, 4.4
-        LLM_GATEWAY_TOKEN: deps.agent.llmGatewayToken,
-        TELEMETRY_FLUSH_TIMEOUT_MS: String(deps.agent.flushTimeoutMs),
-      },
+      env,
       metadata: {
         'swag.kind': 'agent',
         'swag.swarm': run.launch.swarmId,
@@ -316,9 +482,15 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
 
       const run: Run = {
         launch,
+        plan: graphPlan(launch),
+        programs: new Map(launch.programs.map((program) => [program.id, program])),
         phase: 'creating',
+        begun: false,
         sandboxes: new Map(),
+        stopped: new Set(),
         started: new Set(),
+        running: new Set(),
+        exit: null,
         timers: [],
       };
       runs.set(launch.swarmId, run);
@@ -425,9 +597,9 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
         run.started.add(event.agentId);
         await checkReady(run);
       } else if (event.type === 'agent.result') {
-        // 4.9: итог роя — только ответ агента-входа; ответы остальных агентов игнорируются
-        if (run.phase === 'running' && event.agentId === ENTRY_AGENT_ID) {
-          await finish(run, { type: 'swarm.completed', data: { result: event.data.text } });
+        // 4.6, шаг 6: выход команды даёт только её агент-вход; ответы остальных агентов игнорируются
+        if (run.phase === 'running' && run.running.has(event.agentId)) {
+          await completeTeam(run, event.agentId, event.data.text);
         }
       } else if (event.type === 'agent.failed' && run.phase === 'running') {
         // 4.6: отказ по бюджету из gateway приходит как model_error:<код> (022, 4.3)

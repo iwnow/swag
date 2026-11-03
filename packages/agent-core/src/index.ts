@@ -61,6 +61,8 @@ export interface AgentConfigCore {
   model: ModelId;
   peers: AgentPeer[]; // другие агенты роя, в порядке id
   entryAgentId: AgentId;
+  taskFrom?: AgentId | 'user'; // спека 009, 4.8; по умолчанию 'user'
+  resultTo?: 'user' | 'process'; // спека 009, 4.8; по умолчанию 'user'
   maxSteps: number; // на всю жизнь агента
   maxTokens: number;
 }
@@ -94,6 +96,8 @@ export function createAgentCore(deps: AgentCoreDeps): AgentCore {
     agentRole: config.agentRole,
     peers: config.peers,
     entryAgentId: config.entryAgentId,
+    taskFrom: config.taskFrom ?? 'user',
+    resultTo: config.resultTo ?? 'user',
   };
   // Одна история на всё время жизни агента (REQ-022-5).
   const history: ChatMessage[] = [];

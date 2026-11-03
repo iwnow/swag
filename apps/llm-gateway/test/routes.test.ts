@@ -65,12 +65,12 @@ describe('оболочка llm-gateway: маршруты против фейка
     expect(gateway.events).toEqual([]);
   });
 
-  it('AC-002-3: нет swarm id, swarm id не UUID или agent id «bob» — 400 invalid_caller, фейк и события не трогаются', async () => {
+  it('AC-002-3: нет swarm id, swarm id не UUID или agent id «Bob» (не NodeId, 009 4.2) — 400 invalid_caller, фейк и события не трогаются', async () => {
     const gateway = await openGateway();
     const cases = [
       { ...authorized, 'x-swag-agent-id': 'agent-1' },
       { ...caller, 'x-swag-swarm-id': 'swarm-1' },
-      { ...caller, 'x-swag-agent-id': 'bob' },
+      { ...caller, 'x-swag-agent-id': 'Bob' },
     ];
 
     for (const headers of cases) {

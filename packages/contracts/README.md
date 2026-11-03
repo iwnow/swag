@@ -1,10 +1,11 @@
 # @swag/contracts
 
-Общие схемы Zod и типы, которыми обмениваются сервисы и ядра: запрос на рой, рой, агент, запуск роя, сообщение шины, события платформы, subjects NATS, `ServiceInfo`, `traceId`, схема структурного лога, контракты LLM Gateway (каталог моделей, использование токенов, ошибки, вызывающий, деньги и списания, регистрация роя) и контракты identity (регистрация, вход, токены, коды ошибок), права и вызывающий (`Actor`, `Permission`, `can`), управление пользователями (приглашения, список, смена роли и блокировка, отзывы токенов), баланс организации (пополнение, журнал, остаток) и манифест типа узла (`NodeManifest`, ссылка `type@version`).
+Общие схемы Zod и типы, которыми обмениваются сервисы и ядра: запрос на рой (форма или граф), рой, агент, граф процесса, запуск роя (`SwarmLaunch`), сообщение шины, события платформы, subjects NATS, `ServiceInfo`, `traceId`, схема структурного лога, контракты LLM Gateway (каталог моделей, использование токенов, ошибки, вызывающий, деньги и списания, регистрация роя) и контракты identity (регистрация, вход, токены, коды ошибок), права и вызывающий (`Actor`, `Permission`, `can`), управление пользователями (приглашения, список, смена роли и блокировка, отзывы токенов), баланс организации (пополнение, журнал, остаток) и манифест типа узла (`NodeManifest`, ссылка `type@version`).
 
 ## Задачи
 
 - Единые контракты из [спеки 001, раздел 4](../../docs/spec/001-walking-skeleton.md#4-контракты): `swarm.ts` (4.1), `bus.ts` (4.2), `events.ts` (4.3).
+- Граф процесса из [спеки 009, раздел 4.1](../../docs/spec/009-process-graph.md#41-граф-packagescontractssrcgraphts): `graph.ts`; `AgentId` = `NodeId`, `SwarmRequest` (форма или граф), `LaunchProgram` и `SwarmLaunch` (4.2, 4.5), события `node.*` и причина `node_failed` (4.10).
 - Контракты наблюдаемости из [спеки 016](../../docs/spec/016-observability.md#4-контракты): `traceId` в конверте события (4.1), `LogRecord` (4.2).
 - Права и вызывающий из [спеки 024, раздел 4.1](../../docs/spec/024-organizations-access.md#41-swagcontracts-файл-srcaccessts): `access.ts` — `Permission`, `ROLE_PERMISSIONS`, `Actor`, `actorFromClaims`, `can`.
 - Баланс организации из [спеки 013, раздел 4.1](../../docs/spec/013-balance.md#41-swagcontracts): `billing.ts`; права `balance.read` и `balance.topup` в `access.ts`; `spentMicroUsd` в итоговых событиях роя и `heldMicroUsd` в `LlmSwarmClosed`.
@@ -17,9 +18,10 @@
 
 ## Что внутри сейчас
 
-- `swarm.ts` — `AgentId`, `SwarmId`, `AgentDraft` (с `model: PlatformModel`, по умолчанию `chat-small`, и `budgetMicroUsd` и `maxTokens`, по умолчанию `null`), `SwarmCreateRequest` (с обязательным `budgetMicroUsd` и `maxTokens`, по умолчанию `null`), `AgentSpec`, `ENTRY_AGENT_ID`, `SwarmStatus`, `AgentStatus`, `SwarmLaunch` (с `budgetMicroUsd` и `maxTokens`, `null` допустим), `SwarmSummary`, `LlmCaller`, `LlmSwarmRegistration` и `LlmSwarmClosed` (ответ закрытия роя: `spentMicroUsd` и `heldMicroUsd`; `heldMicroUsd` пока всегда `0`, пока gateway не ждёт идущие вызовы — 013, T-5).
+- `graph.ts` — `NodeId` (`[a-z][a-z0-9-]{0,39}`, кроме `user`), лимиты `GRAPH_MAX_NODES` (16), `GRAPH_MAX_EDGES` (64), `GRAPH_MAX_AGENTS` (8), `GraphNode`, `GraphEdge` (вид `flow` или `link`), `ProcessGraph` (`entry`, `exit`), `GraphIssueCode` (коды замечаний 4.1), `GraphIssue`, `GraphCheckResult`.
+- `swarm.ts` — `AgentId` (= `NodeId`), `SwarmId`, `AgentDraft` (с `model: PlatformModel`, по умолчанию `chat-small`, и `budgetMicroUsd` и `maxTokens`, по умолчанию `null`), `SwarmCreateRequest` (с обязательным `budgetMicroUsd` и `maxTokens`, по умолчанию `null`), `AgentSpec`, `ENTRY_AGENT_ID`, `SwarmStatus`, `AgentStatus`, `SwarmGraphRequest` (граф вместо агентов, `maxTokens` по умолчанию `null`), `SwarmRequest` (union формы и графа), `LaunchProgram`, `SwarmLaunch` (с `orgId`, агентами, `programs`, `edges`, `entry`, `exit`, `budgetMicroUsd` и `maxTokens`, `null` допустим), `SwarmSummary`, `LlmCaller`, `LlmSwarmRegistration` и `LlmSwarmClosed` (ответ закрытия роя: `spentMicroUsd` и `heldMicroUsd`; `heldMicroUsd` пока всегда `0`, пока gateway не ждёт идущие вызовы — 013, T-5).
 - `bus.ts` — `BusMessage`, subjects `inboxSubject`, `eventsSubject`, `ALL_INBOXES`, `ALL_EVENTS`.
-- `events.ts` — `TraceId`, `PlatformEventInput` (дискриминированное объединение по `type`, в конверте `traceId: TraceId | null`; вариант `llm.call` с `LlmCallData`, источник `llm-gateway`; `agent.step`, `agent.idle`; `swarm.created` с необязательными бюджетами и `maxTokens` роя и агентов, `orgId` и `createdBy` (024, 4.3), у событий до 004 и 031 их нет; причины `agent_failed`, `api_restarted`, `budget_exceeded` и `gateway_unavailable` в `swarm.failed`), `PlatformEvent` (с `seq`).
+- `events.ts` — `TraceId`, `PlatformEventInput` (дискриминированное объединение по `type`, в конверте `traceId: TraceId | null`; вариант `llm.call` с `LlmCallData`, источник `llm-gateway`; `agent.step`, `agent.idle`; `swarm.created` с необязательными бюджетами и `maxTokens` роя и агентов, `orgId` и `createdBy` (024, 4.3), необязательный `graph` (009, 4.5); у событий до 004, 009 и 031 этих полей нет; причины `agent_failed`, `api_restarted`, `budget_exceeded`, `gateway_unavailable` и `node_failed` в `swarm.failed`; `node.started`, `node.completed`, `node.failed` с `nodeId`, `code` — `NodeInvocationErrorCode`), `PlatformEvent` (с `seq`).
 - `auth.ts` — схемы identity (012, 4.1). `Email` — `trim`, нижний регистр, не больше 254 символов; `Password` — от 10 до 128 символов без `trim` (Q-10); `OrganizationName` — от 1 до 200 символов после `trim`; `AccessTokenClaims` — `iss: swag-identity`, `aud: swag`, `org` — `null` у supervisor.
 - `access.ts` — `Permission` (`swarm.create`, `swarm.read`, `swarm.stop`, `user.manage`, `organization.read`, `balance.read`, `balance.topup`, `node.read`, `secret.manage`), `ROLE_PERMISSIONS` (таблица роль → права), `Actor` (`userId`, `orgId`, `role`, `permissions`), `actorFromClaims` (из `AccessTokenClaims`: `sub`, `org`, `role`), `can`.
 - `billing.ts` — `TopupMicroUsd` (целое 1…1 000 000 000), `TopupRequest` (`comment` по умолчанию `null`, пустая строка не проходит), `BalanceView`, `BalanceEntryKind` (`topup`, `swarm`), `BalanceEntry`, `BalanceEntryList` (с `nextBefore`).
@@ -43,6 +45,11 @@
 
 ## Ключевые решения
 
+- Граф (009, Q-8): `AgentId` — это `NodeId`, поэтому агенты графа называются id узлов (`writer`), форма по-прежнему даёт `agent-1…8`. `user` зарезервирован и не проходит ни в `NodeId`, ни в `AgentId`. Старые события с `agent-N` остаются валидными.
+- Граф (009, Q-9): лимиты 16 узлов, 64 рёбра, 8 агентов — константы в `graph.ts`, без env.
+- Граф (009, 4.1): `graph.ts` — только схемы и типы. Проверка (`checkGraph`) и план (`graphPlan`) живут в `api-integration` и ядрах (спека 009, T-2…T-4, T-6); здесь нет логики.
+- Запрос роя (009, 4.2): `SwarmRequest` — union двух strict-схем. Форма отличается полем `agents`, граф — полем `graph`; смесь отклоняется.
+- Запуск роя (009, 4.5, Q-5): `SwarmLaunch` несёт `orgId` и настройки узлов после проверки `api`; оркестратор не проверяет их по реестру повторно (REQ-009-7, D-157 «б»). `credentials` агентов в запуск не передаются.
 - Права (024, 4.1): `actorFromClaims` берёт права из `ROLE_PERMISSIONS`, отдельного хранения прав в токене нет. Роль супервизора не создаёт роёв (Q-4): у неё нет `swarm.create`.
 - Схемы zod 4 (`z.uuid()`, `z.iso.datetime()`, `z.strictObject`) — лишнее поле в запросе отклоняется (AC-001-1, AC-001-12).
 - `PlatformEvent` = `PlatformEventInput & { seq }`: `seq` не входит в публикуемый контракт (4.3).
@@ -65,6 +72,7 @@
 
 ## Спеки
 
+- 009 — раздел 4.1 (`graph.ts`), разделы 4.2, 4.5, 4.10 (`swarm.ts`, `events.ts`), T-1.
 - 013 — раздел 4.1 (`billing.ts`, права, `spentMicroUsd`, `LlmSwarmClosed`), T-1.
 - 024 — раздел 4.1 (`access.ts`), раздел 4.2 (дополнения `auth.ts`), T-1.
 - 026 — раздел 4.1 (`egressMatches`, `NodeErrorCode`, `node-invocation.ts`), раздел 4.8 (кадры), T-1.
