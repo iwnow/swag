@@ -372,7 +372,7 @@ function expandLevel(
       return;
     }
 
-    const childId = String(node.settings.processId);
+    const childId = String(node.settings['processId']);
     const path = `nodes.${i}.settings.processId`;
     const child = children.get(childId);
     if (!child) {
