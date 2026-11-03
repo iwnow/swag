@@ -22,6 +22,7 @@
     { "path": "packages/ui-angular" },
     { "path": "packages/llm-gateway-core" },
     { "path": "packages/adapter-crypto" },
+    { "path": "packages/adapter-croner" },
     { "path": "packages/egress-proxy-core" },
     { "path": "packages/adapter-jose" },
     { "path": "packages/adapter-smtp" },
