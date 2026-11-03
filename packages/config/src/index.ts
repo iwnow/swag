@@ -155,6 +155,9 @@ export const AgentConfig = z.object({
     })
     .pipe(z.array(AgentPeerEnv)),
   AGENT_ENTRY: AgentId,
+  // Спека 009, 4.8: только агенту-входу команды графа; умолчания — форма роя (задача от пользователя, итог пользователю).
+  AGENT_TASK_FROM: z.union([AgentId, z.literal('user')]).default('user'),
+  AGENT_RESULT_TO: z.enum(['user', 'process']).default('user'),
   AGENT_MAX_STEPS: PositiveInt.min(1),
   AGENT_MAX_TOKENS: PositiveInt.min(1),
   LLM_GATEWAY_URL: z.string().url(),

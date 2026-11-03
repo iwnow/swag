@@ -32,7 +32,7 @@
 
 - Модель — `createOpenAiChatModel` (`adapter-openai`, 022, 4.3) с `baseUrl = LLM_GATEWAY_URL`, `caller = {swarmId, agentId}`, `timeoutMs = AGENT_LLM_TIMEOUT_MS`, `maxRetries = AGENT_LLM_MAX_RETRIES`. Оболочка не знает про OpenAI SDK, только про порт `ChatModel`.
 - `traceparent` для вызова модели берётся из `telemetry.currentTraceparent()` (метод объекта `Telemetry`, в `trace`-контексте его нет). Так запрос к gateway попадает в тот же трейс, что и спан хода.
-- Конфигурация 4.8 отображается в `AgentCoreDeps.config` без лишних полей: `peers` — из `AGENT_PEERS` (JSON `AgentPeer[]`), `entryAgentId` — из `AGENT_ENTRY`, `model` — из `AGENT_MODEL`. Эстафеты (`AGENT_NEXT`, `AGENT_STEP_DELAY_MS`, `timers`) в оболочке больше нет.
+- Конфигурация 4.8 отображается в `AgentCoreDeps.config` без лишних полей: `peers` — из `AGENT_PEERS` (JSON `AgentPeer[]`), `entryAgentId` — из `AGENT_ENTRY`, `taskFrom` и `resultTo` — из `AGENT_TASK_FROM` и `AGENT_RESULT_TO` (009, 4.8; агент-вход команды графа), `model` — из `AGENT_MODEL`. Эстафеты (`AGENT_NEXT`, `AGENT_STEP_DELAY_MS`, `timers`) в оболочке больше нет.
 - Баннер `node/agent/agent ok` пишется до подключения к NATS: это старт процесса, а не готовность агента. Строки баннера — записи `info` схемы `LogRecord` (REQ-016-5).
 - Переменные телеметрии и id агента разбираются отдельно от полной конфигурации (`AgentConfig.pick`): ошибка конфигурации тоже пишется логом с `swarmId`, `agentId` и `traceId`, если эти значения валидны.
 - `agent start failed` пишется внутри спана `agent.start`, поэтому у записи `traceId` из `TRACEPARENT`; спан получает статус `ERROR`.

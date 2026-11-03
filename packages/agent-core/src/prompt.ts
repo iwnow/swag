@@ -3,6 +3,7 @@ import type { AgentId } from '@swag/contracts';
 import type { AgentTool, ChatMessage } from './loop.ts';
 
 // Спека 022, 4.5 — промпт, входящие сообщения и инструменты агента роя. Чистые функции: отправка — колбэк.
+// Спека 009, 4.8 — источник задачи и получатель итога агента-входа команды графа.
 
 export interface AgentPeer {
   id: AgentId;
@@ -16,18 +17,36 @@ export interface PromptAgent {
   agentRole: string;
   peers: AgentPeer[];
   entryAgentId: AgentId;
+  taskFrom?: AgentId | 'user'; // по умолчанию 'user' (D-184)
+  resultTo?: 'user' | 'process'; // по умолчанию 'user' (D-184)
 }
 
 export type SendMessage = (to: AgentId, text: string) => Promise<void>;
 
 const SEND_LINE =
   'Писать участникам можно только инструментом send_message. Текст ответа без инструмента видит только платформа.';
-const ENTRY_LINE =
-  'Задачу тебе ставит пользователь. Когда задача решена, вызови finish с итоговым результатом: его получит пользователь.';
 const WORKER_LINE = 'Результат своей работы отправь через send_message тому, кто дал тебе задание.';
 // Спека 022, 4.5 — напоминание агенту-входу (4.4, шаг 5).
 export const ENTRY_REMINDER =
   'Ты ответил текстом без инструмента, пользователь его не увидит. Если задача решена — вызови finish с итоговым результатом. Если нужна работа участников — напиши им через send_message.';
+
+const ENTRY_LINE =
+  'Задачу тебе ставит пользователь. Когда задача решена, вызови finish с итоговым результатом: его получит пользователь.';
+
+// Спека 009, 4.8: строки агента-входа; user + user — ровно строка 022 (REQ-009-16, REQ-009-17).
+function entryLine(agent: PromptAgent): string {
+  if ((agent.taskFrom === undefined || agent.taskFrom === 'user') && agent.resultTo !== 'process')
+    return ENTRY_LINE;
+  const task =
+    agent.taskFrom === undefined || agent.taskFrom === 'user'
+      ? 'Задачу тебе ставит пользователь.'
+      : `Задачу тебе передаёт шаг процесса ${agent.taskFrom}.`;
+  const result =
+    agent.resultTo === 'process'
+      ? 'Когда задача решена, вызови finish с итоговым результатом: он уйдёт следующему шагу процесса.'
+      : 'Когда задача решена, вызови finish с итоговым результатом: его получит пользователь.';
+  return `${task} ${result}`;
+}
 
 export function systemPrompt(agent: PromptAgent): string {
   const lines = [
@@ -38,7 +57,7 @@ export function systemPrompt(agent: PromptAgent): string {
     for (const peer of agent.peers) lines.push(`- ${peer.id} «${peer.name}»: ${peer.role}`);
     lines.push(SEND_LINE);
   }
-  lines.push(agent.agentId === agent.entryAgentId ? ENTRY_LINE : WORKER_LINE);
+  lines.push(agent.agentId === agent.entryAgentId ? entryLine(agent) : WORKER_LINE);
   return lines.join('\n');
 }
 
@@ -48,14 +67,16 @@ export function inboxMessage(
 ): ChatMessage {
   if (message.from === 'user')
     return { role: 'user', content: `Задача от пользователя:\n${message.text}` };
-  const name = peers.find((peer) => peer.id === message.from)?.name ?? '';
-  return { role: 'user', content: `Сообщение от ${message.from} «${name}»:\n${message.text}` };
+  const peer = peers.find((candidate) => candidate.id === message.from);
+  if (peer === undefined)
+    return { role: 'user', content: `Вход от шага процесса ${message.from}:\n${message.text}` };
+  return { role: 'user', content: `Сообщение от ${peer.id} «${peer.name}»:\n${message.text}` };
 }
 
 export function swarmTools(agent: PromptAgent, send: SendMessage): AgentTool[] {
   const tools: AgentTool[] = [];
   if (agent.peers.length > 0) tools.push(sendMessageTool(agent.peers, send));
-  if (agent.agentId === agent.entryAgentId) tools.push(finishTool());
+  if (agent.agentId === agent.entryAgentId) tools.push(finishTool(agent.resultTo));
   return tools;
 }
 
@@ -88,12 +109,15 @@ function sendMessageTool(peers: AgentPeer[], send: SendMessage): AgentTool {
   };
 }
 
-function finishTool(): AgentTool {
+function finishTool(resultTo: PromptAgent['resultTo']): AgentTool {
   const args = z.strictObject({ result: z.string().min(1) });
   return {
     definition: {
       name: 'finish',
-      description: 'Завершить задачу и вернуть итог пользователю',
+      description:
+        resultTo === 'process'
+          ? 'Завершить задачу и вернуть итог следующему шагу процесса'
+          : 'Завершить задачу и вернуть итог пользователю',
       parameters: {
         type: 'object',
         properties: { result: { type: 'string', minLength: 1 } },
