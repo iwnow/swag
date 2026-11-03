@@ -4,9 +4,9 @@
 
 | Термин | В коде | Определение |
 |---|---|---|
-| Рой | `Swarm`, `swarmId` | Группа агентов, собранная под одну задачу пользователя. Имеет бюджет, свою сеть и свой account шины. |
+| Рой | `Swarm`, `swarmId` | Синоним процесса в исполнении: `Swarm` и `swarmId` в коде, API, событиях и UI — исполнение графа процесса целиком, см. «Исполнение запуска». Не переименовывается (033, Q-10). |
 | План роя | `SwarmPlan` | Structured output координатора: роли, модели, скиллы, связи, бюджет. Исполняется оркестратором после валидации. |
-| Агент | `Agent`, `agentId` | Агентный цикл в одной песочнице с одной ролью из плана роя. |
+| Агент | `Agent`, `agentId` | Умный узел процесса: агентный цикл в одной песочнице с одной ролью. Агенты, связанные рёбрами `link`, работают командой (009, 4.1; 033, Q-10). |
 | Агентный цикл | `AgentLoop`, `runAgentLoop` | Цикл «вызов модели → вызовы инструментов → результаты» на OpenAI-формате. Не знает о рое: всё получает через контекст вызова (спека 022, 4.2). |
 | Контекст вызова | `AgentCallContext` | Вход агентного цикла: модель, системный промпт, история, новое сообщение, инструменты, лимиты `maxSteps`, `maxTokens` (022, 4.2). |
 | Итог цикла | `AgentLoopResult` | `text`, `stopped`, `yielded`, `max_steps`, `model_error` + добавленные сообщения и число шагов (022, 4.2; `yielded` — 030, 4.1). |
@@ -44,7 +44,7 @@
 | Шаг | `Step`, `stepIndex` | Одна итерация агентного цикла: вызов модели и выполнение её `tool_calls`. |
 | Скилл | `Skill` | Версионированная папка с `SKILL.md`, скриптами и шаблонами. |
 | Реестр скиллов | `SkillRegistry` | Хранилище и каталог скиллов. |
-| Узел | `Node`, `nodeId` | Элемент графа процесса: экземпляр типа узла с настройками. Виды — триггер, канал, коннектор, LLM-агент, программа, человек. |
+| Узел | `Node`, `nodeId` | Узел процесса — элемент графа процесса: экземпляр типа узла с настройками. Виды — триггер, канал, коннектор, LLM-агент, программа, человек; узлом может быть другой процесс (033, 4.4). |
 | Вид узла | `NodeKind` | `trigger`, `channel`, `connector`, `llm-agent`, `program`, `human`; задаёт операции, которые узел реализует. |
 | Тип узла | `NodeTypeRef`, `type@version` | Плагин узла из реестра: манифест и код. Граф ссылается на тип с версией. |
 | Манифест узла | `NodeManifest` | Описание типа узла: вид, схемы настроек, входа, выхода и операций, credentials, `egress`. |
@@ -73,7 +73,7 @@
 | Грант выхода | `EgressGrant`, `createEgressGrants`, `GrantVerifier`, `EGRESS_PROXY_KEY` | Подписанное HMAC право одного вызова на выход к хостам `egress` до `expiresAt` (026, 4.1, 4.7). |
 | Сверка с `egress` | `egressMatches` | Единое правило сверки хоста и порта с `egress` для SDK и прокси (026, 4.1). |
 | Секрет организации | `SecretName`, `SecretValue`, `SecretSummary`, `SecretList`, `SecretPutRequest`, `SecretStore`, `SecretReader`, `SecretCipher`, `createAesGcmCipher`, `createPostgresSecretStore`, `createMemorySecretStore`, `org_secrets`, `SECRETS_KEY`, `secret.manage`, `listSecrets`, `putSecret`, `deleteSecret`, `hint`, `/secrets` | Доступ организации к внешней системе, хранится шифротекстом AES-256-GCM; значение наружу не отдаётся, узел получает только объявленный в `credentials` (026, 4.5, 4.6). |
-| Состояние узла | `NodeStateStore`, `createPostgresNodeState`, `node_state`, `stateKey` | Значения `ctx.state` в Postgres по ключу `(orgId, stateKey, key)`; в 009 `stateKey` — id узла графа (026, 4.5). |
+| Состояние узла | `NodeStateStore`, `createPostgresNodeState`, `node_state`, `stateKey` | Значения `ctx.state` в Postgres по ключу `(orgId, stateKey, key)`; `stateKey` задаёт `api` в `LaunchProgram.stateKey`: `swarm:<swarmId>:<nodeId>` у роя, `process:<processId>:<nodeId>` у процесса (026, 4.5; 009, 4.7; 033, REQ-033-16). |
 | Граф процесса | `ProcessGraph`, `GraphNode`, `GraphEdge`, `EdgeKind`, `GRAPH_MAX_NODES`, `GRAPH_MAX_EDGES`, `GRAPH_MAX_AGENTS` | Узлы — экземпляры типов реестра с настройками и credentials, рёбра `flow` и `link`, `entry` и `exit`; рой описывается графом (009, 4.1). |
 | Id узла графа | `NodeId` | `[a-z][a-z0-9-]{0,39}`, кроме `user`; `AgentId` = `NodeId` (009, 4.1, 4.2). |
 | Поток, связь | `flow`, `link` | Рёбра графа: `flow` — выход шага идёт входом в следующий, циклы запрещены; `link` — агенты пишут друг другу через шину, неориентированное, циклы разрешены (009, 4.1). |
@@ -88,6 +88,19 @@
 | Программы роя в проекции | `SwarmView.nodes` | Программы графа со статусом `waiting`/`running`/`completed`/`failed` и длительностью (009, 4.10). |
 | Источник задачи и получатель итога агента-входа | `AGENT_TASK_FROM`, `AGENT_RESULT_TO`, `taskFrom`, `resultTo` | Пользователь или шаг процесса; пользователь или следующий шаг — в промпте и описании `finish` (009, 4.8). |
 | Вымарывание секретов | `[secret]` | Замена значений секретов вызова в логах узла и `error.message` (026, 4.10). |
+| Процесс | `Process`, `ProcessId`, `ProcessDraft`, `ProcessView`, `ProcessSummary`, `ProcessList`, `ProcessRecord`, `ProcessStore`, `processes`, `/processes`, `createProcess`, `updateProcess`, `deleteProcess`, `checkProcessDraft`, `PROCESS_MAX_PER_ORG`, `too_many_processes` | Граф из узлов, сохранённый организацией: имя, граф, бюджет и `maxTokens` одного запуска, интервал опроса, `maxConcurrent`. Определение хранит `api`, задание и запуски — планировщик (033, 4.1). Узлом процесса может быть другой процесс или агент — умный узел с агентным циклом (033, Q-10). |
+| Права процессов | `process.read`, `process.manage` | Чтение процессов и запусков; создание, правка, удаление, включение и ручной запуск. Видимость — как у роёв (033, 4.1, 4.11). |
+| Запуск процесса | `ProcessRun`, `ProcessRunView`, `ProcessRunList`, `RunRecord`, `RunStatus`, `RunRejectReason`, `RunSource`, `RunRequest`, `process_runs`, `runProcess`, `invalid_event`, `queue_full` | Один запуск процесса по событию триггера или вручную; статус в планировщике: `queued` → `launching` → `running` → `completed`, `failed`, `stopped`, или `rejected`, `cancelled`. Id запуска = id исполнения (033, 4.1). |
+| Исполнение запуска | `Swarm`, `swarmId`, `SwarmLaunch`, `startSwarm`, `StartSwarm`, `launchRun`, `RunLaunchRequest`, `RunLaunchResult`, `runStatuses`, `/internal/process-runs` | Исполнение графа оркестратором с резервом, событиями и проекцией; в коде называется `Swarm` — рой (033, Q-10). `startSwarm` — общий путь `POST /swarms` и запуска процесса (033, 4.10, 4.12). |
+| Задание планировщика | `Job`, `JobSpec`, `JobTrigger`, `JobState`, `JobRecord`, `JobStore`, `JobDisabledReason`, `JobError`, `scheduler_jobs`, `/jobs`, `putJob`, `enable`, `disable`, `poll_failed`, `author_blocked`, `process_no_trigger`, `job_not_found` | Состояние процесса в планировщике: триггер, курсор, включённость, `nextRunAt`, ошибки опроса; `api` передаёт его при каждом сохранении (033, 4.7, 4.9). |
+| Планировщик | `apps/scheduler`, `scheduler-core`, `createSchedulerCore`, `SchedulerCore`, `SchedulerCoreDeps`, `SchedulerConfig`, `SchedulerClient`, `createSchedulerHttpClient`, `ApiClient`, `createApiInternalHttpClient`, `NodeInvoker`, `SCHEDULER_URL`, `SCHEDULER_TOKEN`, `API_INTERNAL_TOKEN`, `scheduler_unavailable` | Отдельный сервис: хранит задания и запуски, опрашивает триггеры, ведёт очередь и запускает процессы через внутренний маршрут `api` (033, 4.7, 4.9, 4.10). |
+| Триггер процесса, шаг-триггер | `trigger`, `triggers` (опция `checkGraph`), `trigger_not_entry`, `trigger_flow`, `launchGraph`, `LaunchTrigger`, `SwarmLaunch.trigger` | Единственный узел вида `trigger` графа процесса, его `entry`, с одним исходящим `flow`; в исполнение не попадает, его событие — вход следующего шага (033, 4.2, 4.3). |
+| Курсор триггера | `cursor`, `stateKey process:<processId>:<nodeId>` | Строка `poll(cursor)` задания; сдвигается в одной транзакции с постановкой событий в очередь (033, 4.7, 4.13). |
+| Очередь запусков | `PROCESS_QUEUE_MAX`, `maxConcurrent`, `takeQueued`, `counts`, `recover` | Запуски процесса по порядку постановки; на исполнение — пока запусков в `launching` и `running` меньше `maxConcurrent` (033, 4.13). |
+| Такт планировщика | `tick`, `claimDue`, `recordTick`, `TickRecord`, `PROCESS_TICK_MS`, `PROCESS_LEASE_MS`, `PROCESS_TICK_BATCH`, `PROCESS_POLL_TIMEOUT_MS`, `PROCESS_POLL_MAX_FAILURES`, `process_tick_failed`, `process_run_launch_failed` | Периодический шаг планировщика: захват заданий арендой, опрос и расписание, запуск из очереди, сверка статусов (033, 4.13). |
+| Триггер-расписание | `swag/schedule@1.0.0`, `SCHEDULE_TRIGGER_TYPE`, `everySec`, `cron`, `timezone`, `nextScheduleRun`, `CronSchedule`, `createCronerSchedule`, `schedule_exhausted` | Встроенный триггер: интервал или cron, исполняется планировщиком без песочницы, событие `{ scheduledAt, firedAt }` (033, 4.5). |
+| Процесс-узел | `swag/process@1.0.0`, `PROCESS_NODE_TYPE`, `expandGraph`, `ExpandResult`, `NodeOrigin`, `PROCESS_NEST_MAX_DEPTH`, `process_not_found`, `process_cycle`, `process_too_deep`, `process_node_id_too_long`, `process_invalid`, `process_in_use` | Сохранённый процесс как шаг графа; `api` разворачивает его в узлы дочернего процесса с id `<p>-<id>` до проверки и исполнения (033, 4.4). |
+| Корневой спан | `RootSpans`, `createRootSpans`, `process.poll`, `process.run` | Спан без родителя в планировщике на каждый опрос и запуск; трейс продолжается в `api` (033, 4.7, 4.13). |
 | Шина | `Bus` | NATS: обмен сообщениями агентов внутри роя. |
 | Account шины | `BusAccount` | Изолированный NATS account одного роя. |
 | Общее состояние роя | `SwarmState` | NATS KV роя, обновление через compare-and-set. |
