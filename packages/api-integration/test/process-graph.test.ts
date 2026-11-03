@@ -8,7 +8,7 @@ import {
   type ProcessGraph,
 } from '@swag/contracts';
 import { describe, expect, it } from 'vitest';
-import { checkGraph, createNodeRegistry, formGraph } from '../src/index.ts';
+import { checkGraph, createNodeRegistry, formGraph, graphPlan, valueText } from '../src/index.ts';
 
 // Спека 009, 4.4: тестовый реестр — манифесты swag/llm-agent и example/echo из пакетов узлов,
 // плюс тестовые trigger и program (program с credential apiKey).
@@ -399,5 +399,49 @@ describe('NFR-009-1', () => {
       `NFR-009-1 checkGraph: узлов=16 рёбер=64 прогонов=1000 p50=${p50} мс p95=${p95} мс\n`,
     );
     expect(at(0.95)).toBeLessThan(5);
+  });
+});
+
+describe('graphPlan', () => {
+  it('AC-009-17: команда a—b, отдельный c, программа p, flow p→a и a→c — шаги, команды, соседи и потоки', () => {
+    const plan = graphPlan({
+      agents: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+      programs: [{ id: 'p' }],
+      edges: [
+        { from: 'a', to: 'b', kind: 'link' },
+        { from: 'p', to: 'a', kind: 'flow' },
+        { from: 'a', to: 'c', kind: 'flow' },
+      ],
+      entry: 'p',
+      exit: 'c',
+    });
+    expect(plan.steps).toEqual([
+      { kind: 'program', id: 'p' },
+      { kind: 'team', id: 'a', team: { entry: 'a', members: ['a', 'b'] } },
+      { kind: 'team', id: 'c', team: { entry: 'c', members: ['c'] } },
+    ]);
+    expect(plan.peers('a')).toEqual(['b']);
+    expect(plan.peers('c')).toEqual([]);
+    expect(plan.next('p')).toEqual(['a']);
+    expect(plan.next('a')).toEqual(['c']);
+    expect(plan.stepOf('b')).toEqual(plan.steps[1]);
+    expect(plan.entry).toBe('p');
+    expect(plan.exit).toBe('c');
+  });
+});
+
+describe('valueText', () => {
+  it('объект со строковым полем text — значение этого поля', () => {
+    expect(valueText({ text: 'x' })).toBe('x');
+  });
+
+  it('строка — сама строка', () => {
+    expect(valueText('plain')).toBe('plain');
+  });
+
+  it('прочее — JSON; объект, где text не строка, тоже JSON', () => {
+    expect(valueText({ n: 1 })).toBe('{"n":1}');
+    expect(valueText({ text: 5 })).toBe('{"text":5}');
+    expect(valueText(null)).toBe('null');
   });
 });

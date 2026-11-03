@@ -9,14 +9,16 @@
 - Деньги роя и агентов (004, 4.7): бюджеты из `swarm.created`, расход — сумма `charge.microUsd` событий `llm.call` (без `charge` — `costMicroUsd ?? 0`).
 - `formGraph(agents)` — форма роя как граф (009, 4.3): агенты → узлы `swag/llm-agent@1.0.0`, все пары связаны `link`, вход и выход `agent-1`.
 - `checkGraph(graph, { registry, secretNames })` — проверка графа (009, 4.4): все замечания за один вызов, без исключений; коды и пути — по 4.4.
+- `graphPlan({ agents, programs, edges, entry, exit })` — план исполнения (009, 4.6): шаги (программы и команды), `stepOf(nodeId)`, `next(stepId)` — цели исходящих `flow` в порядке рёбер, `peers(agentId)` — соседи по `link`, `entry`/`exit` как id шагов.
+- `valueText(value)` — значение потока как текст (009, 4.6): поле `text` объекта, строка как есть, прочее — `JSON.stringify`.
 - `createNodeRegistry(manifests)` — реестр типов узлов в памяти (021, 4.2): проверка повторов `type@version` и поддержки схем, `list()` — последняя версия каждого типа со списком версий, `get(ref)`, `validateSettings(ref, settings)` — проверка настроек узла по схеме `settings` манифеста, `validate(ref, target, value)` — проверка входа, выхода или операции коннектора по схеме манифеста (026, 4.2).
 
 ## Что внутри сейчас
 
 - `src/swarm-view.ts` — тип `SwarmView` (агенты с `model` и `steps`, деньги: `budgetMicroUsd`, `spentMicroUsd`), `applyEvent`, `projectSwarm`, `FINAL_SWARM_STATUSES` (итоговые статусы роя `completed`, `stopped`, `failed`; используются ядром `api-core`), поля владельца `orgId` и `createdBy` (024, 4.3). Правила — спека 022, 4.6 (с 022 заменяют таблицу 4.4 спеки 001 в части `bus.message`, `agent.step`, `agent.idle`).
 - `src/node-registry.ts` — `createNodeRegistry`, `NodeRegistry`, `NodeSchemaTarget`, `SettingsResult`, `SettingsIssue`, `ValueResult`, `NodeRegistryError`. Все схемы манифеста (`settings`, `inputs`, `outputs`, входы и выходы операций) компилируются `z.fromJSONSchema` при создании реестра и хранятся в нём.
-- `src/process-graph.ts` — `formGraph`, `LLM_AGENT_TYPE`, `checkGraph`, `GraphCheckDeps`. `checkGraph` идёт пятью проходами (узлы, настройки и секреты, рёбра, потоки и команды, вход, выход, достижимость); каждый проход — по порядку узлов и рёбер массива. Команды (компоненты агентов по `link`) и шаг узла вычисляются внутри проверки.
-- `test/process-graph.test.ts` — AC-009-1…AC-009-11 (`formGraph`, все коды `checkGraph`, пути `path`) и NFR-009-1 (замер `checkGraph` на 16 узлах и 64 рёбрах, p95 меньше 5 мс, 1000 прогонов, вывод в stdout). Тестовый реестр — манифесты `swag/llm-agent` и `example/echo` из пакетов узлов, плюс литеральные `test/trigger` и `test/program` (credential `apiKey`), оба проходят `NodeManifest.parse`.
+- `src/process-graph.ts` — `formGraph`, `LLM_AGENT_TYPE`, `checkGraph`, `GraphCheckDeps`, `graphPlan`, `GraphPlan`, `Step`, `TeamPlan`, `valueText`. `checkGraph` идёт пятью проходами (узлы, настройки и секреты, рёбра, потоки и команды, вход, выход, достижимость); каждый проход — по порядку узлов и рёбер массива. Команды считает `teamEntries` (компоненты агентов по `link`, агент-вход по 4.1): её используют и `checkGraph`, и `graphPlan`.
+- `test/process-graph.test.ts` — AC-009-1…AC-009-11 (`formGraph`, все коды `checkGraph`, пути `path`), AC-009-17 (`graphPlan`), тесты `valueText` и NFR-009-1 (замер `checkGraph` на 16 узлах и 64 рёбрах, p95 меньше 5 мс, 1000 прогонов, вывод в stdout). Тестовый реестр — манифесты `swag/llm-agent` и `example/echo` из пакетов узлов, плюс литеральные `test/trigger` и `test/program` (credential `apiKey`), оба проходят `NodeManifest.parse`.
 - `test/swarm-view.test.ts` — AC-001-2 (таблица 4.4 с правками 4.6, рёбра при создании пустые), AC-022-2 (`steps`, рёбра по сообщениям, `bus.message` не меняет статус, `agent.idle` и `done`) и AC-003-7 (итоговый статус роя окончателен).
 - `test/node-registry.test.ts` — AC-021-5 (повтор `type@version`), AC-021-6 (схемы, которые `fromJSONSchema` не принимает: внешний `$ref`, `not`, `if/then`), AC-021-7 (`validateSettings`, `get`, `node_type_not_found`), AC-021-8 (`list`, порядок версий), AC-026-2 (`validate`: `invalid_value` с `issues`, `schema_not_found`, `node_type_not_found`, значение после parse). Манифесты — литералы, проходящие `NodeManifest.parse`.
 
@@ -81,4 +83,4 @@
 - 026 — `validate` и схемы значений (4.2, AC-026-2).
 - 022 — правила проекции (4.6).
 - 024 — владелец роя в проекции (4.3, REQ-024-4): `orgId`, `createdBy`.
-- 009 — `formGraph` (4.3), `checkGraph` (4.4, REQ-009-3, REQ-009-4, AC-009-1…AC-009-11, NFR-009-1). Вопросы Q-2, Q-6, Q-7, Q-9 — ответы приняты в спеке.
+- 009 — `formGraph` (4.3), `checkGraph` (4.4, REQ-009-3, REQ-009-4, AC-009-1…AC-009-11, NFR-009-1), `graphPlan` и `valueText` (4.6, REQ-009-8, AC-009-17). Вопросы Q-2, Q-6, Q-7, Q-9 — ответы приняты в спеке.

@@ -157,24 +157,13 @@ export function checkGraph(graph: ProcessGraph, deps: GraphCheckDeps): GraphChec
   const usable = graph.edges.flatMap((edge, j) => (excludedEdges.has(j) ? [] : [{ edge, j }]));
   const flows = usable.filter(({ edge }) => edge.kind === 'flow');
 
-  // Команды: компоненты агентов по link; агент-вход — graph.entry, иначе цель первого входящего flow, иначе первый агент.
-  const links = new Map<NodeId, NodeId[]>();
-  for (const { edge } of usable) {
-    if (edge.kind !== 'link') continue;
-    links.set(edge.from, [...(links.get(edge.from) ?? []), edge.to]);
-    links.set(edge.to, [...(links.get(edge.to) ?? []), edge.from]);
-  }
+  // Шаг узла: программа — сама себе, агент — агент-вход своей команды (4.1).
   const agentIds = [...participants].filter(([, p]) => p.kind === 'llm-agent').map(([id]) => id);
-  const teamEntryOf = new Map<NodeId, NodeId>();
-  for (const id of agentIds) {
-    if (teamEntryOf.has(id)) continue;
-    const reached = reachableFrom(id, links, true);
-    const members = agentIds.filter((agent) => reached.has(agent));
-    const inbound = flows.find(({ edge }) => members.includes(edge.to));
-    const entry = members.includes(graph.entry) ? graph.entry : (inbound?.edge.to ?? members[0]!);
-    for (const member of members) teamEntryOf.set(member, entry);
-  }
-  // Шаг узла: программа — сама себе, агент — агент-вход своей команды.
+  const teamEntryOf = teamEntries(
+    agentIds,
+    usable.map(({ edge }) => edge),
+    graph.entry,
+  );
   const stepOf = (id: NodeId): NodeId => teamEntryOf.get(id) ?? id;
 
   // Проход 4: потоки.
@@ -256,4 +245,111 @@ function reachableFrom(start: NodeId, adj: Map<NodeId, NodeId[]>, withStart: boo
     stack.push(...(adj.get(id) ?? []));
   }
   return seen;
+}
+
+// Спека 009, 4.1: команда — компонента агентов по link; агент-вход — graph.entry, иначе цель первого входящего flow команды, иначе первый агент.
+function teamEntries(
+  agentIds: readonly NodeId[],
+  edges: readonly GraphEdge[],
+  entry: NodeId,
+): Map<NodeId, NodeId> {
+  const links = adjacency(linkEdges(edges));
+  const result = new Map<NodeId, NodeId>();
+  for (const id of agentIds) {
+    if (result.has(id)) continue;
+    const reached = reachableFrom(id, links, true);
+    const members = agentIds.filter((agent) => reached.has(agent));
+    const inbound = edges.find((edge) => edge.kind === 'flow' && members.includes(edge.to));
+    const teamEntry = members.includes(entry) ? entry : (inbound?.to ?? members[0]!);
+    for (const member of members) result.set(member, teamEntry);
+  }
+  return result;
+}
+
+function linkEdges(edges: readonly GraphEdge[]): { from: NodeId; to: NodeId }[] {
+  return edges
+    .filter((edge) => edge.kind === 'link')
+    .flatMap((edge) => [
+      { from: edge.from, to: edge.to },
+      { from: edge.to, to: edge.from },
+    ]);
+}
+
+// Спека 009, 4.6. План исполнения: шаги, команды, соседи по link, цели потоков.
+export interface TeamPlan {
+  entry: NodeId; // агент-вход
+  members: NodeId[]; // все агенты команды, в порядке узлов графа, вход — среди них
+}
+
+export type Step = { kind: 'program'; id: NodeId } | { kind: 'team'; id: NodeId; team: TeamPlan }; // id команды — id её агента-входа
+
+export interface GraphPlan {
+  steps: Step[]; // программы, затем команды в порядке первого агента
+  stepOf(nodeId: NodeId): Step; // шаг узла: программа или команда, где узел — участник
+  next(stepId: NodeId): NodeId[]; // цели исходящих flow шага, в порядке рёбер
+  peers(agentId: NodeId): NodeId[]; // соседи по link, в порядке узлов графа
+  entry: NodeId; // id шага-входа
+  exit: NodeId; // id шага-выхода
+}
+
+// Вход — граф без замечаний checkGraph (агенты из SwarmLaunch.agents, программы из programs).
+export function graphPlan(input: {
+  agents: readonly { id: NodeId }[];
+  programs: readonly { id: NodeId }[];
+  edges: readonly GraphEdge[];
+  entry: NodeId;
+  exit: NodeId;
+}): GraphPlan {
+  const agentIds = input.agents.map((agent) => agent.id);
+  const teamEntryOf = teamEntries(agentIds, input.edges, input.entry);
+  const teamMembers = new Map<NodeId, NodeId[]>();
+  for (const id of agentIds) {
+    const entry = teamEntryOf.get(id)!;
+    teamMembers.set(entry, [...(teamMembers.get(entry) ?? []), id]);
+  }
+  const steps: Step[] = [
+    ...input.programs.map((program): Step => ({ kind: 'program', id: program.id })),
+    ...[...teamMembers].map(([id, members]): Step => ({
+      kind: 'team',
+      id,
+      team: { entry: id, members },
+    })),
+  ];
+  const byNode = new Map<NodeId, Step>();
+  for (const step of steps) {
+    if (step.kind === 'program') byNode.set(step.id, step);
+    else for (const member of step.team.members) byNode.set(member, step);
+  }
+  const stepOf = (nodeId: NodeId): Step => {
+    const step = byNode.get(nodeId);
+    if (!step) throw new Error(`node ${nodeId} is not in the plan`);
+    return step;
+  };
+  const links = adjacency(linkEdges(input.edges));
+  return {
+    steps,
+    stepOf,
+    next: (stepId) =>
+      input.edges
+        .filter((edge) => edge.kind === 'flow' && stepOf(edge.from).id === stepId)
+        .map((edge) => edge.to),
+    peers: (agentId) =>
+      agentIds.filter((other) => other !== agentId && (links.get(agentId) ?? []).includes(other)),
+    entry: stepOf(input.entry).id,
+    exit: stepOf(input.exit).id,
+  };
+}
+
+// Спека 009, 4.6. Значение потока как текст: поле text объекта, строка как есть, прочее — JSON.
+export function valueText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'text' in value &&
+    typeof value.text === 'string'
+  ) {
+    return value.text;
+  }
+  return JSON.stringify(value);
 }
