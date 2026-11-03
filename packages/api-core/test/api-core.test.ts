@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createMemorySecretStore, createMemorySwarmStore } from '@swag/adapter-memory';
-import { createNodeRegistry, type NodeRegistry } from '@swag/api-integration';
+import { createNodeRegistry, formGraph, type NodeRegistry } from '@swag/api-integration';
 import {
   NodeManifest,
   ROLE_PERMISSIONS,
@@ -1632,6 +1632,47 @@ describe('api-core — спека 009: граф роя', () => {
       entry: 'echo',
       exit: 'agent-1',
     });
+  });
+
+  it('REQ-009-1: форма идёт в граф formGraph и в SwarmLaunch', async () => {
+    const { core, launches } = setup({ nodeTypes: GRAPH_REGISTRY() });
+    // Черновики после разбора формы: с умолчаниями AgentDraft, как их получает formGraph.
+    const agents = [
+      {
+        name: 'Агент 1',
+        role: 'роль 1',
+        model: 'chat-small',
+        budgetMicroUsd: null,
+        maxTokens: null,
+      },
+      {
+        name: 'Агент 2',
+        role: 'роль 2',
+        model: 'chat-small',
+        budgetMicroUsd: null,
+        maxTokens: null,
+      },
+    ] as const;
+    const graph = formGraph(agents);
+    const result = await core.createSwarm(ACTOR, {
+      task: 'Задача',
+      budgetMicroUsd: 1000000,
+      agents,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const events = await core.getEvents(ACTOR, result.value.id, 0);
+    const created = events.ok ? events.value.find((e) => e.type === 'swarm.created') : undefined;
+    expect(created?.type === 'swarm.created' && created.data.graph).toEqual(graph);
+    expect(launches).toHaveLength(1);
+    const [launch] = launches;
+    expect(launch?.orgId).toBe(ORG_A);
+    expect(launch?.programs).toEqual([]);
+    expect(launch?.edges).toEqual(graph.edges);
+    expect(launch?.edges).toEqual([{ from: 'agent-1', to: 'agent-2', kind: 'link' }]);
+    expect(launch?.entry).toBe('agent-1');
+    expect(launch?.exit).toBe('agent-1');
+    expect(launch?.agents.map((a) => a.id)).toEqual(['agent-1', 'agent-2']);
   });
 
   it('AC-009-13: граф с замечаниями — invalid_graph со всеми замечаниями; без swarm.created, резерва и запуска', async () => {
