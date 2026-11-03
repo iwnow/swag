@@ -248,6 +248,15 @@ describe('промпт агента-входа команды графа (спе
     },
   );
 
+  it('AC-009-23: без taskFrom и resultTo строка равна ENTRY_LINE 022', () => {
+    const lines = systemPrompt(entry).split('\n');
+    expect(lines.at(-1)).toBe(
+      'Задачу тебе ставит пользователь. Когда задача решена, вызови finish с итоговым результатом: его получит пользователь.',
+    );
+    const [, finishTool] = swarmTools(entry, async () => {});
+    expect(finishTool?.definition.description).toBe('Завершить задачу и вернуть итог пользователю');
+  });
+
   it('AC-009-23: сообщение от шага, не участника команды, подписано как вход от шага процесса', () => {
     expect(inboxMessage({ from: 'intake', text: 'исходные данные' }, peers)).toEqual({
       role: 'user',

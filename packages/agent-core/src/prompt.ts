@@ -30,8 +30,13 @@ const WORKER_LINE = 'Результат своей работы отправь �
 export const ENTRY_REMINDER =
   'Ты ответил текстом без инструмента, пользователь его не увидит. Если задача решена — вызови finish с итоговым результатом. Если нужна работа участников — напиши им через send_message.';
 
+const ENTRY_LINE =
+  'Задачу тебе ставит пользователь. Когда задача решена, вызови finish с итоговым результатом: его получит пользователь.';
+
 // Спека 009, 4.8: строки агента-входа; user + user — ровно строка 022 (REQ-009-16, REQ-009-17).
 function entryLine(agent: PromptAgent): string {
+  if ((agent.taskFrom === undefined || agent.taskFrom === 'user') && agent.resultTo !== 'process')
+    return ENTRY_LINE;
   const task =
     agent.taskFrom === undefined || agent.taskFrom === 'user'
       ? 'Задачу тебе ставит пользователь.'
