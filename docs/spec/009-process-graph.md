@@ -1,7 +1,7 @@
 ---
 id: "009"
 title: Граф процесса
-status: review
+status: done
 roadmap_stage: 9
 depends_on: ["021", "022", "026"]
 superseded_by: null
@@ -138,7 +138,6 @@ export const GraphIssueCode = z.enum([
   'edge_self',
   'edge_duplicate',
   'link_requires_agents',
-  'flow_requires_values',
   'flow_not_at_team_entry',
   'flow_fan_in',
   'flow_cycle',
@@ -238,7 +237,6 @@ export function checkGraph(graph: ProcessGraph, deps: GraphCheckDeps): GraphChec
    - ребро того же вида между той же парой уже было (у `link` пара без учёта порядка) — `edge_duplicate`.
    - `link`, у которого хотя бы один конец не агент графа — `link_requires_agents`.
 4. **Потоки** (команды и агенты-входы — по 4.1).
-   - `flow`, у которого источник не программа и не агент графа или цель не программа и не агент графа — `flow_requires_values`. Программы всегда дают и принимают значение (`inputs` и `outputs` обязательны для `program`, 021, 4.1.2).
    - `flow` касается агента, который не агент-вход своей команды — `flow_not_at_team_entry`, путь `edges.<j>`. Если в команду ведут входящие `flow` к разным агентам, агентом-входом считается цель первого такого ребра в массиве, остальные рёбра — `flow_not_at_team_entry`.
    - у шага больше одного входящего `flow` — `flow_fan_in` на каждое ребро после первого. У шага-входа ни одного: входящее `flow` к нему — `entry_has_input`.
    - цикл по рёбрам `flow` между шагами — `flow_cycle`, путь `edges.<j>` первого ребра цикла в порядке массива. Одно замечание на цикл.
@@ -535,3 +533,4 @@ nodes: {
 | 2026-11-03 | `spec/009-t8` (стек с ветки, тот же код, что `main` после #237) | AC-009-27 `[manual]`: стек `npm run up`, организация «Ручная проверка 009» зарегистрирована через `/auth/registrations` и Mailpit, пополнение $1. `POST /graph-checks` с графом `echo (prefix «> ») → agent-1 —link— agent-2`, `entry = echo`, `exit = agent-1` → `200 {ok:true, issues:[]}`. `POST /swarms` с задачей «напиши одно предложение о море» → 201, рой `completed`, результат «Море шепчет тайнами прибоя, унося мечты в бескрайнюю синеву.». `SwarmView.nodes`: `echo` `completed`, 1539 мс. Лента: #6 `node.started` «echo запущен», #7 `node.completed` «echo завершён за 1539 мс», #8 `bus.message` «echo → agent-1: > напиши одно предложение о море», #9 `swarm.started`, …, #14–#15 `agent.stopped` agent-1 и agent-2, #16 `swarm.completed`. Страница роя в кабинете (http://127.0.0.1:4200, встроенный браузер): раздел «Программы» — «echo (example/echo@1.0.0): завершён · 1539 мс», строки ленты те же. Итог: AC-009-27 выполнен. | — |
 | 2026-11-03 | то же | AC-009-28 `[manual]`: тот же стек, форма кабинета «Новый рой», агенты agent-1 («Ответь одним словом») и agent-2 («Помощник»), задача «назови одно море» → страница роя, события #1 `swarm.created` … #6 `bus.message` «user → agent-1», #7 `swarm.started`, 2 шага agent-1, #13 `agent.result`, #14–#15 `agent.stopped`, #16 `swarm.completed`, результат «Северное». Раздела «Программы» на странице нет. Итог: AC-009-28 выполнен, поведение формы как до 009. | — |
 | 2026-11-03 | `spec/009-t10` | Завершение: этапы влиты в `main` — группа T-1…T-6 через `spec/009-graph` (PR #230–#234, в `main` — #235), T-7 (#236), T-8 и T-9 (#237), T-10 — этой веткой. `npm run check` зелёный (1356 passed, 93 skipped — стек-тесты без контура). NFR-009-1: `checkGraph` p95 0,07–0,14 мс при пороге 5 мс (строка T-2). AC-009-27 и AC-009-28 `[manual]` выполнены (строки выше). Замечания ревью T-10: `docs/architecture.md` — `checkGraph` живёт в `api-integration`, условие `AGENT_TASK_FROM` по входящему `flow`; `apps/api/README.md` — `403` и `400 validation_error` у `POST /graph-checks`; `apps/ui/README.md` сверен, без изменений. На приёмку: D-177…D-186, D-188, D-189, D-191, D-192; заметки N-34…N-36. `status: review`. | Отклонения — в строках этапов: AC-022-17 (env агента-входа), `bob` → `Bob` в старых тестах 022 и 002 (расширение `AgentId`, Q-8), `403` до бюджетных проверок (4.9). |
+| 2026-11-03 | `spec/009-acceptance` | Приёмка: D-177…D-181, D-183…D-186, D-188, D-189, D-191, D-192 приняты как реализовано (вариант «а»); по D-178 код `flow_requires_values` снят из 4.1 и 4.4 и из `GraphIssueCode`. D-182 оставлен в `questions.md` на 017 (редактор графа). Заметки N-34…N-36 — в `notes.md`. `status: done`. | Изменение 4.1 и 4.4 при приёмке — по решению человека (D-178). |
