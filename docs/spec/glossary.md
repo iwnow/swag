@@ -74,6 +74,19 @@
 | Сверка с `egress` | `egressMatches` | Единое правило сверки хоста и порта с `egress` для SDK и прокси (026, 4.1). |
 | Секрет организации | `SecretName`, `SecretValue`, `SecretSummary`, `SecretList`, `SecretPutRequest`, `SecretStore`, `SecretReader`, `SecretCipher`, `createAesGcmCipher`, `createPostgresSecretStore`, `createMemorySecretStore`, `org_secrets`, `SECRETS_KEY`, `secret.manage`, `listSecrets`, `putSecret`, `deleteSecret`, `hint`, `/secrets` | Доступ организации к внешней системе, хранится шифротекстом AES-256-GCM; значение наружу не отдаётся, узел получает только объявленный в `credentials` (026, 4.5, 4.6). |
 | Состояние узла | `NodeStateStore`, `createPostgresNodeState`, `node_state`, `stateKey` | Значения `ctx.state` в Postgres по ключу `(orgId, stateKey, key)`; в 009 `stateKey` — id узла графа (026, 4.5). |
+| Граф процесса | `ProcessGraph`, `GraphNode`, `GraphEdge`, `EdgeKind`, `GRAPH_MAX_NODES`, `GRAPH_MAX_EDGES`, `GRAPH_MAX_AGENTS` | Узлы — экземпляры типов реестра с настройками и credentials, рёбра `flow` и `link`, `entry` и `exit`; рой описывается графом (009, 4.1). |
+| Id узла графа | `NodeId` | `[a-z][a-z0-9-]{0,39}`, кроме `user`; `AgentId` = `NodeId` (009, 4.1, 4.2). |
+| Поток, связь | `flow`, `link` | Рёбра графа: `flow` — выход шага идёт входом в следующий, циклы запрещены; `link` — агенты пишут друг другу через шину, неориентированное, циклы разрешены (009, 4.1). |
+| Команда, шаг, агент-вход команды, шаг-вход, шаг-выход | `TeamPlan`, `Step` | Команда — компонента агентов по `link`, рой как узел графа; шаг — программа или команда; агент-вход получает вход потока и вызывает `finish` (009, 4.1). |
+| Программа | узел вида `program` | Узел графа с кодом: вызывается `invokeNode` 026, когда к нему пришёл вход (009, 4.6). |
+| Проверка графа | `checkGraph`, `GraphCheckDeps`, `GraphCheckResult`, `GraphIssue`, `GraphIssueCode`, `invalid_graph`, `POST /graph-checks`, `checkGraphFor` | Все замечания графа по реестру, секретам и структуре; в `api` до резерва и запуска (009, 4.4, 4.9). |
+| Форма роя как граф | `formGraph`, `LLM_AGENT_TYPE` | Агенты формы → узлы `swag/llm-agent@1.0.0`, `link` все со всеми, вход и выход `agent-1` (009, 4.3). |
+| Запрос роя | `SwarmRequest`, `SwarmGraphRequest` | Тело `POST /swarms`: форма `SwarmCreateRequest` или граф (009, 4.2). |
+| Программа запуска | `LaunchProgram` | Программа графа в `SwarmLaunch` с проверенными настройками и credentials (009, 4.5). |
+| План графа | `graphPlan`, `GraphPlan`, `valueText` | Шаги, команды, соседи по `link`, цели потоков; `valueText` — значение потока как текст (009, 4.6). |
+| События шага-программы | `node.started`, `node.completed`, `node.failed`, `node_failed`, `formatNodeEvent` | Вызов программы графа; `node_failed` — причина `swarm.failed` (009, 4.10). |
+| Программы роя в проекции | `SwarmView.nodes` | Программы графа со статусом `waiting`/`running`/`completed`/`failed` и длительностью (009, 4.10). |
+| Источник задачи и получатель итога агента-входа | `AGENT_TASK_FROM`, `AGENT_RESULT_TO`, `taskFrom`, `resultTo` | Пользователь или шаг процесса; пользователь или следующий шаг — в промпте и описании `finish` (009, 4.8). |
 | Вымарывание секретов | `[secret]` | Замена значений секретов вызова в логах узла и `error.message` (026, 4.10). |
 | Шина | `Bus` | NATS: обмен сообщениями агентов внутри роя. |
 | Account шины | `BusAccount` | Изолированный NATS account одного роя. |
