@@ -49,7 +49,6 @@ export const GraphIssueCode = z.enum([
   'edge_self',
   'edge_duplicate',
   'link_requires_agents',
-  'flow_requires_values',
   'flow_not_at_team_entry',
   'flow_fan_in',
   'flow_cycle',
