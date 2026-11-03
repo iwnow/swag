@@ -6,6 +6,7 @@
 
 - `applyEvent(view, event)` — применить одно событие роя к `SwarmView`: статусы роя и агентов, счётчики сообщений, число шагов, рёбра по фактическим сообщениям, результат и причина ошибки. Событие с `seq` не больше `lastSeq` игнорируется.
 - `projectSwarm(events)` — состояние роя из всей последовательности событий.
+- `nodes` роя (009, 4.10) — программы графа из `swarm.created.graph` со статусом `waiting`, `running`, `completed`, `failed` и `durationMs` по событиям `node.started`, `node.completed`, `node.failed`.
 - Деньги роя и агентов (004, 4.7): бюджеты из `swarm.created`, расход — сумма `charge.microUsd` событий `llm.call` (без `charge` — `costMicroUsd ?? 0`).
 - `formGraph(agents)` — форма роя как граф (009, 4.3): агенты → узлы `swag/llm-agent@1.0.0`, все пары связаны `link`, вход и выход `agent-1`.
 - `checkGraph(graph, { registry, secretNames })` — проверка графа (009, 4.4): все замечания за один вызов, без исключений; коды и пути — по 4.4.
@@ -15,11 +16,11 @@
 
 ## Что внутри сейчас
 
-- `src/swarm-view.ts` — тип `SwarmView` (агенты с `model` и `steps`, деньги: `budgetMicroUsd`, `spentMicroUsd`), `applyEvent`, `projectSwarm`, `FINAL_SWARM_STATUSES` (итоговые статусы роя `completed`, `stopped`, `failed`; используются ядром `api-core`), поля владельца `orgId` и `createdBy` (024, 4.3). Правила — спека 022, 4.6 (с 022 заменяют таблицу 4.4 спеки 001 в части `bus.message`, `agent.step`, `agent.idle`).
+- `src/swarm-view.ts` — тип `SwarmView` (агенты с `model` и `steps`, деньги: `budgetMicroUsd`, `spentMicroUsd`, программы графа `nodes`), `applyEvent`, `projectSwarm`, `FINAL_SWARM_STATUSES` (итоговые статусы роя `completed`, `stopped`, `failed`; используются ядром `api-core`), поля владельца `orgId` и `createdBy` (024, 4.3). Правила — спека 022, 4.6 (с 022 заменяют таблицу 4.4 спеки 001 в части `bus.message`, `agent.step`, `agent.idle`).
 - `src/node-registry.ts` — `createNodeRegistry`, `NodeRegistry`, `NodeSchemaTarget`, `SettingsResult`, `SettingsIssue`, `ValueResult`, `NodeRegistryError`. Все схемы манифеста (`settings`, `inputs`, `outputs`, входы и выходы операций) компилируются `z.fromJSONSchema` при создании реестра и хранятся в нём.
 - `src/process-graph.ts` — `formGraph`, `LLM_AGENT_TYPE`, `checkGraph`, `GraphCheckDeps`, `graphPlan`, `GraphPlan`, `Step`, `TeamPlan`, `valueText`. `checkGraph` идёт пятью проходами (узлы, настройки и секреты, рёбра, потоки и команды, вход, выход, достижимость); каждый проход — по порядку узлов и рёбер массива. Команды считает `teamEntries` (компоненты агентов по `link`, агент-вход по 4.1): её используют и `checkGraph`, и `graphPlan`.
 - `test/process-graph.test.ts` — AC-009-1…AC-009-11 (`formGraph`, все коды `checkGraph`, пути `path`), AC-009-17 (`graphPlan`), тесты `valueText` и NFR-009-1 (замер `checkGraph` на 16 узлах и 64 рёбрах, p95 меньше 5 мс, 1000 прогонов, вывод в stdout). Тестовый реестр — манифесты `swag/llm-agent` и `example/echo` из пакетов узлов, плюс литеральные `test/trigger` и `test/program` (credential `apiKey`), оба проходят `NodeManifest.parse`.
-- `test/swarm-view.test.ts` — AC-001-2 (таблица 4.4 с правками 4.6, рёбра при создании пустые), AC-022-2 (`steps`, рёбра по сообщениям, `bus.message` не меняет статус, `agent.idle` и `done`) и AC-003-7 (итоговый статус роя окончателен).
+- `test/swarm-view.test.ts` — AC-001-2 (таблица 4.4 с правками 4.6, рёбра при создании пустые), AC-022-2 (`steps`, рёбра по сообщениям, `bus.message` не меняет статус, `agent.idle` и `done`), AC-003-7 (итоговый статус роя окончателен) и AC-009-24 (`nodes`: граф с агентом и ошибкой программы; без графа; `waiting`).
 - `test/node-registry.test.ts` — AC-021-5 (повтор `type@version`), AC-021-6 (схемы, которые `fromJSONSchema` не принимает: внешний `$ref`, `not`, `if/then`), AC-021-7 (`validateSettings`, `get`, `node_type_not_found`), AC-021-8 (`list`, порядок версий), AC-026-2 (`validate`: `invalid_value` с `issues`, `schema_not_found`, `node_type_not_found`, значение после parse). Манифесты — литералы, проходящие `NodeManifest.parse`.
 
 ## Правила проекции (022, 4.6)
@@ -29,6 +30,8 @@
 - `bus.message` — `messagesIn + 1` у `to`; если `from` — агент, то `messagesOut + 1` у него и ребро `from → to` (создаётся с `messages: 1` или увеличивается). Статус агентов не меняет.
 - `agent.step` — `steps + 1` у агента.
 - `swarm.created` — `budgetMicroUsd` роя и агентов, если поля есть в событии; у событий до 004 полей нет, и в проекции их тоже нет.
+- `swarm.created` с `graph` — по элементу в `nodes` на каждую программу графа (узел не `swag/llm-agent@1.0.0`), в порядке узлов, `waiting`, `durationMs: null`; без `graph` — `nodes: []` (009, 4.10).
+- `node.started` → `running`; `node.completed` → `completed` и `durationMs`; `node.failed` → `failed` и `durationMs`. Событие с `nodeId`, которого нет в `nodes`, проекцию не меняет. После итогового статуса роя `node.*` не меняют `nodes`: событие двигает только `lastSeq` (003, 4.3). Проекция без поля `nodes` (сохранена до T-7) читается как `nodes: []` (D-191).
 - `llm.call` — `spentMicroUsd` роя и агента увеличивается на сумму; расход учитывается и после итогового статуса, статус при этом не меняется (D-101).
 - `agent.idle` — статус `idle`, если агент не `done`, `failed`, `stopped`.
 - Итоговый статус роя (`completed`, `stopped`, `failed`) окончательный (003, REQ-003-7, 4.3): после него событие двигает только `lastSeq`, статус роя, `result` и `failure` не меняются.
@@ -64,6 +67,7 @@
 - Зависимость от `zod` объявлена (белый список ядер, REQ-001-18); до 021 прямых импортов `zod` не было. С 021 `zod` нужен для `z.fromJSONSchema` в реестре узлов (021, 4.2).
 - `packages/api-integration` проверяется `arch:check` как ядро (T-2, Q-5).
 - Владелец (024, 4.3): `orgId` и `createdBy` проецируются только из `swarm.created`; проекция не знает о правах, видимость роя решает `api-core` (024, 4.4). Проекции, сохранённые до 024, читаются с `null` в обоих полях (как поля 004 — D-101).
+- Программы графа (009, 4.10) проецируются из `swarm.created.graph` без реестра узлов: программа — любой узел, кроме `LLM_AGENT_TYPE`. Проекции, сохранённые до T-7 без `nodes`, читаются как `[]` (D-191), по образцу полей 004 (D-101).
 - Деньги (004, 4.7): поля `budgetMicroUsd` добавляются условно, а не как `undefined` (`exactOptionalPropertyTypes`). Проекция, сохранённая до 004 без `spentMicroUsd`, читается как 0 (D-101), иначе `llm.call` дал бы `NaN`.
 - Проверка настроек через `z.fromJSONSchema` без Ajv (021, Q-1): новых зависимостей ядра нет. Схемы, которые он не принимает (внешний `$ref`, `not`, `if/then`, `dependentSchemas`), отсекаются при создании реестра, а не при проверке настроек (REQ-021-4).
 - Схемы значений строятся один раз при создании реестра (026, 4.2): `settings`, `inputs`, `outputs`, входы и выходы операций хранятся в записи `type@version`. `validate` и `validateSettings` только вызывают `safeParse` — ни компиляции, ни разбора JSON Schema на каждый вызов нет.
@@ -84,4 +88,4 @@
 - 026 — `validate` и схемы значений (4.2, AC-026-2).
 - 022 — правила проекции (4.6).
 - 024 — владелец роя в проекции (4.3, REQ-024-4): `orgId`, `createdBy`.
-- 009 — `formGraph` (4.3), `checkGraph` (4.4, REQ-009-3, REQ-009-4, AC-009-1…AC-009-11, NFR-009-1), `graphPlan` и `valueText` (4.6, REQ-009-8, AC-009-17). Вопросы Q-2, Q-6, Q-7, Q-9 — ответы приняты в спеке.
+- 009 — `formGraph` (4.3), `checkGraph` (4.4, REQ-009-3, REQ-009-4, AC-009-1…AC-009-11, NFR-009-1), `graphPlan` и `valueText` (4.6, REQ-009-8, AC-009-17), `nodes` в проекции роя (4.10, REQ-009-18, AC-009-24). Вопросы Q-2, Q-6, Q-7, Q-9 — ответы приняты в спеке.
