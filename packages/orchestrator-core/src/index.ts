@@ -333,7 +333,7 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
         call: { kind: 'execute', input: value },
         settings: program.settings,
         credentials: program.credentials,
-        stateKey: `swarm:${swarmId}:${nodeId}`,
+        stateKey: program.stateKey ?? `swarm:${swarmId}:${nodeId}`, // 033, REQ-033-18
       });
     } catch (error) {
       // Сбой хранилища секретов (026, 4.10): вызов не вернул результат, рой не должен зависнуть
@@ -407,14 +407,17 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
   }
 
   // Когда все агенты стартовали — задача шагу-входу, затем swarm.started (4.6, шаги 2 и 4).
+  // Спека 033, REQ-033-15: при запуске триггера шаг-вход получает событие триггера от его id.
   async function checkReady(run: Run): Promise<void> {
     if (run.phase !== 'waiting' || run.started.size < run.launch.agents.length) return;
     run.phase = 'running'; // до первого await, чтобы параллельные agent.started не запустили задачу дважды
     const swarmId = run.launch.swarmId;
-    const value = { text: run.launch.task };
+    const { trigger } = run.launch;
+    const from = trigger === null ? 'user' : trigger.nodeId;
+    const value = trigger === null ? { text: run.launch.task } : trigger.event;
     const entry = run.plan.stepOf(run.plan.entry);
     if (entry.kind === 'program') await runProgram(run, entry.id, value);
-    else await deliverTeam(run, entry.id, 'user', value);
+    else await deliverTeam(run, entry.id, from, value);
     if (isFinished(run)) return;
     run.begun = true;
     await publish({ ...envelope(swarmId, null), type: 'swarm.started', data: {} });
@@ -447,7 +450,12 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
     };
     if (entry === agent.id) {
       const incoming = launch.edges.find((edge) => edge.kind === 'flow' && edge.to === entry);
-      env['AGENT_TASK_FROM'] = incoming ? plan.stepOf(incoming.from).id : 'user';
+      env['AGENT_TASK_FROM'] =
+        launch.trigger !== null
+          ? launch.trigger.nodeId
+          : incoming
+            ? plan.stepOf(incoming.from).id
+            : 'user';
       env['AGENT_RESULT_TO'] = plan.exit === entry ? 'user' : 'process';
     }
     return {
