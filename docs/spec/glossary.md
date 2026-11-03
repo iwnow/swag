@@ -84,7 +84,7 @@
 | Запрос роя | `SwarmRequest`, `SwarmGraphRequest` | Тело `POST /swarms`: форма `SwarmCreateRequest` или граф (009, 4.2). |
 | Программа запуска | `LaunchProgram` | Программа графа в `SwarmLaunch` с проверенными настройками и credentials (009, 4.5). |
 | План графа | `graphPlan`, `GraphPlan`, `valueText` | Шаги, команды, соседи по `link`, цели потоков; `valueText` — значение потока как текст (009, 4.6). |
-| События шага-программы | `node.started`, `node.completed`, `node.failed`, `node_failed`, `formatNodeEvent` | Вызов программы графа; `node_failed` — причина `swarm.failed` (009, 4.10). |
+| События шага-программы | `node.started`, `node.completed`, `node.failed`, `node_failed`, `formatNodeEvent`, `NodeEvent` | Вызов программы графа; `node_failed` — причина `swarm.failed` (009, 4.10). |
 | Программы роя в проекции | `SwarmView.nodes` | Программы графа со статусом `waiting`/`running`/`completed`/`failed` и длительностью (009, 4.10). |
 | Источник задачи и получатель итога агента-входа | `AGENT_TASK_FROM`, `AGENT_RESULT_TO`, `taskFrom`, `resultTo` | Пользователь или шаг процесса; пользователь или следующий шаг — в промпте и описании `finish` (009, 4.8). |
 | Вымарывание секретов | `[secret]` | Замена значений секретов вызова в логах узла и `error.message` (026, 4.10). |

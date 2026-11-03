@@ -23,10 +23,11 @@
 - `agentBudgetMicro(budget)` — поле «Бюджет агента, $»: пустая строка → `null` (бюджета нет), иначе `usdToMicro`.
 - `maxTokensInput(text)` — поле «Лимит ответа, токенов»: пустое → `null` (значение по умолчанию), одни цифры → число, иначе `NaN`; `NaN` отсекает `SwarmCreateRequest` (спека 031, 4.5).
 - `swarmFormInput(task, budget, maxTokens, agents)` — вход формы роя (доллары и токены строками) → поля `SwarmCreateRequest`: `budgetMicroUsd` и `maxTokens` роя, у агентов `budgetMicroUsd` и `maxTokens`. Тип агента — `AgentInput` (поле `maxTokens` — 031, 4.5). Проверку делает `validateForm`/`SwarmCreateRequest`, функция только переводит.
-- `failureReasonText(reason)` — текст причины `swarm.failed`: `budget_exceeded` → «бюджет исчерпан», `gateway_unavailable` → «шлюз моделей недоступен»; прочие причины — как пришли (спека 004, 4.8).
+- `failureReasonText(reason)` — текст причины `swarm.failed`: `budget_exceeded` → «бюджет исчерпан», `gateway_unavailable` → «шлюз моделей недоступен», `node_failed` → «ошибка шага процесса» (спека 009, 4.10); прочие причины — как пришли (спека 004, 4.8).
 - `spentLastMinute(events, nowMs)` — сумма `llm.call` с `ts` в `(nowMs − 60000, nowMs]`.
 - `formatSwarmMoney(view, lastMinuteMicroUsd)` — строка панели роя: потрачено, бюджет, остаток, расход за минуту; без бюджета — `бюджет —` (спека 004, 4.8).
 - `formatAgentStep(data)` — строка `agent.step` в ленте роя: `шаг N`, текст ответа через `: ` (если не `null`), имена инструментов через `→` (спека 022, 4.10). Тип `data` — `AgentStepData`, выведен из `@swag/contracts`.
+- `formatNodeEvent(event)` — строка события программы графа в ленте роя: `<nodeId> запущен`, `<nodeId> завершён за <durationMs> мс`, `<nodeId>: ошибка <code> — <message>` (спека 009, 4.10). Тип `event` — `NodeEvent` (`node.started`, `node.completed`, `node.failed`).
 - `unreadMessageIds(feed, status)` — id событий `bus.message`, на которые получатель не начал ход (нет `agent.working` с тем же `messageId`); пусто, пока рой не в `completed`, `failed`, `stopped` (спека 030, 4.4). Чистая функция вне `createUiCore`.
 - Форма: модель агента — поле `AgentDraft.model`; без выбора схема `SwarmCreateRequest` в `validateForm` подставляет `chat-small`, в `SwarmsApi.create` уходит она.
 
@@ -42,7 +43,7 @@
 - `src/balance.state.ts` — `createBalanceState`, тип `BalanceState`, `TOPUP_INVALID_TEXT`, `errorText` (014, 4.12; 013, 4.11). Реэкспорт из `src/index.ts`.
 - `src/shell.store.ts` — `createShellStore`, тип `ShellStore`, `ShellForm`, тип `ThemeMode` (014, 4.12). Реэкспорт из `src/index.ts`.
 - `src/auth-forms.ts` — `authErrorText` (таблица 4.6, текст по умолчанию), тексты форм и сообщений 4.6 (`FORM_TEXT`, `REGISTRATION_SENT_TEXT`, `INVITATION_INVALID_TEXT`, `invitationSentText`, `blockConfirmText`, `USER_ACTION_LABEL`, `USER_ROLE_LABEL`), `validateEmailForm`, `validateConfirmForm`, `validateInviteForm` (014, 4.2, 4.6). Ошибки — `FormIssue` из `src/index.ts`.
-- `src/swarm-ui.ts` — `createUiCore`, порты `SwarmsApi`, `UsersApi`, `OrganizationsApi` (014, 4.3), `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функции `formatLlmCall`, `formatAgentStep`, `unreadMessageIds`, `spentLastMinute`, `formatSwarmMoney`, `agentBudgetMicro`, `maxTokensInput`, `swarmFormInput`, `failureReasonText`. Перенесено из `src/index.ts` без смены API: `cabinet.store.ts` импортирует значения отсюда, а не из `index.ts` (цикл). Реэкспорт из `src/index.ts`.
+- `src/swarm-ui.ts` — `createUiCore`, порты `SwarmsApi`, `UsersApi`, `OrganizationsApi` (014, 4.3), `EventStream`, `Timers`, зависимость `traces: { urlTemplate }`, функции `formatLlmCall`, `formatAgentStep`, `unreadMessageIds`, `spentLastMinute`, `formatSwarmMoney`, `agentBudgetMicro`, `maxTokensInput`, `swarmFormInput`, `failureReasonText`, `formatNodeEvent` (тип `NodeEvent`). Перенесено из `src/index.ts` без смены API: `cabinet.store.ts` импортирует значения отсюда, а не из `index.ts` (цикл). Реэкспорт из `src/index.ts`.
 - `src/index.ts` — только реэкспорт всех модулей ядра (публичная точка входа).
 - `src/cabinet.store.ts` — `createCabinetStore`, типы `CabinetStore`, `CabinetStoreDeps`, `CabinetSwarm`, `CabinetForm`, `SwarmDraft` (014, 4.12). Внутри один `createUiCore` и один `createBalanceState`; сигналы — `ReadonlySignal`.
 - `src/admin.store.ts` — `createAdminStore`, типы `AdminStore`, `AdminStoreDeps`, `AdminRow` (алиас `UserRow`), `AdminInvite` (014, 4.12). Внутри только `UsersApi` и `session.me`; сигналы — `ReadonlySignal`.
@@ -55,6 +56,7 @@
 - `test/money-format.test.ts` — AC-004-27 (`formatUsd`, `usdToMicro`, `spentLastMinute`, `formatSwarmMoney`, строки таблиц 4.8, граница окна 60 с).
 - `test/money-input.test.ts` — перевод полей формы (`agentBudgetMicro`, `swarmFormInput`), проверка результата через `SwarmCreateRequest`, тексты причин `failureReasonText` (спека 004, 4.8; T-15); AC-031-5 — лимит ответа роя и агента, `abc` → `NaN` и ошибка `validateForm` (спека 031, T-5).
 - `test/format-agent-step.test.ts` — AC-022-23.
+- `test/format-node-event.test.ts` — AC-009-25 (строки `node.*` и `node_failed` по 4.10).
 - `test/unread-message-ids.test.ts` — AC-030-7.
 - `test/auth-forms.test.ts` — AC-014-4 (`authErrorText`, тексты 4.6), AC-014-7 (проверки форм регистрации, приглашения и email, порядок ошибок).
 - `test/access-ui.test.ts` — AC-014-2, AC-014-3, AC-014-5, AC-014-6 (разделы, действия над пользователями, адреса remote и возврата).
