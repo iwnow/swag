@@ -120,8 +120,6 @@ export interface OrchestratorCoreDeps extends NodeInvokeDeps {
     flushTimeoutMs: number;
   };
   timeouts: { agentStartMs: number; swarmMs: number };
-  // Вызов узла (026, 4.10). По умолчанию — invokeNode, построенный из NodeInvokeDeps; тесты подменяют его фейком.
-  invokeNode?: (invocation: NodeInvocation) => Promise<NodeInvocationResult>;
 }
 
 export interface OrchestratorError {
@@ -182,6 +180,9 @@ const FINISHED_STATUS: Record<Outcome['type'], 'completed' | 'stopped' | 'failed
   'swarm.failed': 'failed',
 };
 
+// Имя исключения вместо текста: текст может содержать значения настроек или секретов (AC-009-26).
+const errorName = (error: unknown): string => (error instanceof Error ? error.name : typeof error);
+
 const ok = (): Result<void> => ({ ok: true, value: undefined });
 const fail = (code: string, message: string, issues?: OrchestratorError['issues']): Result<void> =>
   issues === undefined
@@ -191,7 +192,7 @@ const fail = (code: string, message: string, issues?: OrchestratorError['issues'
 export function createOrchestratorCore(deps: OrchestratorCoreDeps): OrchestratorCore {
   const { sandboxes, bus, clock, timers, ids, log, trace, llmSwarms } = deps;
   const runs = new Map<string, Run>();
-  const invokeNode = deps.invokeNode ?? createInvokeNode(deps);
+  const invokeNode = createInvokeNode(deps);
 
   // traceId — из порта: таймеры и обработчики событий выполняются в контексте запуска роя (REQ-016-2).
   const envelope = (swarmId: string, agentId: AgentId | null) => ({
@@ -224,6 +225,7 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
   async function stopAgents(run: Run, agentIds: readonly AgentId[]): Promise<void> {
     const swarmId = run.launch.swarmId;
     const targets = agentIds.filter((id) => !run.stopped.has(id));
+    for (const agentId of targets) run.stopped.add(agentId); // до первого await: параллельный finish их не повторит
     for (const agentId of targets) {
       const sandboxId = run.sandboxes.get(agentId);
       if (sandboxId === undefined) continue;
@@ -235,7 +237,6 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
       }
     }
     for (const agentId of targets) {
-      run.stopped.add(agentId);
       await publish({ ...envelope(swarmId, agentId), type: 'agent.stopped', data: {} });
     }
   }
@@ -293,8 +294,26 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
     });
   }
 
-  // Вызов программы (4.6, шаги 3 и 7; 026, 4.10). Ошибка вызова завершает рой node_failed.
+  // Шаг-программа (4.6, шаг 3). Исключение публикации или шины завершает рой node_failed (D-185).
   async function runProgram(run: Run, nodeId: NodeId, value: unknown): Promise<void> {
+    try {
+      await callProgram(run, nodeId, value);
+    } catch (error) {
+      log.error('program step failed', {
+        swarmId: run.launch.swarmId,
+        nodeId,
+        errorName: errorName(error),
+      });
+      if (!isFinished(run))
+        await finish(run, {
+          type: 'swarm.failed',
+          data: { reason: 'node_failed', detail: `${nodeId}: node_failed` },
+        });
+    }
+  }
+
+  // Вызов программы (4.6, шаги 3 и 7; 026, 4.10). Ошибка вызова завершает рой node_failed.
+  async function callProgram(run: Run, nodeId: NodeId, value: unknown): Promise<void> {
     const program = run.programs.get(nodeId);
     if (!program || isFinished(run)) return;
     const swarmId = run.launch.swarmId;
@@ -304,6 +323,7 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
       type: 'node.started',
       data: { nodeId, type: program.type },
     });
+    if (isFinished(run)) return; // рой остановили во время публикации: вызов не запускаем
     const startedAt = Date.parse(clock.now());
     let result: NodeInvocationResult;
     try {
@@ -317,7 +337,7 @@ export function createOrchestratorCore(deps: OrchestratorCoreDeps): Orchestrator
       });
     } catch (error) {
       // Сбой хранилища секретов (026, 4.10): вызов не вернул результат, рой не должен зависнуть
-      log.error('node invoke threw', { swarmId, nodeId, err: error });
+      log.error('node invoke threw', { swarmId, nodeId, errorName: errorName(error) });
       result = {
         ok: false,
         error: { code: 'node_failed', message: 'Сбой вызова программы' },

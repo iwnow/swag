@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type {
-  BusMessage,
-  LlmSwarmRegistration,
-  NodeInvocation,
-  NodeInvocationResult,
-  PlatformEventInput,
-} from '@swag/contracts';
+import type { BusMessage, LlmSwarmRegistration, PlatformEventInput } from '@swag/contracts';
 import {
   createOrchestratorCore,
   type LlmSwarms,
@@ -14,8 +8,9 @@ import {
   type OrchestratorCore,
   type SandboxProvider,
   type SandboxSpec,
+  type SecretReader,
 } from '../src/index.ts';
-import { ORG, nodeHarness } from './node-fakes.ts';
+import { ORG, nodeHarness, type Respond } from './node-fakes.ts';
 
 const SWARM = '0b6f6d2e-6a4c-4c3e-9f5e-111111111111';
 const TEMPLATE = 'swag-agent:test';
@@ -39,6 +34,7 @@ interface Fake {
   registrations: LlmSwarmRegistration[];
   closed: string[]; // swarmId вызовов close
   runTimers: (ms: number) => void; // срабатывают активные таймеры с этим ms
+  node: ReturnType<typeof nodeHarness>; // фейки портов узлов: песочницы, стейт, кадры
 }
 
 function setup(
@@ -54,7 +50,10 @@ function setup(
     closeError?: Error;
     closeSpent?: number | null;
     agentMaxTokens?: number;
-    invokeNode?: (invocation: NodeInvocation) => Promise<NodeInvocationResult>;
+    respond?: Respond; // ответы песочницы узла (граф процесса)
+    secrets?: SecretReader; // подмена хранилища секретов узлов
+    removeGate?: Promise<void>; // удаление песочниц агентов ждёт этот промис
+    onEvent?: (event: PlatformEventInput) => Promise<void>; // вызывается после публикации события
   } = {},
 ): Fake {
   let counter = 0;
@@ -80,6 +79,7 @@ function setup(
     },
     remove: async (sandboxId) => {
       log.push('sandbox:remove');
+      if (options.removeGate) await options.removeGate;
       if (options.removeError) throw options.removeError;
       sandboxes.delete(sandboxId);
     },
@@ -96,6 +96,7 @@ function setup(
     publishEvent: async (event) => {
       events.push(event);
       log.push(`event:${event.type}`);
+      await options.onEvent?.(event);
     },
     publishMessage: async (message) => {
       messages.push(message);
@@ -118,6 +119,7 @@ function setup(
       return options.closeSpent ?? null;
     },
   };
+  const node = nodeHarness(options.respond ? { respond: options.respond } : {});
   const core = createOrchestratorCore({
     version: 'test',
     sandboxes: provider,
@@ -145,8 +147,8 @@ function setup(
       flushTimeoutMs: 2000,
     },
     timeouts: { agentStartMs: options.agentStartMs ?? 30000, swarmMs: options.swarmMs ?? 300000 },
-    ...nodeHarness().nodeDeps,
-    ...(options.invokeNode ? { invokeNode: options.invokeNode } : {}),
+    ...node.nodeDeps,
+    ...(options.secrets ? { secrets: options.secrets } : {}),
   });
   return {
     core,
@@ -157,6 +159,7 @@ function setup(
     sandboxes,
     registrations,
     closed,
+    node,
     runTimers: (ms) => {
       for (const timer of timers) {
         if (timer.active && timer.ms === ms) {
@@ -771,7 +774,8 @@ describe('orchestrator-core: траты роя из gateway (013, 4.6)', () => {
   });
 });
 
-// Спека 009, 4.6: граф процесса. Программы вызываются через подменяемый invokeNode; агенты — как в форме.
+// Спека 009, 4.6: граф процесса. Программы исполняются через фейки портов узлов (026): песочница отвечает на кадры,
+// NodeStateStore показывает stateKey вызова. Агенты — как в форме.
 type Edge = { from: string; to: string; kind: 'flow' | 'link' };
 type Program = {
   id: string;
@@ -781,12 +785,13 @@ type Program = {
 };
 
 const ECHO = 'example/echo@1.0.0';
-const program = (id: string, settings: Record<string, unknown> = { prefix: '' }): Program => ({
-  id,
-  type: ECHO,
-  settings,
-  credentials: {},
-});
+const KEYED = 'example/keyed@1.0.0';
+const program = (
+  id: string,
+  settings: Record<string, unknown> = { prefix: '' },
+  credentials: Record<string, string> = {},
+  type = ECHO,
+): Program => ({ id, type, settings, credentials });
 const graphBody = (graph: {
   agents: string[];
   programs: Program[];
@@ -818,19 +823,64 @@ const CHAIN = {
   entry: 'p',
   exit: 'c',
 };
-const OK = (text: string): NodeInvocationResult => ({ ok: true, output: { text }, durationMs: 5 });
-const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+// Команда a—b на входе, выход команды передаётся программе q (выход — шаг-выход).
+const TEAM_TO_PROGRAM = {
+  agents: ['a', 'b'],
+  programs: [program('q')],
+  edges: [
+    { from: 'a', to: 'b', kind: 'link' },
+    { from: 'a', to: 'q', kind: 'flow' },
+  ] as Edge[],
+  entry: 'a',
+  exit: 'q',
+};
+// Программа p → a и p → q (боковая ветка), команда a—b с выходом a.
+const SIDE = {
+  agents: ['a', 'b'],
+  programs: [program('p'), program('q', { prefix: 'q' })],
+  edges: [
+    { from: 'p', to: 'a', kind: 'flow' },
+    { from: 'p', to: 'q', kind: 'flow' },
+    { from: 'a', to: 'b', kind: 'link' },
+  ] as Edge[],
+  entry: 'p',
+  exit: 'a',
+};
 
-function recordingInvoke(answer: (invocation: NodeInvocation) => Promise<NodeInvocationResult>) {
-  const calls: NodeInvocation[] = [];
-  return {
-    calls,
-    invoke: async (invocation: NodeInvocation) => {
-      calls.push(invocation);
-      return answer(invocation);
-    },
+const OUT = { text: 'x' };
+const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+const answer =
+  (output: unknown): Respond =>
+  (frame, emit) => {
+    if (frame.t === 'invoke') emit.frame({ t: 'result', ok: true, output });
   };
-}
+// Программа пишет состояние под своим stateKey, затем отвечает: NodeStateStore видит stateKey роя.
+const stateThenAnswer =
+  (output: unknown): Respond =>
+  (frame, emit) => {
+    if (frame.t === 'invoke') emit.frame({ t: 'state.set', id: 1, key: 'k', value: 'v' });
+    if (frame.t === 'state') emit.frame({ t: 'result', ok: true, output });
+  };
+const failWith =
+  (code: string, message: string): Respond =>
+  (frame, emit) => {
+    if (frame.t === 'invoke') emit.frame({ t: 'result', ok: false, code, message });
+  };
+// Ответ программы q приходит, когда resolve; остальные программы отвечают сразу.
+const slowSide =
+  (slow: { promise: Promise<unknown> }): Respond =>
+  (frame, emit) => {
+    if (frame.t !== 'invoke') return;
+    if (frame.settings['prefix'] === 'q')
+      void slow.promise.then((output) => emit.frame({ t: 'result', ok: true, output }));
+    else emit.frame({ t: 'result', ok: true, output: OUT });
+  };
+const invokeOf = (fake: Fake) =>
+  fake.node.sandboxes.hostFrames.get('node-1')?.find((frame) => frame.t === 'invoke');
+
+type SetupOptions = NonNullable<Parameters<typeof setup>[0]>;
+const graphSetup = (options: SetupOptions = {}): Fake =>
+  setup({ respond: answer(OUT), ...options });
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve: (value: T) => void = () => undefined;
@@ -843,21 +893,6 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 async function startAll(fake: Fake, ids: string[]): Promise<void> {
   for (const id of ids) await fake.core.handleEvent(agentEvent('agent.started', id, {}));
 }
-
-// Программа p → a и p → q (боковая ветка), команда a—b с выходом a.
-const SIDE = {
-  agents: ['a', 'b'],
-  programs: [program('p'), program('q')],
-  edges: [
-    { from: 'p', to: 'a', kind: 'flow' },
-    { from: 'p', to: 'q', kind: 'flow' },
-    { from: 'a', to: 'b', kind: 'link' },
-  ] as Edge[],
-  entry: 'p',
-  exit: 'a',
-};
-const slowSide = (slow: { promise: Promise<NodeInvocationResult> }) =>
-  recordingInvoke(async (inv) => (inv.stateKey.endsWith(':q') ? slow.promise : OK('x')));
 
 describe('orchestrator-core: граф процесса (спека 009, 4.6)', () => {
   it('AC-009-16: форма из 2 агентов — события в том же порядке, env агентов, итог finish agent-1', async () => {
@@ -894,9 +929,33 @@ describe('orchestrator-core: граф процесса (спека 009, 4.6)', (
     ]);
   });
 
-  it('AC-009-18: программа-вход получает { text: task } через invokeNode со stateKey роя; сообщение a от p; swarm.started после передачи', async () => {
-    const { calls, invoke } = recordingInvoke(async () => OK('x'));
-    const fake = setup({ invokeNode: invoke });
+  it('REQ-009-8, REQ-009-16: граф CHAIN — env агентов: вход a получает шаг-источник p и выход в процесс, b без ключей входа, выход c — пользователю', async () => {
+    const fake = graphSetup();
+    expect((await fake.core.launch(graphBody(CHAIN))).ok).toBe(true);
+    const envOf = (agentId: string): Record<string, string> =>
+      [...fake.sandboxes.values()].find((spec) => spec.metadata['swag.agent'] === agentId)?.env ??
+      {};
+    const peersOf = (agentId: string): unknown => JSON.parse(envOf(agentId)['AGENT_PEERS'] ?? '[]');
+    expect(envOf('a')).toMatchObject({
+      AGENT_ENTRY: 'a',
+      AGENT_TASK_FROM: 'p',
+      AGENT_RESULT_TO: 'process',
+    });
+    expect(peersOf('a')).toEqual([{ id: 'b', name: 'N-b', role: 'r-b' }]);
+    expect(envOf('b')).toMatchObject({ AGENT_ENTRY: 'a' });
+    expect(envOf('b')).not.toHaveProperty('AGENT_TASK_FROM');
+    expect(envOf('b')).not.toHaveProperty('AGENT_RESULT_TO');
+    expect(peersOf('b')).toEqual([{ id: 'a', name: 'N-a', role: 'r-a' }]);
+    expect(envOf('c')).toMatchObject({
+      AGENT_ENTRY: 'c',
+      AGENT_TASK_FROM: 'a',
+      AGENT_RESULT_TO: 'user',
+    });
+    expect(peersOf('c')).toEqual([]);
+  });
+
+  it('AC-009-18: программа-вход получает { text: task } со stateKey роя; сообщение a от p; swarm.started после передачи', async () => {
+    const fake = graphSetup({ respond: stateThenAnswer(OUT) });
     expect((await fake.core.launch(graphBody(CHAIN))).ok).toBe(true);
     await startAll(fake, ['a', 'b']);
     const mark = fake.log.length;
@@ -907,22 +966,19 @@ describe('orchestrator-core: граф процесса (спека 009, 4.6)', (
       'message:a',
       'event:swarm.started',
     ]);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({
-      orgId: ORG,
-      type: ECHO,
+    expect(invokeOf(fake)).toMatchObject({
       call: { kind: 'execute', input: { text: 'T' } },
       settings: { prefix: '' },
-      credentials: {},
-      stateKey: `swarm:${SWARM}:p`,
     });
+    expect(fake.node.stateSets).toEqual([
+      expect.objectContaining({ orgId: ORG, stateKey: `swarm:${SWARM}:p` }),
+    ]);
     expect(fake.messages).toHaveLength(1);
     expect(fake.messages[0]).toMatchObject({ from: 'p', to: 'a', text: 'x' });
   });
 
   it('AC-009-19: agent.result входа команды — песочницы a и b убраны с agent.stopped, c получает from a; swarm.completed по выходу c', async () => {
-    const { invoke } = recordingInvoke(async () => OK('x'));
-    const fake = setup({ invokeNode: invoke });
+    const fake = graphSetup();
     expect((await fake.core.launch(graphBody(CHAIN))).ok).toBe(true);
     await startAll(fake, ['a', 'b', 'c']);
     const eventsMark = fake.events.length;
@@ -938,55 +994,49 @@ describe('orchestrator-core: граф процесса (спека 009, 4.6)', (
     expect(fake.events.at(-1)).toMatchObject({ type: 'swarm.completed', data: { result: 'r2' } });
   });
 
-  it('AC-009-20: программа ответила timeout — node.failed и swarm.failed node_failed с detail p: timeout', async () => {
-    const { invoke } = recordingInvoke(async () => ({
-      ok: false,
-      error: { code: 'timeout', message: 'истекло' },
-      durationMs: 30000,
-    }));
-    const fake = setup({ invokeNode: invoke });
+  it('AC-009-20: программа ответила invalid_output — node.failed и swarm.failed node_failed с detail p: invalid_output', async () => {
+    const fake = graphSetup({ respond: failWith('invalid_output', 'истекло') });
     expect((await fake.core.launch(graphBody(CHAIN))).ok).toBe(true);
     await startAll(fake, ['a', 'b', 'c']);
     expect(fake.events.find((e) => e.type === 'node.failed')).toMatchObject({
       type: 'node.failed',
-      data: { nodeId: 'p', code: 'timeout', message: 'истекло', durationMs: 30000 },
+      data: { nodeId: 'p', code: 'invalid_output', message: 'истекло' },
     });
     expect(fake.events.some((e) => e.type === 'node.completed')).toBe(false);
     expect(fake.messages).toHaveLength(0);
     expect(fake.events.at(-1)).toMatchObject({
       type: 'swarm.failed',
-      data: { reason: 'node_failed', detail: 'p: timeout' },
+      data: { reason: 'node_failed', detail: 'p: invalid_output' },
     });
   });
 
   it('AC-009-21: шаг-выход завершён, программа в боковой ветке ещё идёт — swarm.completed не приходит до её ответа', async () => {
-    const slow = deferred<NodeInvocationResult>();
-    const fake = setup({ invokeNode: slowSide(slow).invoke });
+    const slow = deferred<unknown>();
+    const fake = graphSetup({ respond: slowSide(slow) });
     expect((await fake.core.launch(graphBody(SIDE))).ok).toBe(true);
     await startAll(fake, ['a', 'b']);
     await fake.core.handleEvent(agentEvent('agent.result', 'a', { text: 'R' }));
     expect(fake.events.some((e) => e.type === 'swarm.completed')).toBe(false);
-    slow.resolve(OK('Q'));
+    slow.resolve({ text: 'Q' });
     await flush();
     expect(fake.events.at(-1)).toMatchObject({ type: 'swarm.completed', data: { result: 'R' } });
   });
 
   it('AC-009-21: stop при идущей программе — ответ программы после swarm.stopped не даёт событий', async () => {
-    const slow = deferred<NodeInvocationResult>();
-    const fake = setup({ invokeNode: slowSide(slow).invoke });
+    const slow = deferred<unknown>();
+    const fake = graphSetup({ respond: slowSide(slow) });
     expect((await fake.core.launch(graphBody(SIDE))).ok).toBe(true);
     await startAll(fake, ['a', 'b']);
     await fake.core.stop(SWARM);
     const mark = fake.events.length;
-    slow.resolve(OK('Q'));
+    slow.resolve({ text: 'Q' });
     await flush();
     expect(fake.events.length).toBe(mark);
     expect(fake.events.at(-1)).toMatchObject({ type: 'swarm.stopped' });
   });
 
   it('AC-009-22: agent.result агента команды, который не агент-вход, — шаг не завершается, событий и песочниц нет', async () => {
-    const { invoke } = recordingInvoke(async () => OK('x'));
-    const fake = setup({ invokeNode: invoke });
+    const fake = graphSetup();
     expect((await fake.core.launch(graphBody(CHAIN))).ok).toBe(true);
     await startAll(fake, ['a', 'b', 'c']);
     const eventsMark = fake.events.length;
@@ -996,9 +1046,22 @@ describe('orchestrator-core: граф процесса (спека 009, 4.6)', (
     expect(fake.messages).toHaveLength(1);
   });
 
+  it('REQ-009-10: выход команды запускает программу через plan.next — вход { text: выход команды }, выход программы — swarm.completed', async () => {
+    const fake = graphSetup({ respond: stateThenAnswer({ text: 'done' }) });
+    expect((await fake.core.launch(graphBody(TEAM_TO_PROGRAM))).ok).toBe(true);
+    await startAll(fake, ['a', 'b']);
+    expect(fake.messages[0]).toMatchObject({ from: 'user', to: 'a', text: 'T' });
+    await fake.core.handleEvent(agentEvent('agent.result', 'a', { text: 'r1' }));
+    await flush();
+    expect(invokeOf(fake)).toMatchObject({ call: { kind: 'execute', input: { text: 'r1' } } });
+    expect(fake.events.at(-1)).toMatchObject({
+      type: 'swarm.completed',
+      data: { result: 'done' },
+    });
+  });
+
   it('AC-009-26: маркеры настроек программы и задачи не попадают в события и логи оркестратора', async () => {
-    const { invoke } = recordingInvoke(async () => OK('x'));
-    const fake = setup({ invokeNode: invoke });
+    const fake = graphSetup();
     const body = graphBody({
       ...CHAIN,
       programs: [program('p', { prefix: 'settings-marker-009' })],
@@ -1012,5 +1075,119 @@ describe('orchestrator-core: граф процесса (спека 009, 4.6)', (
     const dump = JSON.stringify({ events: fake.events, logs: fake.entries });
     expect(dump).not.toContain('settings-marker-009');
     expect(dump).not.toContain('input-marker-009');
+  });
+
+  it('REQ-009-13, AC-009-26: ветка отказа — node.failed несёт код и текст ошибки узла, без настроек и задачи в логах', async () => {
+    const fake = graphSetup({ respond: failWith('invalid_output', 'истекло') });
+    const body = graphBody({
+      ...CHAIN,
+      programs: [program('p', { prefix: 'settings-marker-009' })],
+      task: 'input-marker-009',
+    });
+    expect((await fake.core.launch(body)).ok).toBe(true);
+    await startAll(fake, ['a', 'b', 'c']);
+    expect(fake.events.at(-1)).toMatchObject({
+      type: 'swarm.failed',
+      data: { reason: 'node_failed', detail: 'p: invalid_output' },
+    });
+    const dump = JSON.stringify({ events: fake.events, logs: fake.entries });
+    expect(dump).not.toContain('settings-marker-009');
+    expect(dump).not.toContain('input-marker-009');
+  });
+
+  it('stop во время публикации node.started — вызов программы не выполняется, событий после swarm.stopped нет', async () => {
+    const fake: Fake = graphSetup({
+      onEvent: async (event) => {
+        if (event.type === 'node.started') await fake.core.stop(SWARM);
+      },
+    });
+    expect((await fake.core.launch(graphBody(CHAIN))).ok).toBe(true);
+    await startAll(fake, ['a', 'b', 'c']);
+    expect(fake.node.sandboxes.runs).toHaveLength(0);
+    expect(fake.events.some((e) => e.type === 'node.completed')).toBe(false);
+    expect(fake.events.at(-1)).toMatchObject({ type: 'swarm.stopped' });
+  });
+
+  it('stop во время уборки команды — у каждого агента ровно один agent.stopped', async () => {
+    const gate = deferred<void>();
+    const fake = graphSetup({ removeGate: gate.promise });
+    expect((await fake.core.launch(graphBody(CHAIN))).ok).toBe(true);
+    await startAll(fake, ['a', 'b', 'c']);
+    const team = fake.core.handleEvent(agentEvent('agent.result', 'a', { text: 'r1' }));
+    const stopping = fake.core.stop(SWARM);
+    await flush();
+    gate.resolve();
+    await Promise.all([team, stopping]);
+    const stopped = fake.events
+      .filter((e) => e.type === 'agent.stopped')
+      .map((e) => e.agentId)
+      .sort();
+    expect(stopped).toEqual(['a', 'b', 'c']);
+  });
+
+  it('исключение при публикации в фоновой программе — swarm.failed node_failed с detail q: node_failed', async () => {
+    const fake = graphSetup({
+      onEvent: async (event) => {
+        if (event.type === 'node.started' && event.data.nodeId === 'q') {
+          throw new Error('шина недоступна');
+        }
+      },
+    });
+    expect((await fake.core.launch(graphBody(SIDE))).ok).toBe(true);
+    await startAll(fake, ['a', 'b']);
+    await flush();
+    expect(fake.events.at(-1)).toMatchObject({
+      type: 'swarm.failed',
+      data: { reason: 'node_failed', detail: 'q: node_failed' },
+    });
+    expect(fake.entries.find((e) => e.msg === 'program step failed')?.ctx).toMatchObject({
+      swarmId: SWARM,
+      nodeId: 'q',
+    });
+  });
+
+  it('исключение при публикации у программы-входа (checkReady) — swarm.failed node_failed с detail p: node_failed', async () => {
+    const fake = graphSetup({
+      onEvent: async (event) => {
+        if (event.type === 'node.started' && event.data.nodeId === 'p') {
+          throw new Error('шина недоступна');
+        }
+      },
+    });
+    expect((await fake.core.launch(graphBody(CHAIN))).ok).toBe(true);
+    await startAll(fake, ['a', 'b', 'c']);
+    expect(fake.node.sandboxes.runs).toHaveLength(0);
+    expect(fake.events.at(-1)).toMatchObject({
+      type: 'swarm.failed',
+      data: { reason: 'node_failed', detail: 'p: node_failed' },
+    });
+  });
+
+  it('D-185: исключение при вызове программы — node.failed и swarm.failed node_failed; в логе только имя ошибки', async () => {
+    const fake = graphSetup({
+      secrets: {
+        read: async () => {
+          throw new Error('хранилище недоступно');
+        },
+      },
+    });
+    const body = graphBody({
+      ...CHAIN,
+      programs: [program('p', {}, { apiKey: 'avito_token' }, KEYED)],
+    });
+    expect((await fake.core.launch(body)).ok).toBe(true);
+    await startAll(fake, ['a', 'b', 'c']);
+    expect(fake.events.find((e) => e.type === 'node.failed')).toMatchObject({
+      data: { nodeId: 'p', code: 'node_failed', message: 'Сбой вызова программы' },
+    });
+    expect(fake.events.at(-1)).toMatchObject({
+      type: 'swarm.failed',
+      data: { reason: 'node_failed', detail: 'p: node_failed' },
+    });
+    expect(fake.entries.find((e) => e.msg === 'node invoke threw')?.ctx).toEqual({
+      swarmId: SWARM,
+      nodeId: 'p',
+      errorName: 'Error',
+    });
   });
 });
