@@ -1,6 +1,8 @@
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { NodeInvocation } from '@swag/contracts';
+import { startTelemetry } from '@swag/adapter-telemetry';
 import { createOrchestratorHttpClient } from '../src/index.ts';
 
 const TOKEN = 'fake-orchestrator-token-for-tests-000000';
@@ -93,6 +95,125 @@ describe('createOrchestratorHttpClient', () => {
     } finally {
       hanging.closeAllConnections();
       await new Promise<void>((resolve) => hanging.close(() => resolve()));
+    }
+  });
+});
+
+const INVOCATION: NodeInvocation = {
+  orgId: ORG_ID,
+  type: 'example/echo@1.0.0',
+  call: { kind: 'execute', input: { text: 'hi' } },
+  settings: {},
+  credentials: {},
+  stateKey: 'node-1',
+  timeoutMs: 1000,
+};
+const RESULT_OK = { ok: true, output: { text: '> hi' }, durationMs: 3 };
+
+interface RecordedRequest {
+  method: string;
+  url: string;
+  headers: IncomingHttpHeaders;
+  body: string;
+}
+
+// Фейковый оркестратор для вызова узла: отвечает заданным статусом и телом, запоминает запросы.
+async function fakeNodeOrchestrator(
+  status: number,
+  reply: unknown,
+): Promise<{ baseUrl: string; requests: RecordedRequest[] }> {
+  const requests: RecordedRequest[] = [];
+  server = createServer((request, response) => {
+    let body = '';
+    request.setEncoding('utf8');
+    request.on('data', (chunk: string) => (body += chunk));
+    request.on('end', () => {
+      requests.push({
+        method: request.method ?? '',
+        url: request.url ?? '',
+        headers: request.headers,
+        body,
+      });
+      response.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(reply));
+    });
+  });
+  await new Promise<void>((resolve) => server?.listen(0, '127.0.0.1', () => resolve()));
+  const { port } = server.address() as AddressInfo;
+  return { baseUrl: `http://127.0.0.1:${port}`, requests };
+}
+
+describe('createOrchestratorHttpClient: invokeNode', () => {
+  it('REQ-033-7: invokeNode шлёт POST /node-invocations с телом и токеном и разбирает ok: true', async () => {
+    const { baseUrl, requests } = await fakeNodeOrchestrator(200, RESULT_OK);
+    const client = createOrchestratorHttpClient({ baseUrl, token: TOKEN, timeoutMs: 5000 });
+
+    const result = await client.invokeNode(INVOCATION);
+
+    expect(result).toEqual(RESULT_OK);
+    expect(requests).toHaveLength(1);
+    const [request] = requests;
+    expect(request?.method).toBe('POST');
+    expect(request?.url).toBe('/node-invocations');
+    expect(request?.headers.authorization).toBe(`Bearer ${TOKEN}`);
+    expect(JSON.parse(request?.body ?? 'null')).toEqual(INVOCATION);
+  });
+
+  it('REQ-033-7: ok: false от оркестратора возвращается как результат, а не исключение', async () => {
+    const failed = {
+      ok: false,
+      error: { code: 'timeout', message: 'узел не ответил' },
+      durationMs: 1000,
+    };
+    const { baseUrl } = await fakeNodeOrchestrator(200, failed);
+    const client = createOrchestratorHttpClient({ baseUrl, token: TOKEN, timeoutMs: 5000 });
+
+    await expect(client.invokeNode(INVOCATION)).resolves.toEqual(failed);
+  });
+
+  it('REQ-033-7: не-2xx от оркестратора — исключение', async () => {
+    const { baseUrl } = await fakeNodeOrchestrator(400, { error: { code: 'invalid_request' } });
+    const client = createOrchestratorHttpClient({ baseUrl, token: TOKEN, timeoutMs: 5000 });
+
+    await expect(client.invokeNode(INVOCATION)).rejects.toThrow('400');
+  });
+
+  it('REQ-033-7: таймаут запроса — invocation.timeoutMs + 10000, без timeoutMs — timeoutMs клиента + 10000', async () => {
+    const { baseUrl } = await fakeNodeOrchestrator(200, RESULT_OK);
+    const client = createOrchestratorHttpClient({ baseUrl, token: TOKEN, timeoutMs: 5000 });
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    try {
+      await client.invokeNode(INVOCATION);
+      await client.invokeNode({ ...INVOCATION, timeoutMs: undefined });
+
+      expect(timeout).toHaveBeenNthCalledWith(1, 11_000);
+      expect(timeout).toHaveBeenNthCalledWith(2, 15_000);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it('REQ-033-7: traceparent текущего спана уходит в заголовке invokeNode', async () => {
+    const { baseUrl, requests } = await fakeNodeOrchestrator(200, RESULT_OK);
+    const telemetry = startTelemetry({
+      service: 'api',
+      version: 'test',
+      otlpEndpoint: null,
+      logLevel: 'info',
+      flushTimeoutMs: 500,
+      stdout: () => undefined,
+    });
+    try {
+      const client = createOrchestratorHttpClient({ baseUrl, token: TOKEN, timeoutMs: 5000 });
+      const traceId = await telemetry.inSpan('process.run', { parent: null }, async () => {
+        await client.invokeNode(INVOCATION);
+        return telemetry.trace.currentTraceId();
+      });
+
+      expect(requests[0]?.headers.traceparent).toMatch(
+        new RegExp(`^00-${traceId}-[0-9a-f]{16}-01$`),
+      );
+    } finally {
+      await telemetry.shutdown();
     }
   });
 });

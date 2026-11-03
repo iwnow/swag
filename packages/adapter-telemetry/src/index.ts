@@ -44,6 +44,7 @@ import {
   type SpanProcessor,
 } from '@opentelemetry/sdk-trace';
 import type { LogError, LogLevel, ServiceName } from '@swag/contracts';
+import type { RootSpans } from '@swag/scheduler-core';
 import pino, { type Logger as PinoLogger } from 'pino';
 
 // Спека 016, 4.4. Пакет оболочек: ядра его не импортируют, они видят только порты Logger и TraceContext.
@@ -442,4 +443,11 @@ export function tracedHttpServer(
         )
         .catch(() => undefined);
     });
+}
+
+// Спека 033, 4.10 и 4.13: корневой спан опроса и запуска процесса — без родителя, даже внутри активного спана.
+export function createRootSpans(telemetry: Telemetry): RootSpans {
+  return {
+    run: (name, attributes, fn) => telemetry.inSpan(name, { parent: null, attributes }, fn),
+  };
 }

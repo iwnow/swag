@@ -12,10 +12,12 @@
 ## Что внутри сейчас
 
 - `startTelemetry(options): Telemetry` — `logger` (`debug`/`info`/`warn`/`error` + `pino` для Fastify `loggerInstance`), `trace.currentTraceId()`, `inSpan(name, { parent, kind, attributes }, fn)`, `currentTraceparent()`, `shutdown()`.
+- `createRootSpans(telemetry): RootSpans` — `run(name, { 'swag.process' }, fn)` для планировщика (033, 4.10): спан без родителя даже внутри активного спана, контекст активен на время `fn`, исключение пробрасывается со статусом ERROR.
 - `tracedHttpServer(telemetry, { ignorePaths })` — `serverFactory` для Fastify: серверный спан на запрос, родитель — заголовок `traceparent`, атрибуты `http.request.method`, `url.path`, `http.response.status_code`.
 - `toLogError(value)` — ошибка → `LogError` (класс, сообщение, стек, сообщение причины).
 - `createMemoryExporters()` — экспорт спанов и логов в память для тестов других пакетов.
 - Типы `Logger`, `LogContext`, `TraceContext` — структурные копии портов ядер.
+- `test/telemetry.test.ts` — REQ-033-25: корневой спан без родителя, атрибут `swag.process`, вложенный спан — дочерний, исключение и статус ERROR.
 
 ## Ключевые решения
 
@@ -30,6 +32,7 @@
 - **Пакетный экспорт раз в 1 с** (`scheduledDelayMillis`, у SDK по умолчанию 5 с для спанов): короткоживущий агент успевает отправить спаны до остановки; остальное досылает `shutdown`.
 - **Ошибки экспорта** перехватываются глобальным обработчиком OpenTelemetry и пишутся `warn telemetry export failed` только в stdout, не чаще раза в 10 с (REQ-016-7, AC-016-19).
 - **Один экземпляр на процесс**: `startTelemetry` переустанавливает глобальные провайдер, пропагатор и менеджер контекста, `shutdown` их снимает. Адаптеры берут трейсер из глобального API при каждом вызове.
+- **Корневой спан (033, 4.10, T-12)** — `createRootSpans` поверх `inSpan` с `parent: null`: спан всегда начинает новый трейс, даже если вызван внутри спана планировщика; контекст спана активен на время `fn` (`startActiveSpan`), поэтому вызовы `invokeNode` внутри получают его `traceparent`.
 - **`exporters` в `TelemetryOptions`** — расширение 4.4 для тестов: экспорт в память без пакетирования. В работе не используется.
 - **`/health` не трассируется** (`ignorePaths`): compose опрашивает его каждые 2 с.
 
@@ -43,8 +46,9 @@
 ## Связи
 
 - Используют: оболочки `apps/api`, `apps/orchestrator`, `apps/agent`; тесты `adapter-nats`, `adapter-docker` и оболочек (`createMemoryExporters`).
-- Зависит от: `@swag/contracts` (`LogLevel`, `ServiceName`, `LogError`), `@opentelemetry/*`, `pino`.
+- Зависит от: `@swag/contracts` (`LogLevel`, `ServiceName`, `LogError`), `@swag/scheduler-core` (тип `RootSpans`), `@opentelemetry/*`, `pino`.
 
 ## Спеки
 
 - 016 — разделы 4.3, 4.4, 4.5 (сервер), REQ-016-3, REQ-016-5…8, AC-016-2, AC-016-3.
+- 033 — 4.10, 4.13, REQ-033-25 (`createRootSpans`).

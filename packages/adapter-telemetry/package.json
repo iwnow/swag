@@ -17,6 +17,7 @@
     "@opentelemetry/sdk-logs": "3.0.0",
     "@opentelemetry/sdk-trace": "3.0.0",
     "@swag/contracts": "0.0.0",
+    "@swag/scheduler-core": "0.0.0",
     "pino": "10.4.0"
   }
 }
