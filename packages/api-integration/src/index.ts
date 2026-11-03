@@ -10,12 +10,17 @@ export {
 } from './node-registry.ts';
 export {
   checkGraph,
+  expandGraph,
+  type ExpandResult,
   formGraph,
   type GraphCheckDeps,
   type GraphPlan,
   graphPlan,
   launchGraph,
   LLM_AGENT_TYPE,
+  type NodeOrigin,
+  PROCESS_NEST_MAX_DEPTH,
+  PROCESS_NODE_TYPE,
   SCHEDULE_TRIGGER_TYPE,
   type Step,
   type TeamPlan,
