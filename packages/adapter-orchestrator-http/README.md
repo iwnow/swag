@@ -14,9 +14,7 @@
 ## Что внутри сейчас
 
 - `createOrchestratorHttpClient({ baseUrl, token, timeoutMs, fetch? })` — возвращает `OrchestratorClient & NodeInvoker`.
-- `test/client.test.ts` — AC-024-22, AC-013-21 и REQ-033-7: `invokeNode` (путь, тело, токен, `traceparent`, таймаут `timeoutMs + 10000`, `ok: false` как результат, не-2xx как исключение).
-- `test/client.test.ts` — AC-024-22: заголовок `Authorization` на `launch` и `stop` (фейковый оркестратор на локальном порту); AC-013-21: молчащий оркестратор при `timeoutMs: 100` — `launch` падает быстрее 1 с.
-- `invokeNode` без `invocation.timeoutMs` берёт `timeoutMs` клиента: оркестратор применяет свой `NODE_INVOKE_TIMEOUT_MS`, адаптер его не знает.
+- `test/client.test.ts` — AC-024-22: заголовок `Authorization` на `launch` и `stop` (фейковый оркестратор на локальном порту); AC-013-21: молчащий оркестратор при `timeoutMs: 100` — `launch` падает быстрее 1 с; REQ-033-7: `invokeNode` (путь, тело, токен, `traceparent`, таймаут, `ok: false` как результат, не-2xx как исключение).
 - Тест HTTP-цепочки с настоящими `api` и `orchestrator` — `apps/api/test/trace.test.ts` (AC-016-9).
 
 ## Ограничения
@@ -37,7 +35,7 @@
 - Ответ, отличный от `202`, — исключение: ядро `api` трактует его как недоступность оркестратора (`swarm.failed`, `orchestrator_unavailable`).
 - Контекст трассировки (016, 4.5) — явная передача заголовка через глобальный пропагатор `@opentelemetry/api`, а не автоинструментация `fetch`: без патчинга undici и без зависимости от SDK. Спан `POST` (`kind: client`) с атрибутами `http.request.method`, `url.full`, `server.address`, `server.port`, `http.response.status_code`; ответ `4xx`/`5xx` или сетевая ошибка — статус `ERROR`.
 - Таймаут `AbortSignal.timeout(timeoutMs)` на `launch` и `stop` (013, 4.9, из N-25). Таймаут не отдельная ошибка: это исключение fetch, как при недоступности оркестратора, поэтому `api` ведёт себя одинаково.
-- `invokeNode`: таймаут `(invocation.timeoutMs ?? timeoutMs) + 10000` (033, 4.10): запас на сеть и разбор ответа над лимитом вызова узла; один путь `post` для всех трёх маршрутов, `post` возвращает `Response`.
+- `invokeNode`: таймаут `(invocation.timeoutMs ?? timeoutMs) + 10000` (033, 4.10; без `invocation.timeoutMs` — таймаут клиента, D-186): запас на сеть и разбор ответа над лимитом вызова узла; один путь `post` для всех трёх маршрутов, `post` возвращает `Response`.
 
 ## Спеки
 
