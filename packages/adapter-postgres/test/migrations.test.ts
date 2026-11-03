@@ -47,7 +47,7 @@ describe.skipIf(!url)('adapter-postgres миграции', () => {
     const rowsAfterFirst = await migrationRows();
 
     expect(afterFirst).toEqual(expect.arrayContaining(['swarm_events', 'swarms']));
-    expect(rowsAfterFirst).toBe(6); // 0001_swarms, 0002_money, 0003_identity, 0004_identity_access, 0005_billing и 0006_nodes
+    expect(rowsAfterFirst).toBe(7); // 0001_swarms, 0002_money, 0003_identity, 0004_identity_access, 0005_billing, 0006_nodes и 0007_processes
 
     await expect(runMigrations(url ?? '', { schema })).resolves.toBeUndefined();
 
@@ -78,6 +78,32 @@ describe.skipIf(!url)('adapter-postgres миграции', () => {
         email_confirmations: ['token_hash', 'email', 'expires_at', 'used_at', 'created_at'],
         organizations: ['id', 'name', 'created_at'],
         node_state: ['org_id', 'state_key', 'key', 'value', 'updated_at'],
+        processes: ['id', 'org_id', 'created_by', 'definition', 'created_at', 'updated_at'],
+        process_runs: [
+          'id',
+          'process_id',
+          'org_id',
+          'status',
+          'reason',
+          'source',
+          'event',
+          'created_at',
+          'launched_at',
+          'finished_at',
+        ],
+        scheduler_jobs: [
+          'process_id',
+          'spec',
+          'enabled',
+          'disabled_reason',
+          'cursor',
+          'next_run_at',
+          'lease_until',
+          'last_poll_at',
+          'last_error',
+          'consecutive_failures',
+          'updated_at',
+        ],
         org_secrets: ['org_id', 'name', 'ciphertext', 'hint', 'updated_at', 'updated_by'],
         ledger_entries: [
           'call_id',
