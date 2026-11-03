@@ -1,8 +1,20 @@
 import { z } from 'zod';
 import { BudgetMicroUsd, MaxTokens, MicroUsd, ModelId, PlatformModel } from './llm.ts';
+import { OrgId } from './auth.ts';
+import {
+  GRAPH_MAX_AGENTS,
+  GRAPH_MAX_EDGES,
+  GRAPH_MAX_NODES,
+  GraphEdge,
+  NodeId,
+  ProcessGraph,
+} from './graph.ts';
+import { NodeTypeRef } from './node.ts';
+import { SecretName } from './node-invocation.ts';
 
 // Спека 001, 4.1. Лимиты длин полей — предложение, утверждено в Q-3.
-export const AgentId = z.string().regex(/^agent-[1-9][0-9]?$/); // agent-1 … agent-99, назначает api по порядку
+// Спека 009, 4.2: id агента — id узла графа; форма по-прежнему даёт agent-1 … agent-8.
+export const AgentId = NodeId;
 export type AgentId = z.infer<typeof AgentId>;
 
 export const SwarmId = z.uuid();
@@ -25,6 +37,19 @@ export const SwarmCreateRequest = z.strictObject({
 });
 export type SwarmCreateRequest = z.infer<typeof SwarmCreateRequest>;
 
+// Спека 009, 4.2: тело POST /swarms в виде графа. Граф проверяет api (4.4).
+export const SwarmGraphRequest = z.strictObject({
+  task: z.string().trim().min(1).max(4000),
+  budgetMicroUsd: BudgetMicroUsd,
+  maxTokens: MaxTokens.nullable().default(null),
+  graph: ProcessGraph,
+});
+export type SwarmGraphRequest = z.infer<typeof SwarmGraphRequest>;
+
+// Тело POST /swarms. Форма отличается от графа полем agents, граф — полем graph (обе схемы strict).
+export const SwarmRequest = z.union([SwarmCreateRequest, SwarmGraphRequest]);
+export type SwarmRequest = z.infer<typeof SwarmRequest>;
+
 export const AgentSpec = AgentDraft.extend({ id: AgentId });
 export type AgentSpec = z.infer<typeof AgentSpec>;
 
@@ -36,13 +61,27 @@ export type SwarmStatus = z.infer<typeof SwarmStatus>;
 export const AgentStatus = z.enum(['starting', 'idle', 'working', 'done', 'stopped', 'failed']);
 export type AgentStatus = z.infer<typeof AgentStatus>;
 
-// api → orchestrator. Строгая схема: лишнее поле (например, image) — ошибка (4.6.1).
+// Спека 009, 4.5: программа графа в SwarmLaunch — настройки и credentials после проверки api.
+export const LaunchProgram = z.strictObject({
+  id: NodeId,
+  type: NodeTypeRef,
+  settings: z.record(z.string(), z.unknown()), // после validateSettings: с умолчаниями
+  credentials: z.record(z.string(), SecretName),
+});
+export type LaunchProgram = z.infer<typeof LaunchProgram>;
+
+// api → orchestrator. Строгая схема (4.6.1 спеки 001 остаётся).
 export const SwarmLaunch = z.strictObject({
   swarmId: SwarmId,
+  orgId: OrgId,
   task: z.string(),
   budgetMicroUsd: BudgetMicroUsd,
   maxTokens: MaxTokens.nullable(),
-  agents: z.array(AgentSpec).min(1),
+  agents: z.array(AgentSpec).min(1).max(GRAPH_MAX_AGENTS), // агенты графа: { ...настройки после validateSettings, id }
+  programs: z.array(LaunchProgram).max(GRAPH_MAX_NODES),
+  edges: z.array(GraphEdge).max(GRAPH_MAX_EDGES),
+  entry: NodeId,
+  exit: NodeId,
 });
 export type SwarmLaunch = z.infer<typeof SwarmLaunch>;
 

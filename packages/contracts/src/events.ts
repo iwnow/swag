@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { AgentId, AgentSpec, SwarmId } from './swarm.ts';
 import { BudgetMicroUsd, LlmCallData, MaxTokens, MicroUsd } from './llm.ts';
 import { OrgId, UserId } from './auth.ts';
+import { NodeId, ProcessGraph } from './graph.ts';
+import { NodeTypeRef } from './node.ts';
+import { NodeInvocationErrorCode } from './node-invocation.ts';
 
 // Спека 016, 4.1. W3C trace-id: 32 hex в нижнем регистре, не нули.
 export const TraceId = z
@@ -32,6 +35,7 @@ export const PlatformEventInput = z.discriminatedUnion('type', [
       orgId: OrgId.nullable().optional(), // организация автора; null — рой до 024 (024, 4.3)
       createdBy: UserId.nullable().optional(), // автор (024, 4.3)
       agents: z.array(AgentSpec.partial({ budgetMicroUsd: true, maxTokens: true })),
+      graph: ProcessGraph.optional(), // спека 009, 4.5: граф роя; для формы — formGraph
     }),
   }),
   z.strictObject({ ...Envelope, type: z.literal('swarm.started'), data: z.strictObject({}) }),
@@ -58,9 +62,31 @@ export const PlatformEventInput = z.discriminatedUnion('type', [
         'api_restarted',
         'budget_exceeded',
         'gateway_unavailable',
+        'node_failed', // спека 009, 4.10: программа графа вернула ошибку
       ]),
       detail: z.string().optional(),
       spentMicroUsd: MicroUsd.optional(), // 013, 4.1
+    }),
+  }),
+  // Спека 009, 4.10: события программ графа; source 'orchestrator', agentId null.
+  z.strictObject({
+    ...Envelope,
+    type: z.literal('node.started'),
+    data: z.strictObject({ nodeId: NodeId, type: NodeTypeRef }),
+  }),
+  z.strictObject({
+    ...Envelope,
+    type: z.literal('node.completed'),
+    data: z.strictObject({ nodeId: NodeId, durationMs: z.number().int().min(0) }),
+  }),
+  z.strictObject({
+    ...Envelope,
+    type: z.literal('node.failed'),
+    data: z.strictObject({
+      nodeId: NodeId,
+      code: NodeInvocationErrorCode,
+      message: z.string().max(1000),
+      durationMs: z.number().int().min(0),
     }),
   }),
   z.strictObject({

@@ -1,7 +1,7 @@
 ---
 id: "009"
 title: Граф процесса
-status: ready
+status: in-progress
 roadmap_stage: 9
 depends_on: ["021", "022", "026"]
 superseded_by: null
@@ -461,7 +461,7 @@ nodes: {
 
 Выполняются по порядку. После каждой задачи — коммит.
 
-- [ ] **T-1.** Контракты графа: `packages/contracts/src/graph.ts` по 4.1, экспорт в `index.ts`; в `swarm.ts` `AgentId = NodeId`, `SwarmGraphRequest`, `SwarmRequest`, `LaunchProgram`, новый `SwarmLaunch` (4.2, 4.5); в `events.ts` `graph` в `swarm.created`, `node.*`, `node_failed` (4.5, 4.10). Тесты схем в `packages/contracts` (`NodeId` отклоняет `user`, `SwarmRequest` различает форму и граф). Закрывает: REQ-009-1 (контракт), REQ-009-7 (контракт), REQ-009-18 (контракт). Готово, когда: схемы по 4.1–4.10 и `npm run typecheck` по пакету `contracts` зелёные. Оркестратор и `api` компилируются на следующих задачах группы — **группа T-1…T-6 через фича-ветку `spec/009-graph`**.
+- [x] **T-1.** Контракты графа: `packages/contracts/src/graph.ts` по 4.1, экспорт в `index.ts`; в `swarm.ts` `AgentId = NodeId`, `SwarmGraphRequest`, `SwarmRequest`, `LaunchProgram`, новый `SwarmLaunch` (4.2, 4.5); в `events.ts` `graph` в `swarm.created`, `node.*`, `node_failed` (4.5, 4.10). Тесты схем в `packages/contracts` (`NodeId` отклоняет `user`, `SwarmRequest` различает форму и граф). Закрывает: REQ-009-1 (контракт), REQ-009-7 (контракт), REQ-009-18 (контракт). Готово, когда: схемы по 4.1–4.10 и `npm run typecheck` по пакету `contracts` зелёные. Оркестратор и `api` компилируются на следующих задачах группы — **группа T-1…T-6 через фича-ветку `spec/009-graph`**.
 - [ ] **T-2.** `formGraph` и `checkGraph` в `packages/api-integration/src/process-graph.ts` (4.3, 4.4), экспорт из пакета; тестовый реестр — из манифестов `swag/llm-agent`, `example/echo` и тестовых манифестов `trigger` и `program` с credential в файле теста. Закрывает: REQ-009-3, REQ-009-4, AC-009-1…AC-009-11, NFR-009-1. Готово, когда: тесты AC зелёные, замер NFR в журнале.
 - [ ] **T-3.** `graphPlan` и `valueText` в том же файле (4.6). Закрывает: REQ-009-8, AC-009-17. Готово, когда: тест AC-009-17 и тесты `valueText` (объект с `text`, строка, прочее) зелёные.
 - [ ] **T-4.** `api-core`: `createSwarm` по 4.9 (разбор `SwarmRequest`, `formGraph`, `checkGraph` с `secrets.list`, `entry_input_invalid`, `invalid_graph`, `SwarmLaunch` 4.5, `graph` в `swarm.created`), операция `checkGraphFor`; маршрут `POST /graph-checks` и код `invalid_graph` → `400` в `apps/api/src/app.ts`. Закрывает: REQ-009-1, REQ-009-2, REQ-009-5, REQ-009-6, REQ-009-7, AC-009-12…AC-009-15. Готово, когда: тесты AC и прежние тесты `api-core` и `apps/api` зелёные.
@@ -519,3 +519,4 @@ nodes: {
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+| 2026-11-03 | `spec/009-graph` | Группа T-1…T-6 через фича-ветку `spec/009-graph`: T-1 меняет `SwarmLaunch` и `AgentId` в `contracts`, оркестратор, `api` и агент компилируются только после T-4…T-6. Каждая задача группы — этап `spec/009-tN` с PR в фича-ветку; фича-ветка — в `main` после T-6. | — |
