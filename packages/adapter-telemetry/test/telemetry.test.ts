@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { LogRecord } from '@swag/contracts';
-import { createMemoryExporters, startTelemetry, type Telemetry } from '../src/index.ts';
+import {
+  createMemoryExporters,
+  createRootSpans,
+  startTelemetry,
+  type Telemetry,
+} from '../src/index.ts';
 
 const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
 const PARENT = `00-${TRACE}-00f067aa0ba902b7-01`;
@@ -136,5 +141,48 @@ describe('adapter-telemetry: контекст', () => {
     expect(span?.status.code).toBe(2);
     expect(span?.kind).toBe(2);
     expect(span?.attributes['swarm.id']).toBe(SWARM);
+  });
+});
+
+describe('adapter-telemetry: корневой спан', () => {
+  it('REQ-033-25: run — спан без родителя внутри активного спана, атрибут swag.process, контекст активен в fn', async () => {
+    const memory = createMemoryExporters();
+    const { telemetry } = start({ exporters: { spans: memory.spans } });
+    const roots = createRootSpans(telemetry);
+    let insideTraceId: string | null = null;
+
+    await telemetry.inSpan('outer', { parent: PARENT }, () =>
+      roots.run('process.run', { 'swag.process': 'proc-1' }, async () => {
+        insideTraceId = telemetry.trace.currentTraceId();
+        telemetry.inSpan('child', {}, () => undefined);
+      }),
+    );
+
+    const outer = memory.finishedSpans.find((s) => s.name === 'outer');
+    const root = memory.finishedSpans.find((s) => s.name === 'process.run');
+    const child = memory.finishedSpans.find((s) => s.name === 'child');
+    expect(outer?.spanContext().traceId).toBe(TRACE);
+    expect(root?.parentSpanContext).toBeUndefined();
+    expect(root?.spanContext().traceId).not.toBe(TRACE);
+    expect(root?.attributes['swag.process']).toBe('proc-1');
+    expect(insideTraceId).toBe(root?.spanContext().traceId);
+    expect(child?.parentSpanContext?.spanId).toBe(root?.spanContext().spanId);
+    expect(telemetry.trace.currentTraceId()).toBeNull();
+  });
+
+  it('REQ-033-25: исключение из fn пробрасывается, спан закрыт со статусом ERROR', async () => {
+    const memory = createMemoryExporters();
+    const { telemetry } = start({ exporters: { spans: memory.spans } });
+    const roots = createRootSpans(telemetry);
+
+    await expect(
+      roots.run('process.poll', { 'swag.process': 'proc-2' }, async () => {
+        throw new Error('scheduler down');
+      }),
+    ).rejects.toThrow('scheduler down');
+
+    const span = memory.finishedSpans.find((s) => s.name === 'process.poll');
+    expect(span?.status.code).toBe(2);
+    expect(span?.parentSpanContext).toBeUndefined();
   });
 });
