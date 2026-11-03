@@ -1,0 +1,71 @@
+{
+  "type": "swag/schedule",
+  "version": "1.0.0",
+  "kind": "trigger",
+  "title": "Расписание",
+  "description": "Запуск процесса по интервалу или по cron. Исполняется планировщиком, без песочницы.",
+  "settings": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "everySec": {
+        "default": null,
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 604800
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "cron": {
+        "default": null,
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "timezone": {
+        "default": "UTC",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      }
+    },
+    "additionalProperties": false
+  },
+  "credentials": [],
+  "inputs": null,
+  "outputs": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "scheduledAt": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+      },
+      "firedAt": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+      }
+    },
+    "required": [
+      "scheduledAt",
+      "firedAt"
+    ],
+    "additionalProperties": false
+  },
+  "operations": [],
+  "egress": []
+}

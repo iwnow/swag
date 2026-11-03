@@ -26,6 +26,8 @@
     "@swag/agent-core": "0.0.0",
     "@swag/node-example": "0.0.0",
     "@swag/node-llm-agent": "0.0.0",
+    "@swag/node-process": "0.0.0",
+    "@swag/node-schedule": "0.0.0",
     "@swag/orchestrator-core": "0.0.0",
     "@swag/ui-core": "0.0.0"
   },

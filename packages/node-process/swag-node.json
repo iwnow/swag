@@ -1,0 +1,31 @@
+{
+  "type": "swag/process",
+  "version": "1.0.0",
+  "kind": "program",
+  "title": "Процесс",
+  "description": "Сохранённый процесс организации как шаг графа. Разворачивается платформой в узлы процесса, не исполняется в песочнице.",
+  "settings": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "processId": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      }
+    },
+    "required": [
+      "processId"
+    ],
+    "additionalProperties": false
+  },
+  "credentials": [],
+  "inputs": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema"
+  },
+  "outputs": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema"
+  },
+  "operations": [],
+  "egress": []
+}

@@ -9,6 +9,8 @@
     { "path": "packages/node-sdk" },
     { "path": "packages/node-example" },
     { "path": "packages/node-llm-agent" },
+    { "path": "packages/node-schedule" },
+    { "path": "packages/node-process" },
     { "path": "packages/api-integration" },
     { "path": "packages/node-packages" },
     { "path": "packages/api-core" },

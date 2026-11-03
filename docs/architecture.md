@@ -27,7 +27,7 @@ packages/contracts/     общие схемы и типы, в т.ч. маниф�
 packages/api-integration/  общая чистая логика ядер, работающих с API платформы; правила ядра; реестр типов узлов `createNodeRegistry` (спека 021, 4.2); форма → граф `formGraph`, проверка `checkGraph`, план `graphPlan` (спека 009)
 packages/node-sdk/      SDK авторов узлов `@swag/node-sdk`: `defineNode`, типы видов, `NodeContext`, тестовая обвязка на `./testing`; не ядро, `arch:check` его не проверяет (спека 021, 4.3)
 packages/node-packages/  загрузка пакетов типов узлов из `NODE_PACKAGES`: `bootNodePackages`, `packageOf`; общая для `api` и `orchestrator` (спека 026, 4.3)
-packages/node-<имя>/    пакет типа узла `@swag/node-<имя>`: определение в `src/node.ts`, выгруженный `swag-node.json` (спека 021, 4.4); сейчас `node-llm-agent`, `node-example`
+packages/node-<имя>/    пакет типа узла `@swag/node-<имя>`: определение в `src/node.ts`, выгруженный `swag-node.json` (спека 021, 4.4); сейчас `node-llm-agent`, `node-example`, `node-schedule`, `node-process`
 packages/config/        чтение env, только для оболочек
 packages/helpers/       универсальные хелперы без зависимостей (`@swag/helpers`), серверные — `@swag/helpers/server`; ядра не импортируют
 packages/adapter-openrouter/  источник цен OpenRouter на `fetch` (спека 004, 4.9)
