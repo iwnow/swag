@@ -1631,6 +1631,7 @@ describe('api-core — спека 009: граф роя', () => {
       edges: graph.edges,
       entry: 'echo',
       exit: 'agent-1',
+      trigger: null,
     });
   });
 

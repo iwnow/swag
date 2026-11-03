@@ -821,3 +821,4 @@ interface StartSwarm {
 
 | Дата | Ветка / коммит | Что сделано | Отклонения от спеки |
 |---|---|---|---|
+| 2026-11-03 | spec/033-t1 | T-1: контракты процесса, задания и запуска; права; коды графа; `stateKey`, `LaunchTrigger`, `SwarmLaunch.trigger`; `processId` в `swarm.created`. | `BudgetMicroUsd`, `MaxTokens` импортируются из `llm.ts`, `OrgId` — из `auth.ts` (в `swarm.ts` их нет). Выходной тип `SwarmLaunch` после `.default(null)` требует `trigger`, поэтому уже в T-1 `api-core` передаёт `trigger: null`, а ожидания `SwarmLaunch` в тестах `api-core` и `adapter-orchestrator-http` получили `trigger: null`. Таблица прав в `access.test.ts` дополнена новыми правами. |
