@@ -167,7 +167,7 @@ npm run infra:check
 apps/        оболочки: api, orchestrator (Fastify), agent (процесс в песочнице), llm-gateway (Fastify)
 apps/ui/     фронтенды (npm workspaces apps/ui/*): shell — каркас входа и навигации (Angular, Native Federation), cabinet — личный кабинет на Angular, admin — администрирование организации на Angular, supervisor — супервизор (организации и их пользователи) на Angular
 packages/    ядра *-core (api, orchestrator, agent, ui, llm-gateway); contracts и api-integration (общие схемы и проекция роя); ui-angular — общий Angular-пакет фронтендов (оболочка, не ядро);
-             adapter-* (Docker, NATS, память, Postgres, HTTP-оркестратор); config (env, только для оболочек)
+             adapter-* (Docker, NATS, память, Postgres, HTTP-оркестратор, HTTP-планировщик, HTTP-api); config (env, только для оболочек)
 scripts/     arch-check, spec-check, infra-check, llm-ping, db-migrate, identity-keys
 ```
 

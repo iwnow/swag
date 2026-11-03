@@ -36,6 +36,8 @@
     { "path": "packages/adapter-openrouter" },
     { "path": "packages/adapter-gateway-http" },
     { "path": "packages/adapter-orchestrator-http" },
+    { "path": "packages/adapter-scheduler-http" },
+    { "path": "packages/adapter-api-http" },
     { "path": "packages/adapter-docker" },
     { "path": "apps/api" },
     { "path": "apps/llm-gateway" },
