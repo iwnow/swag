@@ -3,8 +3,8 @@ flowchart TB
 
     subgraph CP["Control plane"]
         ID["Identity<br/>вход, токены, роли, права"]
-        API["API / Coordinator<br/>план роя, баланс, доступ,<br/>каталог узлов, секреты"]
-        ORCH["Orchestrator<br/>песочницы, сети, уборка,<br/>вызов узла"]
+        API["API / Coordinator<br/>граф роя, баланс, доступ,<br/>каталог узлов, секреты"]
+        ORCH["Orchestrator<br/>граф роя, песочницы, сети,<br/>уборка, вызов узла"]
         REG["Skill Registry"]
         GW["LLM Gateway<br/>проверки, стоимость, событие llm.call"]
         LLM["LiteLLM<br/>только перевод форматов"]
@@ -38,7 +38,7 @@ flowchart TB
         BUSB{{"NATS account B"}}
     end
 
-    PLAN["Планируется: граф процесса,<br/>каналы (Авито), чат-бот и диалоги"]
+    PLAN["Планируется: процессы по триггеру,<br/>каналы (Авито), чат-бот и диалоги"]
 
     UI <-->|WebSocket| EV
     UI -->|вход| ID

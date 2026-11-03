@@ -63,4 +63,5 @@
 - 016 — порты `Logger` и `TraceContext`, логи 4.8.
 - 002 — агентный цикл с LLM.
 - 022 — `loop.ts` по 4.2 (T-4); промпт и инструменты 4.5 — `prompt.ts` (T-6); агент роя по 4.4 — `index.ts` (T-7), напоминание шага 5 — T-7a.
+- 009 — 4.8 (`taskFrom`, `resultTo`, строка агента-входа и описание `finish`, сообщение от шага процесса в `inboxMessage`), T-5; AC-009-23 в `test/prompt.test.ts`.
 - 030 — `yieldTurn` и итог `yielded` в `loop.ts` (4.1), результат `send_message` в `prompt.ts` (4.2), `yielded` → `agent.idle` в `index.ts` (4.3).
