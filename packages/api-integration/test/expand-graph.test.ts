@@ -168,7 +168,7 @@ describe('expandGraph (033, 4.4)', () => {
     expect(expand(root, new Map([[C, child]]), ROOT)).toEqual({
       ok: false,
       issues: [
-        { code: 'process_node_id_too_long', path: 'nodes.0.id', message: expect.any(String) },
+        { code: 'process_node_id_too_long', path: 'nodes.1.id', message: expect.any(String) },
       ],
     });
   });
@@ -185,6 +185,174 @@ describe('expandGraph (033, 4.4)', () => {
           message: 'process_not_found at nodes.0.settings.processId',
         },
       ],
+    });
+  });
+
+  it('AC-033-6: дочерний граф с триггером без flow — process_invalid, не исключение', () => {
+    const root = graph([echo('e'), processNode('p', C)], [flow('e', 'p')], 'e', 'p');
+    const child = graph([trigger('t'), echo('x')], [], 't', 'x');
+    expect(expand(root, new Map([[C, child]]), ROOT)).toEqual({
+      ok: false,
+      issues: [
+        {
+          code: 'process_invalid',
+          path: 'nodes.1.settings.processId',
+          message: 'trigger_flow at nodes.0',
+        },
+      ],
+    });
+  });
+
+  it('AC-033-6: дочерний граф с триггером с невалидными настройками — process_invalid, не исключение', () => {
+    const root = graph([echo('e'), processNode('p', C)], [flow('e', 'p')], 'e', 'p');
+    const badTrigger = { id: 't', type: SCHEDULE, settings: { everySec: 10 }, credentials: {} };
+    const child = graph([badTrigger, echo('x')], [flow('t', 'x')], 't', 'x');
+    expect(expand(root, new Map([[C, child]]), ROOT)).toEqual({
+      ok: false,
+      issues: [
+        {
+          code: 'process_invalid',
+          path: 'nodes.1.settings.processId',
+          message: 'invalid_settings at nodes.0.settings',
+        },
+      ],
+    });
+  });
+
+  it('AC-033-5: два процесса-узла на один дочерний процесс — узлы p1-x и p2-x без конфликта', () => {
+    const root = graph(
+      [echo('e'), processNode('p1', C), processNode('p2', C)],
+      [flow('e', 'p1'), flow('p1', 'p2')],
+      'e',
+      'p2',
+    );
+    const child = graph([trigger('t'), echo('x')], [flow('t', 'x')], 't', 'x');
+    expect(expand(root, new Map([[C, child]]), ROOT)).toEqual({
+      ok: true,
+      graph: {
+        nodes: [echo('e'), echo('p1-x'), echo('p2-x')],
+        edges: [flow('e', 'p1-x'), flow('p1-x', 'p2-x')],
+        entry: 'e',
+        exit: 'p2-x',
+      },
+      origin: {
+        e: null,
+        'p1-x': { processId: C, nodeId: 'x' },
+        'p2-x': { processId: C, nodeId: 'x' },
+      },
+    });
+  });
+
+  it('AC-033-5: e → p → f — входящие и исходящие flow перенаправлены на вход и выход процесса', () => {
+    const root = graph(
+      [echo('e'), processNode('p', C), echo('f')],
+      [flow('e', 'p'), flow('p', 'f')],
+      'e',
+      'f',
+    );
+    const child = graph(
+      [trigger('t'), echo('x'), echo('y')],
+      [flow('t', 'x'), flow('x', 'y')],
+      't',
+      'y',
+    );
+    expect(expand(root, new Map([[C, child]]), ROOT)).toEqual({
+      ok: true,
+      graph: {
+        nodes: [echo('e'), echo('p-x'), echo('p-y'), echo('f')],
+        edges: [flow('e', 'p-x'), flow('p-y', 'f'), flow('p-x', 'p-y')],
+        entry: 'e',
+        exit: 'f',
+      },
+      origin: {
+        e: null,
+        'p-x': { processId: C, nodeId: 'x' },
+        'p-y': { processId: C, nodeId: 'y' },
+        f: null,
+      },
+    });
+  });
+
+  it('AC-033-5: p одновременно entry и exit — вход и выход графа берутся из границ процесса', () => {
+    const root = graph([processNode('p', C)], [], 'p', 'p');
+    const child = graph(
+      [trigger('t'), echo('x'), echo('y')],
+      [flow('t', 'x'), flow('x', 'y')],
+      't',
+      'y',
+    );
+    expect(expand(root, new Map([[C, child]]), ROOT)).toEqual({
+      ok: true,
+      graph: {
+        nodes: [echo('p-x'), echo('p-y')],
+        edges: [flow('p-x', 'p-y')],
+        entry: 'p-x',
+        exit: 'p-y',
+      },
+      origin: {
+        'p-x': { processId: C, nodeId: 'x' },
+        'p-y': { processId: C, nodeId: 'y' },
+      },
+    });
+  });
+
+  it('AC-033-6: цикл A → B → A при rootId = A — process_cycle по пути узла корня', () => {
+    const a = graph([processNode('q', B)], [], 'q', 'q');
+    const b = graph([processNode('x', A)], [], 'x', 'x');
+    expect(
+      expand(
+        a,
+        new Map([
+          [A, a],
+          [B, b],
+        ]),
+        A,
+      ),
+    ).toEqual({
+      ok: false,
+      issues: [
+        { code: 'process_cycle', path: 'nodes.0.settings.processId', message: expect.any(String) },
+      ],
+    });
+  });
+
+  it('AC-033-6: цикл A → B → A при rootId = null — process_cycle по пути узла корня', () => {
+    const a = graph([processNode('q', B)], [], 'q', 'q');
+    const b = graph([processNode('x', A)], [], 'x', 'x');
+    expect(
+      expand(
+        a,
+        new Map([
+          [A, a],
+          [B, b],
+        ]),
+        null,
+      ),
+    ).toEqual({
+      ok: false,
+      issues: [
+        { code: 'process_cycle', path: 'nodes.0.settings.processId', message: expect.any(String) },
+      ],
+    });
+  });
+
+  it('AC-033-5: link с процессом-узлом переносится как flow от выхода к входу процесса', () => {
+    const root = graph(
+      [agent('a'), processNode('p', C)],
+      [{ from: 'a', to: 'p', kind: 'link' }],
+      'a',
+      'p',
+    );
+    const child = graph([trigger('t'), echo('x')], [flow('t', 'x')], 't', 'x');
+    expect(expand(root, new Map([[C, child]]), ROOT)).toEqual({
+      ok: true,
+      graph: {
+        nodes: [agent('a'), echo('p-x')],
+        edges: [flow('a', 'p-x')],
+        entry: 'a',
+        exit: 'p-x',
+      },
+      origin: { a: null, 'p-x': { processId: C, nodeId: 'x' } },
     });
   });
 });

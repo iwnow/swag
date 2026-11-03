@@ -264,17 +264,21 @@ export function checkGraph(graph: ProcessGraph, deps: GraphCheckDeps): GraphChec
   return { ok: issues.length === 0, issues };
 }
 
-// Спека 033, 4.3. Граф исполнения: триггер и его flow убраны, entry — цель flow триггера. Вход — граф без замечаний checkGraph.
-export function launchGraph(
-  graph: ProcessGraph,
-  registry: NodeRegistry,
-): { graph: ProcessGraph; trigger: JobTrigger | null } {
+// Спека 033, 4.3. Убирает триггер и его flow без исключений: для expandGraph (замечание process_invalid), для launchGraph — с исключением.
+type TriggerSplit =
+  | { ok: true; graph: ProcessGraph; trigger: JobTrigger | null }
+  | { ok: false; code: 'trigger_flow' | 'invalid_settings'; path: string };
+
+function splitTrigger(graph: ProcessGraph, registry: NodeRegistry): TriggerSplit {
   const triggerNode = graph.nodes.find((node) => registry.get(node.type)?.kind === 'trigger');
-  if (!triggerNode) return { graph, trigger: null };
+  if (!triggerNode) return { ok: true, graph, trigger: null };
+  const i = graph.nodes.indexOf(triggerNode);
   const flow = graph.edges.find((edge) => edge.kind === 'flow' && edge.from === triggerNode.id);
+  if (!flow) return { ok: false, code: 'trigger_flow', path: `nodes.${i}` };
   const settings = registry.validateSettings(triggerNode.type, triggerNode.settings);
-  if (!flow || !settings.ok) throw new Error('launchGraph: graph has checkGraph issues');
+  if (!settings.ok) return { ok: false, code: 'invalid_settings', path: `nodes.${i}.settings` };
   return {
+    ok: true,
     graph: {
       nodes: graph.nodes.filter((node) => node !== triggerNode),
       edges: graph.edges.filter(
@@ -290,6 +294,16 @@ export function launchGraph(
       credentials: triggerNode.credentials,
     },
   };
+}
+
+// Спека 033, 4.3. Граф исполнения: триггер и его flow убраны, entry — цель flow триггера. Вход — граф без замечаний checkGraph.
+export function launchGraph(
+  graph: ProcessGraph,
+  registry: NodeRegistry,
+): { graph: ProcessGraph; trigger: JobTrigger | null } {
+  const split = splitTrigger(graph, registry);
+  if (!split.ok) throw new Error('launchGraph: graph has checkGraph issues');
+  return { graph: split.graph, trigger: split.trigger };
 }
 
 // Спека 033, 4.4. Процесс-узел разворачивается в узлы родителя; узлы корня — глубина 1.
@@ -338,6 +352,9 @@ function expandLevel(
   const origin: Record<NodeId, NodeOrigin | null> = {};
   const innerEdges: GraphEdge[] = [];
   const bounds = new Map<NodeId, { entry: NodeId; exit: NodeId }>();
+  // Место во вложенном графе — в message; путь замечания поднимается к узлу корня (4.4).
+  const at = (i: number, field: string): string =>
+    owner === null ? '' : ` (in process ${owner} at nodes.${i}.${field})`;
 
   graph.nodes.forEach((node, i) => {
     if (node.type !== PROCESS_NODE_TYPE) {
@@ -346,7 +363,7 @@ function expandLevel(
         issues.push({
           code: 'process_node_id_too_long',
           path: `nodes.${i}.id`,
-          message: `node id "${id}" is not a valid node id`,
+          message: `node id "${id}" is not a valid node id${at(i, 'id')}`,
         });
         return;
       }
@@ -363,20 +380,29 @@ function expandLevel(
       return;
     }
     if (chain.includes(childId)) {
-      issues.push({ code: 'process_cycle', path, message: `process ${childId} includes itself` });
+      issues.push({
+        code: 'process_cycle',
+        path,
+        message: `process ${childId} includes itself${at(i, 'settings.processId')}`,
+      });
       return;
     }
     if (level > PROCESS_NEST_MAX_DEPTH - 1) {
       issues.push({
         code: 'process_too_deep',
         path,
-        message: `process nesting is deeper than ${PROCESS_NEST_MAX_DEPTH}`,
+        message: `process nesting is deeper than ${PROCESS_NEST_MAX_DEPTH}${at(i, 'settings.processId')}`,
       });
+      return;
+    }
+    const split = splitTrigger(child, registry);
+    if (!split.ok) {
+      issues.push({ code: 'process_invalid', path, message: `${split.code} at ${split.path}` });
       return;
     }
 
     const expanded = expandLevel(
-      launchGraph(child, registry).graph,
+      split.graph,
       children,
       registry,
       childId,
@@ -388,7 +414,10 @@ function expandLevel(
       const first = expanded.issues[0]!;
       issues.push(
         CHAIN_ISSUE_CODES.includes(first.code)
-          ? first
+          ? {
+              ...first,
+              path: first.code === 'process_node_id_too_long' ? `nodes.${i}.id` : path,
+            }
           : { code: 'process_invalid', path, message: `${first.code} at ${first.path}` },
       );
       return;
@@ -408,10 +437,14 @@ function expandLevel(
     graph: {
       nodes,
       edges: [
+        // link с процессом-узлом — flow от выхода к входу (D-184, 4).
         ...graph.edges.map((edge) => ({
           from: exitOf(edge.from),
           to: entryOf(edge.to),
-          kind: edge.kind,
+          kind:
+            edge.kind === 'link' && (bounds.has(edge.from) || bounds.has(edge.to))
+              ? 'flow'
+              : edge.kind,
         })),
         ...innerEdges,
       ],
