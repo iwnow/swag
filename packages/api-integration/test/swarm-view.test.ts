@@ -442,3 +442,88 @@ describe('projectSwarm — REQ-024-4: владелец роя', () => {
     expect(view.createdBy).toBeNull();
   });
 });
+
+describe('projectSwarm — REQ-009-18: программы графа в проекции (009, 4.10)', () => {
+  it('AC-009-24: nodes — программы графа со статусами и durationMs по node.*; агенты графа не входят', () => {
+    n = 0;
+    const view = projectSwarm([
+      ev({
+        ...base(null, 'api'),
+        type: 'swarm.created',
+        data: {
+          task: 'T',
+          agents: [{ id: A1, name: 'A', role: 'r1', model: 'chat-small' }],
+          graph: {
+            nodes: [
+              { id: A1, type: 'swag/llm-agent@1.0.0', settings: {}, credentials: {} },
+              { id: 'echo-1', type: 'example/echo@1.0.0', settings: {}, credentials: {} },
+              { id: 'echo-2', type: 'example/echo@1.0.0', settings: {}, credentials: {} },
+            ],
+            edges: [{ from: 'echo-1', to: 'echo-2', kind: 'flow' }],
+            entry: 'echo-1',
+            exit: 'echo-2',
+          },
+        },
+      }),
+      ev({ ...base(null, 'orchestrator'), type: 'swarm.started', data: {} }),
+      ev({
+        ...base(null, 'orchestrator'),
+        type: 'node.started',
+        data: { nodeId: 'echo-1', type: 'example/echo@1.0.0' },
+      }),
+      ev({
+        ...base(null, 'orchestrator'),
+        type: 'node.completed',
+        data: { nodeId: 'echo-1', durationMs: 120 },
+      }),
+      ev({
+        ...base(null, 'orchestrator'),
+        type: 'node.started',
+        data: { nodeId: 'echo-2', type: 'example/echo@1.0.0' },
+      }),
+      ev({
+        ...base(null, 'orchestrator'),
+        type: 'node.failed',
+        data: { nodeId: 'echo-2', code: 'node_failed', message: 'boom', durationMs: 40 },
+      }),
+      ev({
+        ...base(null, 'orchestrator'),
+        type: 'swarm.failed',
+        data: { reason: 'node_failed', detail: 'echo-2: node_failed' },
+      }),
+    ]);
+    expect(view.nodes).toEqual([
+      { id: 'echo-1', type: 'example/echo@1.0.0', status: 'completed', durationMs: 120 },
+      { id: 'echo-2', type: 'example/echo@1.0.0', status: 'failed', durationMs: 40 },
+    ]);
+    expect(view.status).toBe('failed');
+  });
+
+  it('AC-009-24: swarm.created без graph — nodes пустой; программы до node.started — waiting, durationMs null', () => {
+    n = 0;
+    const plain = projectSwarm([
+      ev({ ...base(null, 'api'), type: 'swarm.created', data: { task: 'T', agents: [] } }),
+    ]);
+    expect(plain.nodes).toEqual([]);
+
+    const waiting = projectSwarm([
+      ev({
+        ...base(null, 'api'),
+        type: 'swarm.created',
+        data: {
+          task: 'T',
+          agents: [],
+          graph: {
+            nodes: [{ id: 'echo-1', type: 'example/echo@1.0.0', settings: {}, credentials: {} }],
+            edges: [],
+            entry: 'echo-1',
+            exit: 'echo-1',
+          },
+        },
+      }),
+    ]);
+    expect(waiting.nodes).toEqual([
+      { id: 'echo-1', type: 'example/echo@1.0.0', status: 'waiting', durationMs: null },
+    ]);
+  });
+});

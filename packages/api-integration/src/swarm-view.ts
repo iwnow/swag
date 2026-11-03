@@ -1,12 +1,15 @@
 import type {
   AgentId,
   AgentStatus,
+  NodeId,
+  NodeTypeRef,
   PlatformEvent,
   PlatformModel,
   SwarmStatus,
 } from '@swag/contracts';
+import { LLM_AGENT_TYPE } from './process-graph.ts';
 
-// Спека 001, 4.4; правила 022, 4.6. Проекция роя из его событий. Одна реализация для api-core и ui-core.
+// Спека 001, 4.4; правила 022, 4.6; программы графа 009, 4.10. Проекция роя из его событий. Одна реализация для api-core и ui-core.
 
 export interface SwarmView {
   id: string;
@@ -30,6 +33,12 @@ export interface SwarmView {
     spentMicroUsd: number;
   }[];
   edges: { from: AgentId; to: AgentId; messages: number }[]; // рёбра по фактическим сообщениям агентов
+  nodes: {
+    id: NodeId;
+    type: NodeTypeRef;
+    status: 'waiting' | 'running' | 'completed' | 'failed';
+    durationMs: number | null;
+  }[]; // программы графа в порядке узлов (009, 4.10)
   result: string | null;
   failure: { reason: string; detail?: string } | null;
   lastSeq: number;
@@ -50,10 +59,40 @@ export function applyEvent(view: SwarmView | null, event: PlatformEvent): SwarmV
     throw new Error(`повторный swarm.created для роя ${event.swarmId}`);
   }
   // Итоговый статус окончателен (003, 4.3): событие двигает только lastSeq. Расход приходит и после финала.
-  const next = FINAL_SWARM_STATUSES.includes(view.status)
+  const moved = FINAL_SWARM_STATUSES.includes(view.status)
     ? { ...view, lastSeq: event.seq }
     : updateView(view, event);
+  // Программы графа (009, 4.10) не меняют статус роя и идут после финала, как расход (D-190).
+  const next = { ...moved, nodes: applyNodeEvent(moved.nodes ?? [], event) };
   return event.type === 'llm.call' ? addSpend(next, event) : next;
+}
+
+// Программы графа (009, 4.10). Событие о неизвестном nodeId ничего не меняет.
+function applyNodeEvent(nodes: SwarmView['nodes'], event: PlatformEvent): SwarmView['nodes'] {
+  switch (event.type) {
+    case 'node.started':
+      return setNode(nodes, event.data.nodeId, { status: 'running' });
+    case 'node.completed':
+      return setNode(nodes, event.data.nodeId, {
+        status: 'completed',
+        durationMs: event.data.durationMs,
+      });
+    case 'node.failed':
+      return setNode(nodes, event.data.nodeId, {
+        status: 'failed',
+        durationMs: event.data.durationMs,
+      });
+    default:
+      return nodes;
+  }
+}
+
+function setNode(
+  nodes: SwarmView['nodes'],
+  id: NodeId,
+  change: Partial<SwarmView['nodes'][number]>,
+): SwarmView['nodes'] {
+  return nodes.map((node) => (node.id === id ? { ...node, ...change } : node));
 }
 
 // Расход по событию llm.call (004, 4.7): charge — что списано; у событий до 004 charge нет, берём costMicroUsd.
@@ -97,6 +136,15 @@ function createView(event: Extract<PlatformEvent, { type: 'swarm.created' }>): S
       spentMicroUsd: 0,
     })),
     edges: [],
+    // Программы графа — всё, что не форма (LLM_AGENT_TYPE); без graph — пусто.
+    nodes: (event.data.graph?.nodes ?? [])
+      .filter((node) => node.type !== LLM_AGENT_TYPE)
+      .map((node) => ({
+        id: node.id,
+        type: node.type,
+        status: 'waiting' as const,
+        durationMs: null,
+      })),
     result: null,
     failure: null,
     lastSeq: event.seq,

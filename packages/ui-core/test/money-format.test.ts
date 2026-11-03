@@ -16,6 +16,7 @@ const view = (over: Partial<SwarmView>): SwarmView => ({
   spentMicroUsd: 0,
   agents: [],
   edges: [],
+  nodes: [],
   result: null,
   failure: null,
   lastSeq: 1,
