@@ -1,7 +1,7 @@
 ---
 id: "009"
 title: Граф процесса
-status: draft
+status: ready
 roadmap_stage: 9
 depends_on: ["021", "022", "026"]
 superseded_by: null
