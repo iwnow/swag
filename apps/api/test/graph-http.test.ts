@@ -39,7 +39,7 @@ const BROKEN_GRAPH = {
   edges: [{ from: 'echo', to: 'ghost', kind: 'flow' }],
 };
 
-const postSwarm = (app: FastifyInstance, payload: unknown, token = T.u1) =>
+const postSwarm = (app: FastifyInstance, payload: object, token = T.u1) =>
   app.inject({ method: 'POST', url: '/swarms', headers: bearer(token), payload });
 
 describe('граф по HTTP', () => {

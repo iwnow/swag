@@ -1675,6 +1675,48 @@ describe('api-core — спека 009: граф роя', () => {
     expect(launch?.agents.map((a) => a.id)).toEqual(['agent-1', 'agent-2']);
   });
 
+  it('AC-009-26: маркеры настроек узла, текста задачи и имени секрета не попадают в логи api — ни при 201, ни при 400 invalid_graph', async () => {
+    const { core, entries } = setup({ nodeTypes: GRAPH_REGISTRY() });
+    const created = await core.createSwarm(ACTOR, {
+      task: 'input-marker-009',
+      budgetMicroUsd: 1000000,
+      graph: {
+        nodes: [
+          { ...ECHO_NODE('echo'), settings: { prefix: 'settings-marker-009' } },
+          AGENT_NODE('agent-1'),
+        ],
+        edges: [{ from: 'echo', to: 'agent-1', kind: 'flow' }],
+        entry: 'echo',
+        exit: 'agent-1',
+      },
+    });
+    expect(created.ok).toBe(true);
+    const rejected = await core.createSwarm(ACTOR, {
+      task: 'input-marker-009',
+      budgetMicroUsd: 1000000,
+      graph: {
+        nodes: [
+          {
+            id: 'keyed',
+            type: 'test/keyed@1.0.0',
+            settings: {},
+            credentials: { apiKey: 'secret-marker-009' },
+          },
+          AGENT_NODE('agent-1'),
+        ],
+        edges: [{ from: 'keyed', to: 'agent-1', kind: 'flow' }],
+        entry: 'keyed',
+        exit: 'agent-1',
+      },
+    });
+    expect(rejected.ok).toBe(false);
+    expect(entries.length).toBeGreaterThan(0);
+    const dump = JSON.stringify(entries);
+    expect(dump).not.toContain('settings-marker-009');
+    expect(dump).not.toContain('input-marker-009');
+    expect(dump).not.toContain('secret-marker-009');
+  });
+
   it('AC-009-13: граф с замечаниями — invalid_graph со всеми замечаниями; без swarm.created, резерва и запуска', async () => {
     const billing = fakeBilling();
     const { core, launches } = setup({ nodeTypes: GRAPH_REGISTRY(), billing });

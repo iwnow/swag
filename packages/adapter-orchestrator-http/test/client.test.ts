@@ -5,6 +5,7 @@ import { createOrchestratorHttpClient } from '../src/index.ts';
 
 const TOKEN = 'fake-orchestrator-token-for-tests-000000';
 const SWARM_ID = '0b6f6d2e-6a4c-4c3e-9f5e-444444444444';
+const ORG_ID = '0b6f6d2e-6a4c-4c3e-9f5e-555555555555';
 
 // Фейковый оркестратор: отвечает 202 и запоминает заголовки каждого запроса.
 let server: Server | null = null;
@@ -34,6 +35,7 @@ describe('createOrchestratorHttpClient', () => {
 
     await client.launch({
       swarmId: SWARM_ID,
+      orgId: ORG_ID,
       task: 'T',
       budgetMicroUsd: 1000000,
       maxTokens: null,
@@ -47,6 +49,10 @@ describe('createOrchestratorHttpClient', () => {
           maxTokens: null,
         },
       ],
+      programs: [],
+      edges: [],
+      entry: 'agent-1',
+      exit: 'agent-1',
     });
     await client.stop(SWARM_ID);
 
@@ -70,10 +76,15 @@ describe('createOrchestratorHttpClient', () => {
       await expect(
         client.launch({
           swarmId: SWARM_ID,
+          orgId: ORG_ID,
           task: 'T',
           budgetMicroUsd: 1000000,
           maxTokens: null,
           agents: [],
+          programs: [],
+          edges: [],
+          entry: 'agent-1',
+          exit: 'agent-1',
         }),
       ).rejects.toThrow();
       expect(Date.now() - started).toBeLessThan(1000);
